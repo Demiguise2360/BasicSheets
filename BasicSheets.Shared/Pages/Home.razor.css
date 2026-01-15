@@ -1,0 +1,33 @@
+.sheet {
+    border-bottom: 1px solid gray;
+    padding: 0.75rem 1rem;
+
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-content: center;
+}
+
+.information {
+    align-content: center;
+}
+
+.information p {
+    margin: 0;
+}
+
+.actions {
+    display: flex;
+    flex-direction: row;
+    align-content: center
+}
+
+.action-button {
+    background: none;
+    border: none;
+}
+
+.icon-img {
+    width: 1.5rem;
+    height: 1.5rem;
+}

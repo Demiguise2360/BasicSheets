@@ -1,0 +1,70 @@
+﻿@page "/upload"
+@using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models;
+@inject SheetService SheetService;
+@inject NavigationManager navigationManager;
+
+<PageTitle>Upload</PageTitle>
+
+<div class="main-container-large">
+    <div class="file-upload">
+        <p>Datei:</p>
+        <InputFile OnChange="OnFileSelected" accept=".pdf"></InputFile>
+    </div>
+    <div class="inputs">
+        <label for="name">Name:</label>
+        <input placeholder="Name" id="name" @bind="sheet.Name"/>
+        <label for="composer">Komponist:</label>
+        <input placeholder="Komponist" id="composer" @bind="sheet.Composer" />
+        <label for="part">Stimme:</label>
+        <input placeholder="Stimme" id="part" @bind="sheet.Part" />
+    </div>
+    <button class="add-btn" id="add-btn" @onclick="SaveSheet" disabled="@(selectedFile == null || string.IsNullOrWhiteSpace(sheet.Name) || !selectedFile.ContentType.Equals("application/pdf"))">Hinzufügen</button>
+</div>
+
+@code {
+    private Sheet sheet = new();
+    private IBrowserFile selectedFile;
+    private static Random random = new();
+
+    private const long MaxFileSize = 20L * 1024 * 1024;
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    public static string RandomString(int length)
+    {
+        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        return new string(Enumerable.Repeat(chars, length)
+            .Select(s => s[random.Next(s.Length)]).ToArray());
+    }
+
+    private async Task SaveSheet()
+    {
+        if (selectedFile == null || !selectedFile.ContentType.Equals("application/pdf")){
+            return;
+        }
+
+        if (selectedFile.Size > MaxFileSize)
+        {
+            return;
+        }
+
+        string fileName = RandomString(20) + ".pdf";
+        string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
+        Directory.CreateDirectory(folder);
+
+        string filePath = Path.Combine(folder, fileName);
+
+        using FileStream fs = new(filePath, FileMode.Create);
+        await selectedFile.OpenReadStream(MaxFileSize).CopyToAsync(fs);
+
+        sheet.FilePath = $"uploads/{fileName}";
+
+        SheetService.AddSheets(sheet);
+
+        navigationManager.NavigateTo("/");
+    }
+}

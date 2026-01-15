@@ -1,0 +1,114 @@
+﻿@page "/"
+@using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models;
+@inject SheetService SheetService;
+@inject NavigationManager navigationManager;
+@inject IJSRuntime JsRuntime
+
+<PageTitle>Home</PageTitle>
+
+<div class="search-container">
+    <input placeholder="Suche" @bind="searchText" @bind:event="oninput"/>
+    <select @bind="selectedField">
+        <option value="all">Alle Felder</option> 
+        <option value="Name">Name</option>
+        <option value="Composer">Komponist</option>
+        <option value="Part">Stimme</option>
+    </select>
+</div>
+
+<div class="main-container">
+    @if (SheetService.CountSheets() > 0)
+    {
+        foreach (Sheet sheet in FilteredSheets)
+        {
+            <div class="sheet" @onclick="() => OpenSheet(sheet)">
+                <div class="information">
+                    <h4>@sheet.Name</h4>
+                    <p>@sheet.GetInformation()</p>
+                </div>
+
+                <div class="actions">
+                    <button 
+                            class="action-button"
+                            @onclick="@(() => OpenEdit(sheet))"
+                            @onclick:stopPropagation="true">
+                        <img class="icon-img" src="/_content/BasicSheets.Shared/icons/edit.svg" />
+                    </button>
+                    <button 
+                            class="action-button" 
+                            @onclick="@(() => deleteSheet(sheet))" 
+                            @onclick:stopPropagation="true">
+                        <img class="icon-img" src="/_content/BasicSheets.Shared/icons/delete.svg" />
+                    </button>
+                </div>
+            </div>
+        }
+    }
+    else 
+    {
+        <p class="empty-text">Noch keine Noten hinzugefügt</p>
+    }
+</div>
+
+@code {
+    string searchText = "";
+    string selectedField = "all";
+
+    private List<Sheet> FilteredSheets
+    {
+        get
+        {
+            List<Sheet> sheets = SheetService.GetSheets();
+
+            if (string.IsNullOrWhiteSpace(searchText)) {
+                return sheets;
+            }
+
+            return sheets.Where(s =>
+            {
+                if (selectedField == "all")
+                {
+                    return s.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                        || s.Composer.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                        || s.Part.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+                }
+
+                var property = s.GetType().GetProperty(selectedField);
+                var value = property?.GetValue(s)?.ToString();
+
+                return value != null && value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+
+            }).ToList();
+        }
+    }
+
+    private async Task deleteSheet(Sheet sheet)
+    {
+
+        bool confirmed = await JsRuntime.InvokeAsync<bool>(
+            "confirm",
+            $"Möchtest du {sheet.Name} wirklich löschen?"
+        );
+
+        if (!confirmed)
+            return;
+
+        string path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads", sheet.FilePath);
+
+        SheetService.RemoveSheets(sheet);
+        navigationManager.Refresh();
+    }
+
+    private void OpenSheet(Sheet sheet)
+    {
+        string file = Path.GetFileName(sheet.FilePath);
+        navigationManager.NavigateTo($"/sheets/{file}");
+    }
+
+    private void OpenEdit(Sheet sheet)
+    {
+        string file = Path.GetFileName(sheet.FilePath);
+        navigationManager.NavigateTo($"/edit/{file}");
+    }
+}

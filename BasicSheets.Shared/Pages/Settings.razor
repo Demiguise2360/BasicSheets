@@ -1,0 +1,82 @@
+﻿@page "/Settings"
+@using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models;
+@inject SettingsService SettingsService;
+
+<PageTitle>Settings</PageTitle>
+
+<div class="search-container">
+    <input placeholder="Suche" @bind="searchText" @bind:event="oninput" />
+    <select @bind="selectedField">
+        <option value="all">Alle Felder</option>
+        <option value="Name">Name</option>
+        <option value="Description">Beschreibung</option>
+    </select>
+</div>
+
+<div class="main-container">
+    @foreach (Setting setting in settings)
+    {
+        <div class="setting">
+            <div class="information">
+                <h4>@setting.Name</h4>
+                <p>@setting.Description</p>
+            </div>
+            @if (setting.Type == "toggle")
+            {
+                <label class="switch">
+                    <input type="checkbox" @onclick="@(() => toggleSetting(setting))" checked="@(setting.Value.Equals("true"))">
+                    <span class="slider round"></span>
+                </label>
+            }
+        </div>
+    }
+    <div class="help-link">
+        <NavLink href="/help">Weitere Informationen und Anleitungen</NavLink>
+    </div>
+</div>
+
+@code {
+    string searchText = "";
+    string selectedField = "all";
+
+    List<Setting> settings
+    {
+        get
+        {
+            List<Setting> settings = SettingsService.GetSettings();
+
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                return settings;
+            }
+
+            return settings.Where(s =>
+            {
+                if (selectedField == "all")
+                {
+                    return s.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+                    || s.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+                }
+
+                var property = s.GetType().GetProperty(selectedField);
+                var value = property?.GetValue(s)?.ToString();
+
+                return value != null && value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+
+            }).ToList();
+        }
+    }
+
+    public void toggleSetting(Setting setting)
+    {
+        if (setting.Value.Equals("false"))
+        {
+            setting.Value = "true";
+        } else
+        {
+            setting.Value = "false";
+        }
+        SettingsService.SaveSettings();
+    }
+}

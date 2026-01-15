@@ -1,0 +1,96 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.CodeWorkspace
+
+# Build results
+bin/
+obj/
+out/
+publish/
+
+# NuGet / packages
+packages/
+*.nupkg
+project.lock.json
+.nuget/packages/
+
+# MAUI / Xamarin / mobile outputs
+*.apk
+*.apks
+*.aab
+*.ipa
+*.app
+*.app.dSYM
+*.mobileprovision
+*.p12
+*.pfx
+*.keystore
+*.jks
+
+# Xcode / iOS
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcworkspace
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+
+# Android build artifacts
+**/bin/*
+**/obj/*
+*.keystore
+local.properties
+
+# Logs / test results / coverage
+logs/
+*.log
+TestResults/
+coverage/
+coverage.*.xml
+*.trx
+
+# Runtime / lock / pid files
+*.pid
+*.pid.lock
+*.seed
+*.lock
+
+# Environment / secrets
+.env
+.env.*.local
+.env.local
+.env.production.local
+.env.test.local
+*.key
+*.pem
+*.p12
+
+# Editor temp files
+*~
+*.swp
+*.tmp
+*.bak
+*.backup
+
+# Compiled / object files
+*.o
+*.obj
+*.so
+*.dll
+*.exe
+
+# Misc
+.DS_Store?
+*.tar.gz

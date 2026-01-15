@@ -1,0 +1,22 @@
+.setting {
+    border-bottom: 1px solid gray;
+    padding: 0.75rem 1rem;
+
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.information {
+    align-content: center;
+    max-width: 80%;
+}
+
+.information p {
+    margin: 0;
+}
+
+.help-link {
+    padding: 0.75rem 1rem;
+}

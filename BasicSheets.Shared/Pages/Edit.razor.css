@@ -1,0 +1,28 @@
+.file-upload {
+    padding-bottom: 2rem;
+}
+
+.inputs {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 1rem;
+}
+
+.inputs input {
+    border-radius: 6rem;
+    padding-left: 0.75rem;
+    border: 1px solid gray;
+}
+
+.add-btn {
+    border-radius: 6rem;
+    position: absolute;
+    margin-top: 2rem;
+    border: none;
+    background-color: var(--app-blue-dark);
+    color: var(--app-white)
+}
+
+.add-btn:disabled {
+    background-color: var(--app-blue-light);
+}

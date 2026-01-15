@@ -1,0 +1,178 @@
+﻿@layout BasicSheets.Shared.Layout.MainLayoutClean
+@using BasicSheets.Shared.Services
+@page "/sheets/{file}"
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject SettingsService SettingsService;
+
+<div class="viewer-page" @onclick="HandleClick">
+
+    @if (showStart)
+    {
+        <div class="show-info">
+            <p>Start des Songs</p>
+        </div>
+    }
+
+    @if (showEnd)
+    {
+        <div class="show-info">
+            <p>Ende des Songs</p>
+        </div>
+    }
+
+    @if (showError)
+    {
+        <div class="error-message">
+            <p>@errorMessage</p>
+        </div>
+    }
+    else {
+        <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
+    }
+
+    @if (showUi)
+    {
+        <div class="viewer-header">
+            <button class="back-btn" @onclick="GoBack">
+                <div class="back-circle">
+                    <img src="/_content/BasicSheets.Shared/icons/arrow.svg" class="back-icon" />
+                </div>
+            </button>
+        </div>
+
+        @if (pageCount != 1)
+        {
+            <div class="slider-bar">
+                <input type="range" min="1" max=@pageCount" @bind="page" @oninput="OnSlider" class="range" />
+            </div>
+        }
+    }
+</div>
+
+@code {
+
+    [Parameter]
+    public string file { get; set; }
+
+    private int page = 1;
+    private int pageCount = 1;
+    private bool showUi = true;
+    private bool showStart = false;
+    private bool showEnd = false;
+    private bool showError = false;
+    private string errorMessage = "";
+
+    private string PdfPath => $"/uploads/{file}";
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("initCanvas", "pdfCanvas");
+                if (SettingsService.TwoPageLayout())
+                {
+                    pageCount = await JS.InvokeAsync<int>("loadPdf", PdfPath) - 1;
+                    await JS.InvokeVoidAsync("renderTwoPage", 1);
+                }
+                else
+                {
+                    pageCount = await JS.InvokeAsync<int>("loadPdf", PdfPath);
+                    await JS.InvokeVoidAsync("renderPage", 1);
+                }
+                StateHasChanged();
+            } catch (Exception ex) {
+                Console.WriteLine($"Error loading PDF: {ex.Message}");
+                showError = true;
+                errorMessage = $"Error loading PDF: {ex.Message}";
+            }
+    }
+    }
+
+    private async Task OnSlider(ChangeEventArgs e)
+    {
+        page = int.Parse(e.Value.ToString());
+        if (SettingsService.TwoPageLayout())
+        {
+            await JS.InvokeVoidAsync("renderTwoPage", page);
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("renderPage", page);
+        }
+    }
+
+
+    private async Task HandleClick(MouseEventArgs e)
+    {
+        double x = e.ClientX;
+        double w = await JS.InvokeAsync<double>("getWindowWidth");
+        if (SettingsService.TwoPageLayout())
+        {
+            if (x < w * 0.4 && page > 1)
+            {
+                page--;
+                await JS.InvokeVoidAsync("renderTwoPage", page);
+            }
+            else if (x > w * 0.6 && page < pageCount)
+            {
+                page++;
+                await JS.InvokeVoidAsync("renderTwoPage", page);
+            }
+            else if (x < w * 0.4 && page == 1)
+            {
+                showStart = SettingsService.startAndEndHints();
+                await Task.Delay(2000);
+                showStart = false;
+
+            }
+            else if (x > w * 0.6 && page == pageCount)
+            {
+                showEnd = SettingsService.startAndEndHints();
+                await Task.Delay(2000);
+                showEnd = false;
+            }
+            else
+            {
+                showUi = !showUi;
+            }
+        }
+        else
+        {
+            if (x < w * 0.4 && page > 1)
+            {
+                page--;
+                await JS.InvokeVoidAsync("renderPage", page);
+            }
+            else if (x > w * 0.6 && page < pageCount)
+            {
+                page++;
+                await JS.InvokeVoidAsync("renderPage", page);
+            }
+            else if (x < w * 0.4 && page == 1)
+            {
+                showStart = SettingsService.startAndEndHints();
+                await Task.Delay(2000);
+                showStart = false;
+
+            }
+            else if (x > w * 0.6 && page == pageCount)
+            {
+                showEnd = SettingsService.startAndEndHints();
+                await Task.Delay(2000);
+                showEnd = false;
+            }
+            else
+            {
+                showUi = !showUi;
+            }
+        }
+    }
+
+    private void GoBack()
+    {
+        Nav.NavigateTo("/");
+    }
+}

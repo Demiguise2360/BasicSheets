@@ -1,0 +1,33 @@
+.nav-container {
+    position: relative;
+    bottom: 0;
+    display: flex;
+    flex-direction: row;
+    height: 9vh;
+    justify-content: space-evenly;
+    align-items: center;
+}
+
+.nav-icon {
+    height: 4vh;
+    width: auto;
+}
+
+.nav-item, 
+.nav-item-add {
+    border-radius: 0.5rem;
+    display: flex;
+    align-content: center;
+}
+
+.nav-item-add {
+    background-color: var(--app-blue-background);
+}
+
+.nav-item {
+    background-color: var(--app-blue-light);
+}
+
+.active {
+    border: 1px solid var(--app-white);
+}

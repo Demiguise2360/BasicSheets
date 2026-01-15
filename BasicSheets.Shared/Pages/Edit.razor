@@ -1,0 +1,76 @@
+﻿@page "/edit/{fileName}"
+@using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models
+@inject SheetService SheetService
+@inject NavigationManager navigationManager
+
+<PageTitle>Edit</PageTitle>
+
+<div class="main-container-large">
+
+    <div class="file-upload">
+        <p>Neue Datei (optional):</p>
+        <InputFile OnChange="OnFileSelected" accept=".pdf"></InputFile>
+    </div>
+
+    <div class="inputs">
+        <label>Name:</label>
+        <input @bind="sheet.Name" />
+
+        <label>Komponist:</label>
+        <input @bind="sheet.Composer" />
+
+        <label>Stimme:</label>
+        <input @bind="sheet.Part" />
+    </div>
+
+    <button class="add-btn" @onclick="SaveChanges" disabled="@(string.IsNullOrWhiteSpace(sheet.Name) || (selectedFile != null && !selectedFile.ContentType.Equals("application/pdf")))">
+        Speichern
+    </button>
+
+</div>
+
+@code {
+
+    [Parameter] public string fileName { get; set; }
+
+    private Sheet sheet;
+    private IBrowserFile selectedFile;
+
+    protected override void OnInitialized()
+    {
+        if (fileName == null)
+        {
+            navigationManager.NavigateTo("/");
+        }
+        sheet = SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == fileName);
+
+        if (sheet == null)
+            navigationManager.NavigateTo("/");
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    private async Task SaveChanges()
+    {
+        if (selectedFile != null)
+        {
+            if (!selectedFile.ContentType.Equals("application/pdf"))
+            {
+                return;
+            }
+            string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
+            string path = Path.Combine(folder, Path.GetFileName(sheet.FilePath));
+
+            using FileStream fs = new(path, FileMode.Create);
+            await selectedFile.OpenReadStream().CopyToAsync(fs);
+        }
+
+        SheetService.UpdateSheet(sheet);
+
+        navigationManager.NavigateTo("/");
+    }
+}
