@@ -1,76 +1,93 @@
-﻿@page "/edit/{fileName}"
+@page "/edit/{fileName}"
 @using BasicSheets.Shared.Services
 @using BasicSheets.Shared.Models
 @inject SheetService SheetService
 @inject NavigationManager navigationManager
 
-<PageTitle>Edit</PageTitle>
+<PageTitle>Bearbeiten</PageTitle>
 
 <div class="main-container-large">
+    <div class="upload-card">
 
-    <div class="file-upload">
-        <p>Neue Datei (optional):</p>
-        <InputFile OnChange="OnFileSelected" accept=".pdf"></InputFile>
+        <div class="file-zone @(selectedFile != null ? "file-zone-ok" : "")">
+            <InputFile OnChange="OnFileSelected" accept=".pdf" id="pdf-edit-input" />
+            <label for="pdf-edit-input" class="file-zone-label">
+                @if (selectedFile != null)
+                {
+                    <span class="file-chosen">📄 @selectedFile.Name</span>
+                }
+                else
+                {
+                    <span class="file-hint">Neue PDF (optional)</span>
+                }
+            </label>
+        </div>
+
+        @if (fileError != null)
+        {
+            <p class="field-error">@fileError</p>
+        }
+
+        <div class="form-group">
+            <label class="field-label">Name *</label>
+            <input class="field-input" @bind="sheet.Name" />
+        </div>
+        <div class="form-group">
+            <label class="field-label">Komponist</label>
+            <input class="field-input" @bind="sheet.Composer" />
+        </div>
+        <div class="form-group">
+            <label class="field-label">Stimme / Instrument</label>
+            <input class="field-input" @bind="sheet.Part" />
+        </div>
+
+        <button class="submit-btn" @onclick="SaveChanges"
+                disabled="@(string.IsNullOrWhiteSpace(sheet.Name))">
+            Speichern
+        </button>
+
     </div>
-
-    <div class="inputs">
-        <label>Name:</label>
-        <input @bind="sheet.Name" />
-
-        <label>Komponist:</label>
-        <input @bind="sheet.Composer" />
-
-        <label>Stimme:</label>
-        <input @bind="sheet.Part" />
-    </div>
-
-    <button class="add-btn" @onclick="SaveChanges" disabled="@(string.IsNullOrWhiteSpace(sheet.Name) || (selectedFile != null && !selectedFile.ContentType.Equals("application/pdf")))">
-        Speichern
-    </button>
-
 </div>
 
 @code {
-
     [Parameter] public string fileName { get; set; }
 
-    private Sheet sheet;
-    private IBrowserFile selectedFile;
+    private Sheet sheet = new();
+    private IBrowserFile? selectedFile;
+    private string? fileError;
 
     protected override void OnInitialized()
     {
-        if (fileName == null)
-        {
-            navigationManager.NavigateTo("/");
-        }
-        sheet = SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == fileName);
-
-        if (sheet == null)
-            navigationManager.NavigateTo("/");
+        var found = SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == fileName);
+        if (found == null) { navigationManager.NavigateTo("/"); return; }
+        sheet = found;
     }
+
+    private bool IsPdf(IBrowserFile f) =>
+        f.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ||
+        f.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase);
 
     private void OnFileSelected(InputFileChangeEventArgs e)
     {
         selectedFile = e.File;
+        fileError = IsPdf(selectedFile) ? null : "Bitte eine PDF-Datei auswählen.";
     }
 
     private async Task SaveChanges()
     {
+        if (string.IsNullOrWhiteSpace(sheet.Name)) return;
+
         if (selectedFile != null)
         {
-            if (!selectedFile.ContentType.Equals("application/pdf"))
-            {
-                return;
-            }
+            if (!IsPdf(selectedFile)) { fileError = "Bitte eine PDF-Datei auswählen."; return; }
+
             string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
             string path = Path.Combine(folder, Path.GetFileName(sheet.FilePath));
-
-            using FileStream fs = new(path, FileMode.Create);
-            await selectedFile.OpenReadStream().CopyToAsync(fs);
+            using var fs = new FileStream(path, FileMode.Create);
+            await selectedFile.OpenReadStream(30L * 1024 * 1024).CopyToAsync(fs);
         }
 
         SheetService.UpdateSheet(sheet);
-
         navigationManager.NavigateTo("/");
     }
 }

@@ -29,6 +29,8 @@ namespace BasicSheets.Shared.Services
 
         public void AddSheets(Sheet sheet)
         {
+            sheet.Created = DateTime.Now;
+            sheet.Updated = DateTime.Now;
             _sheets.Add(sheet);
             SaveSheets();
         }
@@ -62,6 +64,7 @@ namespace BasicSheets.Shared.Services
 
         private void SaveSheets()
         {
+            _sheets.Sort((a, b) => a.Name.CompareTo(b.Name));
             string json = JsonSerializer.Serialize(_sheets, new JsonSerializerOptions
             {
                 WriteIndented = true
@@ -84,6 +87,7 @@ namespace BasicSheets.Shared.Services
             existing.Name = updated.Name;
             existing.Composer = updated.Composer;
             existing.Part = updated.Part;
+            existing.Updated = DateTime.Now;
 
             SaveSheets();
         }

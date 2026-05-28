@@ -6,6 +6,8 @@ public class Sheet
     public string FilePath { get; set; } = "";
     public string Composer { get; set; } = "";
     public string Part { get; set; } = "";
+    public DateTime Created { get; set; } = DateTime.Now;
+    public DateTime Updated { get; set; } = DateTime.Now;
 
     public string GetInformation()
     {

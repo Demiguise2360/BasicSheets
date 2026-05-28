@@ -1,22 +1,40 @@
 .setting {
-    border-bottom: 1px solid gray;
-    padding: 0.75rem 1rem;
-
+    background: white;
+    border-radius: 0.75rem;
+    margin: 0.4rem 0.5rem;
+    padding: 0.85rem 1rem;
     display: flex;
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+    gap: 0.75rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
 }
 
-.information {
-    align-content: center;
-    max-width: 80%;
+.information { flex: 1; min-width: 0; }
+
+.information h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--app-blue-background);
 }
 
 .information p {
-    margin: 0;
+    margin: 0.2rem 0 0;
+    font-size: 0.82rem;
+    color: var(--app-gray);
+    line-height: 1.35;
 }
 
 .help-link {
-    padding: 0.75rem 1rem;
+    padding: 0.85rem 1rem;
+    font-size: 0.9rem;
 }
+
+.help-link a {
+    color: var(--app-blue-dark);
+    text-decoration: none;
+    font-weight: 500;
+}
+.help-link a:hover { text-decoration: underline; }

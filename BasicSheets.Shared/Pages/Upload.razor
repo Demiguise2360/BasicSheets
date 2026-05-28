@@ -1,70 +1,104 @@
-﻿@page "/upload"
+@page "/upload"
 @using BasicSheets.Shared.Services
 @using BasicSheets.Shared.Models;
 @inject SheetService SheetService;
 @inject NavigationManager navigationManager;
 
-<PageTitle>Upload</PageTitle>
+<PageTitle>Noten hinzufügen</PageTitle>
 
 <div class="main-container-large">
-    <div class="file-upload">
-        <p>Datei:</p>
-        <InputFile OnChange="OnFileSelected" accept=".pdf"></InputFile>
+    <div class="upload-card">
+
+        <div class="file-zone @(selectedFile != null ? "file-zone-ok" : "")">
+            <InputFile OnChange="OnFileSelected" accept=".pdf" id="pdf-input" />
+            <label for="pdf-input" class="file-zone-label">
+                @if (selectedFile != null)
+                {
+                    <span class="file-chosen">📄 @selectedFile.Name</span>
+                }
+                else
+                {
+                    <span class="file-hint">PDF auswählen</span>
+                }
+            </label>
+        </div>
+
+        @if (fileError != null)
+        {
+            <p class="field-error">@fileError</p>
+        }
+
+        <div class="form-group">
+            <label class="field-label">Name *</label>
+            <input class="field-input" placeholder="Name der Note" @bind="sheet.Name" />
+        </div>
+        <div class="form-group">
+            <label class="field-label">Komponist</label>
+            <input class="field-input" placeholder="Komponist" @bind="sheet.Composer" />
+        </div>
+        <div class="form-group">
+            <label class="field-label">Stimme / Instrument</label>
+            <input class="field-input" placeholder="z.B. Geige, Klavier …" @bind="sheet.Part" />
+        </div>
+
+        <button class="submit-btn" @onclick="SaveSheet"
+                disabled="@(selectedFile == null || string.IsNullOrWhiteSpace(sheet.Name) || isUploading)">
+            @if (isUploading) { <span>Wird gespeichert…</span> }
+            else              { <span>Hinzufügen</span> }
+        </button>
+
     </div>
-    <div class="inputs">
-        <label for="name">Name:</label>
-        <input placeholder="Name" id="name" @bind="sheet.Name"/>
-        <label for="composer">Komponist:</label>
-        <input placeholder="Komponist" id="composer" @bind="sheet.Composer" />
-        <label for="part">Stimme:</label>
-        <input placeholder="Stimme" id="part" @bind="sheet.Part" />
-    </div>
-    <button class="add-btn" id="add-btn" @onclick="SaveSheet" disabled="@(selectedFile == null || string.IsNullOrWhiteSpace(sheet.Name) || !selectedFile.ContentType.Equals("application/pdf"))">Hinzufügen</button>
 </div>
 
 @code {
     private Sheet sheet = new();
-    private IBrowserFile selectedFile;
-    private static Random random = new();
+    private IBrowserFile? selectedFile;
+    private string? fileError;
+    private bool isUploading;
+    private static readonly Random Rng = new();
+    private const long MaxFileSize = 30L * 1024 * 1024;
 
-    private const long MaxFileSize = 20L * 1024 * 1024;
+    private bool IsPdf(IBrowserFile f) =>
+        f.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ||
+        f.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase);
 
     private void OnFileSelected(InputFileChangeEventArgs e)
     {
         selectedFile = e.File;
+        fileError = IsPdf(selectedFile) ? null : "Bitte eine PDF-Datei auswählen.";
     }
 
-    public static string RandomString(int length)
-    {
-        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        return new string(Enumerable.Repeat(chars, length)
-            .Select(s => s[random.Next(s.Length)]).ToArray());
-    }
+    private static string RandomName() =>
+        new string(Enumerable.Repeat("abcdefghijklmnopqrstuvwxyz0123456789", 20)
+            .Select(s => s[Rng.Next(s.Length)]).ToArray());
 
     private async Task SaveSheet()
     {
-        if (selectedFile == null || !selectedFile.ContentType.Equals("application/pdf")){
-            return;
-        }
+        if (selectedFile == null || string.IsNullOrWhiteSpace(sheet.Name)) return;
+        if (!IsPdf(selectedFile)) { fileError = "Bitte eine PDF-Datei auswählen."; return; }
+        if (selectedFile.Size > MaxFileSize) { fileError = "Datei zu groß (max. 30 MB)."; return; }
 
-        if (selectedFile.Size > MaxFileSize)
+        isUploading = true;
+        StateHasChanged();
+
+        try
         {
-            return;
+            string fileName = RandomName() + ".pdf";
+            string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
+            Directory.CreateDirectory(folder);
+            string filePath = Path.Combine(folder, fileName);
+
+            using var fs = new FileStream(filePath, FileMode.Create);
+            await selectedFile.OpenReadStream(MaxFileSize).CopyToAsync(fs);
+
+            sheet.FilePath = $"uploads/{fileName}";
+            SheetService.AddSheets(sheet);
+            navigationManager.NavigateTo("/");
         }
-
-        string fileName = RandomString(20) + ".pdf";
-        string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
-        Directory.CreateDirectory(folder);
-
-        string filePath = Path.Combine(folder, fileName);
-
-        using FileStream fs = new(filePath, FileMode.Create);
-        await selectedFile.OpenReadStream(MaxFileSize).CopyToAsync(fs);
-
-        sheet.FilePath = $"uploads/{fileName}";
-
-        SheetService.AddSheets(sheet);
-
-        navigationManager.NavigateTo("/");
+        catch (Exception ex)
+        {
+            fileError = $"Fehler beim Speichern: {ex.Message}";
+            isUploading = false;
+        }
     }
 }
