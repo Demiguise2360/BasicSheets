@@ -1,0 +1,148 @@
+@page "/setlists/{Id:int}"
+@using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models
+@inject SetlistService SetlistService
+@inject SheetService SheetService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Setlist</PageTitle>
+
+@if (setlist == null)
+{
+    <div class="empty-state">
+        <p class="empty-title">Setlist nicht gefunden</p>
+        <button class="submit-btn" style="margin-top:1rem" @onclick='() => Nav.NavigateTo("/")'>Zurück</button>
+    </div>
+}
+else
+{
+    <div class="detail-head">
+        <button class="vbtn-del detail-back" @onclick='() => Nav.NavigateTo("/")' title="Zurück">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="pg-title" style="padding-bottom:0">@setlist.Name</div>
+    </div>
+
+    <div class="setlist-toolbar">
+        <button class="chip-btn" @onclick="Rename">Umbenennen</button>
+        <button class="chip-btn chip-btn-primary" @onclick="Play" disabled="@(rows.Count == 0)">Abspielen</button>
+        <button class="chip-btn" @onclick="() => showAdd = !showAdd">@(showAdd ? "Fertig" : "Noten hinzufügen")</button>
+    </div>
+
+    @if (showAdd)
+    {
+        <div class="add-panel">
+            <div class="add-panel-title">Zur Setlist hinzufügen</div>
+            @if (AllSheets.Count == 0)
+            {
+                <p class="empty-sub" style="padding:0.5rem 0">Keine Noten in der Bibliothek.</p>
+            }
+            else
+            {
+                @foreach (var s in AllSheets)
+                {
+                    var sid = s.Id;
+                    <div class="add-row">
+                        <span class="add-row-name">@s.Name</span>
+                        <button class="add-row-btn" @onclick="() => AddSheet(sid)" title="Hinzufügen">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+                        </button>
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    <div class="main-container">
+        @if (rows.Count == 0)
+        {
+            <div class="empty-state">
+                <p class="empty-title">Setlist ist leer</p>
+                <p class="empty-sub">Tippe auf «Noten hinzufügen», um Stücke aufzunehmen</p>
+            </div>
+        }
+        else
+        {
+            @for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                var idx = i;
+                <div class="setlist-item">
+                    <span class="setlist-item-num">@(idx + 1)</span>
+                    <div class="setlist-item-info" @onclick="() => OpenSheet(row.Sheet)">
+                        <div class="setlist-item-name">@row.Sheet.Name</div>
+                        @if (!string.IsNullOrWhiteSpace(row.Sheet.GetInformation()))
+                        {
+                            <div class="setlist-item-sub">@row.Sheet.GetInformation()</div>
+                        }
+                    </div>
+                    <div class="setlist-item-ops">
+                        <button class="iconbtn" disabled="@(idx == 0)" @onclick="() => Move(row.Item.Id, -1)" title="Nach oben">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                        </button>
+                        <button class="iconbtn" disabled="@(idx == rows.Count - 1)" @onclick="() => Move(row.Item.Id, 1)" title="Nach unten">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <button class="iconbtn iconbtn-del" @onclick="() => RemoveItem(row.Item.Id)" title="Entfernen">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Setlist? setlist;
+    private List<(SetlistItem Item, Sheet Sheet)> rows = new();
+    private bool showAdd;
+
+    private List<Sheet> AllSheets => SheetService.GetSheets();
+
+    protected override void OnParametersSet() => Load();
+
+    private void Load()
+    {
+        setlist = SetlistService.Get(Id);
+        rows = new();
+        if (setlist == null) return;
+
+        var items = SetlistService.GetItems(Id);
+        var byId = SheetService.GetSheets().ToDictionary(s => s.Id);
+        foreach (var it in items)
+            if (byId.TryGetValue(it.SheetId, out var sheet))
+                rows.Add((it, sheet));
+    }
+
+    private async Task Rename()
+    {
+        if (setlist == null) return;
+        var name = await JS.InvokeAsync<string>("prompt", "Name der Setlist:", setlist.Name);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        SetlistService.Rename(Id, name);
+        Load();
+    }
+
+    private void AddSheet(int sheetId) { SetlistService.AddSheet(Id, sheetId); Load(); }
+
+    private void RemoveItem(int itemId) { SetlistService.RemoveItem(itemId); Load(); }
+
+    private void Move(int itemId, int dir) { SetlistService.Move(Id, itemId, dir); Load(); }
+
+    private void OpenSheet(Sheet sheet)
+    {
+        var fileName = Path.GetFileName(sheet.FilePath);
+        if (string.IsNullOrEmpty(fileName)) return;
+        Nav.NavigateTo($"/sheets/{fileName}");
+    }
+
+    private void Play()
+    {
+        if (rows.Count == 0) return;
+        OpenSheet(rows[0].Sheet);
+    }
+}

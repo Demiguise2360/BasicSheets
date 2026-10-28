@@ -2,65 +2,197 @@
 @using BasicSheets.Shared.Services
 @using BasicSheets.Shared.Models
 @inject SheetService SheetService
+@inject CollectionService CollectionService
 @inject NavigationManager navigationManager
 
 <PageTitle>Bearbeiten</PageTitle>
 
+<div class="pg-title">Bearbeiten</div>
+
 <div class="main-container-large">
-    <div class="upload-card">
-
-        <div class="file-zone @(selectedFile != null ? "file-zone-ok" : "")">
-            <InputFile OnChange="OnFileSelected" accept=".pdf" id="pdf-edit-input" />
-            <label for="pdf-edit-input" class="file-zone-label">
-                @if (selectedFile != null)
-                {
-                    <span class="file-chosen">📄 @selectedFile.Name</span>
-                }
-                else
-                {
-                    <span class="file-hint">Neue PDF (optional)</span>
-                }
-            </label>
+    @if (notFound)
+    {
+        <div class="empty-state">
+            <p class="empty-title">Noten nicht gefunden</p>
+            <p class="empty-sub">Diese Noten existieren nicht mehr oder wurden gelöscht.</p>
+            <button class="submit-btn" style="margin-top:1rem" @onclick='() => navigationManager.NavigateTo("/")'>Zurück zur Übersicht</button>
         </div>
+    }
+    else
+    {
+        <div class="upload-card">
 
-        @if (fileError != null)
-        {
-            <p class="field-error">@fileError</p>
-        }
+            <div class="file-zone @(selectedFile != null ? "file-zone-ok" : "")">
+                <InputFile OnChange="OnFileSelected" accept=".pdf" id="pdf-edit-input" />
+                <label for="pdf-edit-input" class="file-zone-label">
+                    @if (selectedFile != null)
+                    {
+                        <span class="file-chosen">@selectedFile.Name</span>
+                    }
+                    else
+                    {
+                        <span class="file-hint">Neue PDF (optional)</span>
+                    }
+                </label>
+            </div>
 
-        <div class="form-group">
-            <label class="field-label">Name *</label>
-            <input class="field-input" @bind="sheet.Name" />
+            @if (fileError != null)
+            {
+                <p class="field-error">@fileError</p>
+            }
+
+            @* ── Basis ── *@
+            <div class="edit-section-label">Basis</div>
+
+            <div class="form-group">
+                <label class="field-label">Name *</label>
+                <input class="field-input" @bind="sheet.Name" />
+            </div>
+            <div class="form-group">
+                <label class="field-label">Komponist</label>
+                <input class="field-input" @bind="sheet.Composer" />
+            </div>
+            <div class="form-group">
+                <label class="field-label">Stimme / Instrument</label>
+                <input class="field-input" @bind="sheet.Part" />
+            </div>
+
+            @* ── Details ── *@
+            <div class="edit-section-label">Details</div>
+
+            <div class="form-row-2">
+                <div class="form-group">
+                    <label class="field-label">Genre</label>
+                    <input class="field-input" @bind="sheet.Genre" placeholder="z.B. Klassik" />
+                </div>
+                <div class="form-group">
+                    <label class="field-label">Jahr</label>
+                    <input class="field-input" @bind="sheet.Year" placeholder="z.B. 1820" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="field-label">Schwierigkeit</label>
+                <div class="seg-group">
+                    <button class="seg-btn @(sheet.Difficulty==""?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.Difficulty = ""; }'>—</button>
+                    <button class="seg-btn @(sheet.Difficulty=="beginner"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.Difficulty = "beginner"; }'>Anfänger</button>
+                    <button class="seg-btn @(sheet.Difficulty=="intermediate"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.Difficulty = "intermediate"; }'>Mittel</button>
+                    <button class="seg-btn @(sheet.Difficulty=="advanced"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.Difficulty = "advanced"; }'>Fortg.</button>
+                    <button class="seg-btn @(sheet.Difficulty=="expert"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.Difficulty = "expert"; }'>Experte</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="field-label">Tags <span class="field-hint">(kommagetrennt)</span></label>
+                <input class="field-input" @bind="sheet.Tags" placeholder="z.B. Etüde, Übung" />
+            </div>
+
+            <div class="form-group">
+                <label class="field-label">Bemerkungen</label>
+                <textarea class="field-input field-textarea" @bind="sheet.Remarks"
+                          placeholder="Notizen, Übehinweise …" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="field-label">Sammlungen</label>
+                <div class="coll-chips">
+                    @foreach (var c in allCollections)
+                    {
+                        var cid = c.Id;
+                        <button type="button" class="coll-chip @(selectedCollectionIds.Contains(cid) ? "coll-chip-on" : "")"
+                                @onclick="() => ToggleCollection(cid)">@c.Name</button>
+                    }
+                    @if (allCollections.Count == 0)
+                    {
+                        <span class="field-hint" style="margin:0">Noch keine Sammlungen</span>
+                    }
+                </div>
+                <div class="coll-add">
+                    <input class="field-input" placeholder="Neue Sammlung …" @bind="newCollectionName" @bind:event="oninput" />
+                    <button type="button" class="coll-add-btn" disabled="@string.IsNullOrWhiteSpace(newCollectionName)" @onclick="AddNewCollection">+</button>
+                </div>
+            </div>
+
+            @* ── Ansicht ── *@
+            <div class="edit-section-label">Ansicht</div>
+
+            <div class="form-group">
+                <label class="field-label">Seitenansicht</label>
+                <div class="seg-group">
+                    <button class="seg-btn @(sheet.PageMode==null?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.PageMode = null; }'>Standard</button>
+                    <button class="seg-btn @(sheet.PageMode=="single"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.PageMode = "single"; }'>Einzelne Seite</button>
+                    <button class="seg-btn @(sheet.PageMode=="two"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.PageMode = "two"; }'>Zwei Seiten</button>
+                    <button class="seg-btn @(sheet.PageMode=="half-turn"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.PageMode = "half-turn"; }'>Halbe Seite</button>
+                    <button class="seg-btn @(sheet.PageMode=="scroll-v"?"seg-btn-on":"")"
+                            @onclick='()=>{ sheet.PageMode = "scroll-v"; }'>Vertikal scrollen</button>
+                </div>
+            </div>
+
+            <button class="submit-btn" @onclick="SaveChanges"
+                    disabled="@(string.IsNullOrWhiteSpace(sheet.Name) || isSaving)">
+                @if (isSaving) { <span>Wird gespeichert…</span> }
+                else            { <span>Speichern</span> }
+            </button>
+
         </div>
-        <div class="form-group">
-            <label class="field-label">Komponist</label>
-            <input class="field-input" @bind="sheet.Composer" />
-        </div>
-        <div class="form-group">
-            <label class="field-label">Stimme / Instrument</label>
-            <input class="field-input" @bind="sheet.Part" />
-        </div>
-
-        <button class="submit-btn" @onclick="SaveChanges"
-                disabled="@(string.IsNullOrWhiteSpace(sheet.Name))">
-            Speichern
-        </button>
-
-    </div>
+    }
 </div>
 
 @code {
-    [Parameter] public string fileName { get; set; }
+    [Parameter] public string? fileName { get; set; }
 
     private Sheet sheet = new();
     private IBrowserFile? selectedFile;
     private string? fileError;
+    private bool notFound;
+    private bool isSaving;
+    private const long MaxFileSize = 30L * 1024 * 1024;
+
+    private List<Collection> allCollections = new();
+    private HashSet<int> selectedCollectionIds = new();
+    private string newCollectionName = "";
 
     protected override void OnInitialized()
     {
+        if (string.IsNullOrEmpty(fileName))
+        {
+            notFound = true;
+            return;
+        }
+
         var found = SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == fileName);
-        if (found == null) { navigationManager.NavigateTo("/"); return; }
+        if (found == null)
+        {
+            notFound = true;
+            return;
+        }
         sheet = found;
+        allCollections = CollectionService.GetAll();
+        selectedCollectionIds = CollectionService.GetForSheet(sheet.Id).Select(c => c.Id).ToHashSet();
+    }
+
+    private void ToggleCollection(int id)
+    {
+        if (!selectedCollectionIds.Add(id)) selectedCollectionIds.Remove(id);
+    }
+
+    private void AddNewCollection()
+    {
+        var name = (newCollectionName ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var id = CollectionService.GetOrCreate(name);
+        if (id > 0) selectedCollectionIds.Add(id);
+        allCollections = CollectionService.GetAll();
+        newCollectionName = "";
     }
 
     private bool IsPdf(IBrowserFile f) =>
@@ -76,18 +208,43 @@
     private async Task SaveChanges()
     {
         if (string.IsNullOrWhiteSpace(sheet.Name)) return;
+        isSaving = true;
+        fileError = null;
+        StateHasChanged();
 
-        if (selectedFile != null)
+        try
         {
-            if (!IsPdf(selectedFile)) { fileError = "Bitte eine PDF-Datei auswählen."; return; }
+            if (selectedFile != null)
+            {
+                if (!IsPdf(selectedFile))
+                {
+                    fileError = "Bitte eine PDF-Datei auswählen.";
+                    isSaving = false;
+                    return;
+                }
+                if (selectedFile.Size > MaxFileSize)
+                {
+                    fileError = "Die Datei ist zu gross (max. 30 MB).";
+                    isSaving = false;
+                    return;
+                }
 
-            string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
-            string path = Path.Combine(folder, Path.GetFileName(sheet.FilePath));
-            using var fs = new FileStream(path, FileMode.Create);
-            await selectedFile.OpenReadStream(30L * 1024 * 1024).CopyToAsync(fs);
+                string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
+                Directory.CreateDirectory(folder);
+                string path = Path.Combine(folder, Path.GetFileName(sheet.FilePath));
+
+                using var fs = new FileStream(path, FileMode.Create);
+                await selectedFile.OpenReadStream(MaxFileSize).CopyToAsync(fs);
+            }
+
+            SheetService.UpdateSheet(sheet);
+            CollectionService.SetSheetCollections(sheet.Id, selectedCollectionIds);
+            navigationManager.NavigateTo("/");
         }
-
-        SheetService.UpdateSheet(sheet);
-        navigationManager.NavigateTo("/");
+        catch (Exception ex)
+        {
+            fileError = $"Fehler beim Speichern: {ex.Message}";
+            isSaving = false;
+        }
     }
 }

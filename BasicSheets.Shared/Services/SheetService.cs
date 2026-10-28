@@ -1,95 +1,86 @@
-﻿using BasicSheets.Shared.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
+using BasicSheets.Shared.Data;
+using BasicSheets.Shared.Models;
 
+namespace BasicSheets.Shared.Services;
 
-namespace BasicSheets.Shared.Services
+public class SheetService
 {
-    public class SheetService
+    private readonly BasicSheetsDb _db;
+    public string UploadFolder { get; }
+
+    public SheetService(BasicSheetsDb db)
     {
-        private List<Sheet> _sheets = new();
-        private readonly string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "data", "sheets.json");
+        _db = db;
+        UploadFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "uploads");
 
-        public SheetService()
+        try { Directory.CreateDirectory(UploadFolder); }
+        catch (Exception ex)
         {
-            string uploadFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "uploads");
-            Directory.CreateDirectory(uploadFolder);
-
-            LoadSheets();
-        }
-
-        public List<Sheet> GetSheets()
-        {
-            return _sheets;
-        }
-
-        public void AddSheets(Sheet sheet)
-        {
-            sheet.Created = DateTime.Now;
-            sheet.Updated = DateTime.Now;
-            _sheets.Add(sheet);
-            SaveSheets();
-        }
-
-        public void RemoveSheets(Sheet sheet)
-        {
-            try
-            {
-                File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), sheet.FilePath));
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Error deleting file: {e.Message}");
-                return;
-            }
-            _sheets.Remove(sheet);
-            SaveSheets();
-        }
-
-        private void LoadSheets()
-        {
-            if (!File.Exists(filePath))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-                File.WriteAllText(filePath, "[]");
-            }
-
-            string json = File.ReadAllText(filePath);
-            _sheets = JsonSerializer.Deserialize<List<Sheet>>(json) ?? new();
-        }
-
-        private void SaveSheets()
-        {
-            _sheets.Sort((a, b) => a.Name.CompareTo(b.Name));
-            string json = JsonSerializer.Serialize(_sheets, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-
-            File.WriteAllText(filePath, json);
-        }
-
-        public int CountSheets()
-        {
-            return _sheets.Count;
-        }
-
-        public void UpdateSheet(Sheet updated)
-        {
-            var existing = _sheets.FirstOrDefault(s => s.FilePath == updated.FilePath);
-            if (existing == null)
-                return;
-
-            existing.Name = updated.Name;
-            existing.Composer = updated.Composer;
-            existing.Part = updated.Part;
-            existing.Updated = DateTime.Now;
-
-            SaveSheets();
+            Console.WriteLine($"[SheetService] Upload-Verzeichnis konnte nicht erstellt werden: {ex.Message}");
         }
     }
+
+    public List<Sheet> GetSheets() =>
+        _db.Locked(() => _db.Conn.Table<Sheet>().OrderBy(s => s.Name).ToList());
+
+    public void AddSheets(Sheet sheet)
+    {
+        if (sheet == null) return;
+        sheet.Created = DateTime.Now;
+        sheet.Updated = DateTime.Now;
+        _db.Locked(() => _db.Conn.Insert(sheet));
+    }
+
+    public void RemoveSheets(Sheet sheet)
+    {
+        if (sheet == null) return;
+
+        try
+        {
+            if (!string.IsNullOrEmpty(sheet.FilePath))
+            {
+                var fileName = Path.GetFileName(sheet.FilePath);
+                var pdfPath = Path.Combine(UploadFolder, fileName);
+                if (File.Exists(pdfPath))
+                    File.Delete(pdfPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetService] PDF konnte nicht gelöscht werden: {ex.Message}");
+        }
+
+        var fp = sheet.FilePath;
+        _db.Locked(() => _db.Conn.Execute("DELETE FROM sheets WHERE FilePath = ?", fp));
+    }
+
+    public void UpdateSheet(Sheet updated)
+    {
+        if (updated == null) return;
+
+        _db.Locked(() =>
+        {
+            var fp = updated.FilePath;
+            var existing = _db.Conn.Table<Sheet>().FirstOrDefault(s => s.FilePath == fp);
+            if (existing == null) return;
+
+            existing.Name       = updated.Name ?? "";
+            existing.Composer   = updated.Composer ?? "";
+            existing.Part       = updated.Part ?? "";
+            existing.Genre      = updated.Genre ?? "";
+            existing.Year       = updated.Year ?? "";
+            existing.Difficulty = updated.Difficulty ?? "";
+            existing.Tags       = updated.Tags ?? "";
+            existing.Remarks    = updated.Remarks ?? "";
+            existing.Rating     = updated.Rating;
+            existing.Keywords   = updated.Keywords ?? "";
+            existing.PageMode   = updated.PageMode;
+            existing.Updated    = DateTime.Now;
+
+            _db.Conn.Update(existing);
+        });
+    }
+
+    public int CountSheets() => _db.Locked(() => _db.Conn.Table<Sheet>().Count());
 }

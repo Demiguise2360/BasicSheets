@@ -1,19 +1,19 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@using BasicSheets.Shared.Services
+@inject SettingsService SettingsService
+@inject IJSRuntime JS
 
 <div class="page">
-    <main>
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-
-    <div class="navigation">
-        <NavMenu />
+    <div class="page-content">
+        @Body
     </div>
+    <NavMenu />
 </div>
 
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await JS.InvokeVoidAsync("setDarkMode", SettingsService.IsDarkMode());
+    }
+}

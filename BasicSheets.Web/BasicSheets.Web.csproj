@@ -10,4 +10,12 @@
     <ProjectReference Include="..\BasicSheets.Shared\BasicSheets.Shared.csproj" />
   </ItemGroup>
 
+  <!-- Keep shared-scoped.css in sync with the Shared project's scoped CSS bundle -->
+  <Target Name="CopySharedScopedCss" AfterTargets="Build">
+    <Copy
+      SourceFiles="$(MSBuildThisFileDirectory)..\BasicSheets.Shared\obj\$(Configuration)\net9.0\scopedcss\projectbundle\BasicSheets.Shared.bundle.scp.css"
+      DestinationFiles="$(MSBuildThisFileDirectory)wwwroot\shared-scoped.css"
+      SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

@@ -6,21 +6,30 @@
 
 <PageTitle>Noten hinzufügen</PageTitle>
 
+<div class="pg-title">Noten hinzufügen</div>
+
 <div class="main-container-large">
     <div class="upload-card">
 
-        <div class="file-zone @(selectedFile != null ? "file-zone-ok" : "")">
-            <InputFile OnChange="OnFileSelected" accept=".pdf" id="pdf-input" />
-            <label for="pdf-input" class="file-zone-label">
-                @if (selectedFile != null)
-                {
-                    <span class="file-chosen">📄 @selectedFile.Name</span>
-                }
-                else
-                {
+        @* File picker *@
+        <div class="file-zone @(pickedFileName != null ? "file-zone-ok" : "")"
+             @onclick="PickFile">
+            @if (pickedFileName != null)
+            {
+                <div class="file-chosen-info">
+                    <span class="file-chosen-icon">&#x1F4C4;</span>
+                    <span class="file-chosen">@pickedFileName</span>
+                    <span class="file-size">@FormatSize(pickedFileSize)</span>
+                </div>
+            }
+            else
+            {
+                <div class="file-hint-inner">
+                    <span class="file-hint-icon">&#x2795;</span>
                     <span class="file-hint">PDF auswählen</span>
-                }
-            </label>
+                    <span class="file-hint-sub">Tippe, um eine Datei auszuwählen</span>
+                </div>
+            }
         </div>
 
         @if (fileError != null)
@@ -28,22 +37,66 @@
             <p class="field-error">@fileError</p>
         }
 
+        @* ── Basis ── *@
         <div class="form-group">
             <label class="field-label">Name *</label>
-            <input class="field-input" placeholder="Name der Note" @bind="sheet.Name" />
+            <input class="field-input" placeholder="Name der Noten" @bind="sheet.Name" />
         </div>
+
         <div class="form-group">
             <label class="field-label">Komponist</label>
-            <input class="field-input" placeholder="Komponist" @bind="sheet.Composer" />
+            <input class="field-input" placeholder="z.B. Ludwig van Beethoven" @bind="sheet.Composer" />
         </div>
+
         <div class="form-group">
             <label class="field-label">Stimme / Instrument</label>
-            <input class="field-input" placeholder="z.B. Geige, Klavier …" @bind="sheet.Part" />
+            <input class="field-input" placeholder="z.B. Geige, Klavier" @bind="sheet.Part" />
+        </div>
+
+        @* ── Details ── *@
+        <div class="edit-section-label">Details</div>
+
+        <div class="form-row-2">
+            <div class="form-group">
+                <label class="field-label">Genre</label>
+                <input class="field-input" placeholder="z.B. Klassik, Jazz" @bind="sheet.Genre" />
+            </div>
+            <div class="form-group">
+                <label class="field-label">Jahr</label>
+                <input class="field-input" placeholder="z.B. 1820" @bind="sheet.Year" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="field-label">Schwierigkeit</label>
+            <div class="seg-group">
+                <button class="seg-btn @(sheet.Difficulty==""?"seg-btn-on":"")"
+                        @onclick='()=>{ sheet.Difficulty = ""; }'>—</button>
+                <button class="seg-btn @(sheet.Difficulty=="beginner"?"seg-btn-on":"")"
+                        @onclick='()=>{ sheet.Difficulty = "beginner"; }'>Anfänger</button>
+                <button class="seg-btn @(sheet.Difficulty=="intermediate"?"seg-btn-on":"")"
+                        @onclick='()=>{ sheet.Difficulty = "intermediate"; }'>Mittel</button>
+                <button class="seg-btn @(sheet.Difficulty=="advanced"?"seg-btn-on":"")"
+                        @onclick='()=>{ sheet.Difficulty = "advanced"; }'>Fortg.</button>
+                <button class="seg-btn @(sheet.Difficulty=="expert"?"seg-btn-on":"")"
+                        @onclick='()=>{ sheet.Difficulty = "expert"; }'>Experte</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="field-label">Tags <span class="field-hint">(kommagetrennt)</span></label>
+            <input class="field-input" placeholder="z.B. Etüde, Übung" @bind="sheet.Tags" />
+        </div>
+
+        <div class="form-group">
+            <label class="field-label">Bemerkungen</label>
+            <textarea class="field-input field-textarea" @bind="sheet.Remarks"
+                      placeholder="Notizen, Übehinweise …" rows="3"></textarea>
         </div>
 
         <button class="submit-btn" @onclick="SaveSheet"
-                disabled="@(selectedFile == null || string.IsNullOrWhiteSpace(sheet.Name) || isUploading)">
-            @if (isUploading) { <span>Wird gespeichert…</span> }
+                disabled="@(pickedFilePath == null || string.IsNullOrWhiteSpace(sheet.Name) || isUploading)">
+            @if (isUploading) { <span>Wird gespeichert&#x2026;</span> }
             else              { <span>Hinzufügen</span> }
         </button>
 
@@ -51,21 +104,65 @@
 </div>
 
 @code {
+    [Inject] private IFilePickerService? FilePickerService { get; set; }
+
     private Sheet sheet = new();
-    private IBrowserFile? selectedFile;
+    private string? pickedFileName;
+    private string? pickedFilePath;
+    private long pickedFileSize;
     private string? fileError;
     private bool isUploading;
     private static readonly Random Rng = new();
     private const long MaxFileSize = 30L * 1024 * 1024;
 
-    private bool IsPdf(IBrowserFile f) =>
-        f.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ||
-        f.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase);
-
-    private void OnFileSelected(InputFileChangeEventArgs e)
+    private static string FormatSize(long bytes)
     {
-        selectedFile = e.File;
-        fileError = IsPdf(selectedFile) ? null : "Bitte eine PDF-Datei auswählen.";
+        if (bytes < 1024)       return $"{bytes} B";
+        if (bytes < 1024*1024)  return $"{bytes/1024.0:F1} KB";
+        return $"{bytes/(1024.0*1024):F1} MB";
+    }
+
+    private static string CleanFileName(string name)
+    {
+        var n = System.IO.Path.GetFileNameWithoutExtension(name);
+        n = n.Replace('_', ' ').Replace('-', ' ');
+        while (n.Contains("  ")) n = n.Replace("  ", " ");
+        return n.Trim();
+    }
+
+    private async Task PickFile()
+    {
+        if (FilePickerService == null) return;
+        fileError = null;
+
+        try
+        {
+            var result = await FilePickerService.PickPdfAsync();
+            if (result == null) return;
+
+            if (!result.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                fileError = "Bitte eine PDF-Datei auswählen.";
+                return;
+            }
+
+            if (result.Size > MaxFileSize)
+            {
+                fileError = "Datei zu groß (max. 30 MB).";
+                return;
+            }
+
+            pickedFileName = result.FileName;
+            pickedFilePath = result.FullPath;
+            pickedFileSize = result.Size;
+
+            if (string.IsNullOrWhiteSpace(sheet.Name))
+                sheet.Name = CleanFileName(result.FileName);
+        }
+        catch (Exception ex)
+        {
+            fileError = $"Datei konnte nicht ausgewählt werden: {ex.Message}";
+        }
     }
 
     private static string RandomName() =>
@@ -74,9 +171,7 @@
 
     private async Task SaveSheet()
     {
-        if (selectedFile == null || string.IsNullOrWhiteSpace(sheet.Name)) return;
-        if (!IsPdf(selectedFile)) { fileError = "Bitte eine PDF-Datei auswählen."; return; }
-        if (selectedFile.Size > MaxFileSize) { fileError = "Datei zu groß (max. 30 MB)."; return; }
+        if (pickedFilePath == null || string.IsNullOrWhiteSpace(sheet.Name)) return;
 
         isUploading = true;
         StateHasChanged();
@@ -84,12 +179,13 @@
         try
         {
             string fileName = RandomName() + ".pdf";
-            string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
+            string folder = SheetService.UploadFolder;
             Directory.CreateDirectory(folder);
-            string filePath = Path.Combine(folder, fileName);
+            string destPath = Path.Combine(folder, fileName);
 
-            using var fs = new FileStream(filePath, FileMode.Create);
-            await selectedFile.OpenReadStream(MaxFileSize).CopyToAsync(fs);
+            await using var source = new FileStream(pickedFilePath, FileMode.Open, FileAccess.Read);
+            await using var dest = new FileStream(destPath, FileMode.Create, FileAccess.Write);
+            await source.CopyToAsync(dest);
 
             sheet.FilePath = $"uploads/{fileName}";
             SheetService.AddSheets(sheet);

@@ -8,12 +8,59 @@
     <link rel="stylesheet" href="_content/BasicSheets.Shared/bootstrap/bootstrap.min.css" />
     <link rel="stylesheet" href="_content/BasicSheets.Shared/app.css" />
     <link rel="stylesheet" href="BasicSheets.Web.styles.css" />
+    <link rel="stylesheet" href="shared-scoped.css" />
     <link rel="icon" type="image/png" href="_content/BasicSheets.Shared/favicon.png" />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="@(new InteractiveServerRenderMode(prerender: false))" />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <div id="splash-screen" style="
+        position:fixed;inset:0;z-index:9999;
+        background:linear-gradient(145deg,#1e2a28 0%,#162224 50%,#1a2e2b 100%);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.25rem;
+        font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+        transition:opacity 0.4s ease;
+    ">
+        <div style="
+            width:4.5rem;height:4.5rem;border-radius:1.2rem;
+            background:linear-gradient(145deg,#6ba89e 0%,#4d8a80 60%,#345e58 100%);
+            display:flex;align-items:center;justify-content:center;
+            box-shadow:0 8px 32px rgba(77,138,128,0.35);
+        ">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:2.2rem;height:2.2rem;">
+                <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+            </svg>
+        </div>
+        <div style="color:rgba(255,255,255,0.92);font-size:1.5rem;font-weight:700;letter-spacing:-0.03em;">
+            BasicSheets
+        </div>
+        <div style="
+            width:2rem;height:2rem;margin-top:0.5rem;
+            border:2.5px solid rgba(147,191,183,0.15);
+            border-top-color:rgba(147,191,183,0.6);
+            border-radius:50%;
+            animation:splash-spin 0.75s linear infinite;
+        "></div>
+    </div>
+    <style>@@keyframes splash-spin { to { transform:rotate(360deg); } }</style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var check = setInterval(function() {
+                if (document.querySelector('.page') || document.querySelector('.vbg')) {
+                    clearInterval(check);
+                    var s = document.getElementById('splash-screen');
+                    if (s) { s.style.opacity = '0'; setTimeout(function() { s.remove(); }, 450); }
+                }
+            }, 100);
+            setTimeout(function() {
+                var s = document.getElementById('splash-screen');
+                if (s) { s.style.opacity = '0'; setTimeout(function() { s.remove(); }, 450); }
+            }, 8000);
+        });
+    </script>
+    <Routes @rendermode="@(new InteractiveServerRenderMode(prerender: false))" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="pdfViewer.js?v=2"></script>
     <script src="_framework/blazor.web.js"></script>
 </body>
 

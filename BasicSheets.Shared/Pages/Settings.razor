@@ -1,82 +1,128 @@
-﻿@page "/Settings"
+@page "/settings"
 @using BasicSheets.Shared.Services
-@using BasicSheets.Shared.Models;
-@inject SettingsService SettingsService;
+@using BasicSheets.Shared.Models
+@inject SettingsService SettingsService
+@inject IJSRuntime JS
 
-<PageTitle>Settings</PageTitle>
+<PageTitle>Einstellungen</PageTitle>
 
-<div class="search-container">
-    <input placeholder="Suche" @bind="searchText" @bind:event="oninput" />
-    <select @bind="selectedField">
-        <option value="all">Alle Felder</option>
-        <option value="Name">Name</option>
-        <option value="Description">Beschreibung</option>
-    </select>
-</div>
+<div class="pg-title">Einstellungen</div>
 
 <div class="main-container">
-    @foreach (Setting setting in settings)
-    {
-        <div class="setting">
-            <div class="information">
-                <h4>@setting.Name</h4>
-                <p>@setting.Description</p>
-            </div>
-            @if (setting.Type == "toggle")
-            {
-                <label class="switch">
-                    <input type="checkbox" @onclick="@(() => toggleSetting(setting))" checked="@(setting.Value.Equals("true"))">
-                    <span class="slider round"></span>
-                </label>
-            }
-        </div>
-    }
-    <div class="help-link">
-        <NavLink href="/help">Weitere Informationen und Anleitungen</NavLink>
-    </div>
+
+    @RenderSection("Darstellung", s => s.Name is "Dunkles Design" or "Stiftdicke" or "Stiftfarbe")
+    @RenderSection("Ansicht",     s => s.Name is "Seitenansicht" or "Viewer-Hintergrund" or "Seitenzahlen")
+    @RenderSection("Verhalten",   s => s.Name is "Start und End Hinweis" or "Toolbar automatisch ausblenden"
+                                    or "Letzte Seite merken" or "Seiten automatisch umblättern"
+                                    or "Seitenübergang animieren")
+    @RenderSection("Annotieren",  s => s.Name is "Standard-Notizwerkzeug")
+    @RenderSection("Gerät",       s => s.Name is "Bildschirm wach halten" or "Sortierung")
+    @RenderSection("Stift",       s => s.Name is "Stift: Bearbeitungsmodus")
+    @RenderSection("Gesten",      s => s.Name.StartsWith("Geste:"))
+
 </div>
 
 @code {
-    string searchText = "";
-    string selectedField = "all";
-
-    List<Setting> settings
+    private RenderFragment RenderSection(string title, Func<Setting, bool> filter) => builder =>
     {
-        get
-        {
-            List<Setting> settings = SettingsService.GetSettings();
+        var items = SettingsService.GetSettings().Where(filter).ToList();
+        if (items.Count == 0) return;
 
-            if (string.IsNullOrWhiteSpace(searchText))
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "settings-section");
+
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "settings-section-title");
+        builder.AddContent(4, title);
+        builder.CloseElement();
+
+        builder.OpenElement(5, "div");
+        builder.AddAttribute(6, "class", "settings-list");
+
+        int seq = 10;
+        foreach (var s in items)
+        {
+            var setting = s;
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "setting-card");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "setting-header");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "setting-info");
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "setting-name");
+            builder.AddContent(seq++, setting.Name);
+            builder.CloseElement();
+            if (!string.IsNullOrEmpty(setting.Description))
             {
-                return settings;
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "setting-desc");
+                builder.AddContent(seq++, setting.Description);
+                builder.CloseElement();
+            }
+            builder.CloseElement(); // setting-info
+
+            builder.CloseElement(); // setting-header
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "setting-ctrl");
+
+            if (setting.Type == "toggle")
+            {
+                builder.OpenElement(seq++, "label");
+                builder.AddAttribute(seq++, "class", "switch");
+                builder.OpenElement(seq++, "input");
+                builder.AddAttribute(seq++, "type", "checkbox");
+                builder.AddAttribute(seq++, "checked", setting.Value == "true");
+                builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => ToggleSetting(setting)));
+                builder.CloseElement();
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "slider");
+                builder.CloseElement();
+                builder.CloseElement(); // label
+            }
+            else if (setting.Type == "select" && setting.Options != null)
+            {
+                string groupCls = setting.Options.Count > 3 ? "seg-group seg-group-v" : "seg-group";
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", groupCls);
+                foreach (var opt in setting.Options)
+                {
+                    var parts = opt.Split('|', 2);
+                    var val   = parts[0];
+                    var lbl   = parts.Length > 1 ? parts[1] : parts[0];
+                    var capturedVal = val;
+                    builder.OpenElement(seq++, "button");
+                    builder.AddAttribute(seq++, "class", "seg-btn" + (setting.Value == val ? " seg-btn-on" : ""));
+                    builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => SelectSetting(setting, capturedVal)));
+                    builder.AddContent(seq++, lbl);
+                    builder.CloseElement();
+                }
+                builder.CloseElement(); // seg-group
             }
 
-            return settings.Where(s =>
-            {
-                if (selectedField == "all")
-                {
-                    return s.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)
-                    || s.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase);
-                }
-
-                var property = s.GetType().GetProperty(selectedField);
-                var value = property?.GetValue(s)?.ToString();
-
-                return value != null && value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
-
-            }).ToList();
+            builder.CloseElement(); // setting-ctrl
+            builder.CloseElement(); // setting-card
         }
+
+        builder.CloseElement(); // settings-list
+        builder.CloseElement(); // settings-section
+    };
+
+    private async Task ToggleSetting(Setting setting)
+    {
+        setting.Value = setting.Value == "true" ? "false" : "true";
+        SettingsService.SaveSettings();
+        if (setting.Name == "Dunkles Design")
+            await JS.InvokeVoidAsync("setDarkMode", setting.Value == "true");
     }
 
-    public void toggleSetting(Setting setting)
+    private void SelectSetting(Setting setting, string value)
     {
-        if (setting.Value.Equals("false"))
-        {
-            setting.Value = "true";
-        } else
-        {
-            setting.Value = "false";
-        }
+        setting.Value = value;
         SettingsService.SaveSettings();
     }
+
 }

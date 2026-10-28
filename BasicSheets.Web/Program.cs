@@ -1,4 +1,5 @@
 using BasicSheets.Shared.Services;
+using BasicSheets.Shared.Data;
 using BasicSheets.Web.Components;
 using BasicSheets.Web.Services;
 
@@ -8,8 +9,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+builder.Services.AddSignalR(o => o.MaximumReceiveMessageSize = 10 * 1024 * 1024);
+
 // Add device-specific services used by the BasicSheets.Shared project
 builder.Services.AddSingleton<IFormFactor, FormFactor>();
+builder.Services.AddSingleton<BasicSheetsDb>();
+builder.Services.AddSingleton<SheetService>();
+builder.Services.AddSingleton<SetlistService>();
+builder.Services.AddSingleton<CollectionService>();
+builder.Services.AddSingleton<ThumbnailService>();
+builder.Services.AddSingleton<SettingsService>();
+builder.Services.AddSingleton<BookmarkService>();
+builder.Services.AddSingleton<ViewerButtonService>();
 
 var app = builder.Build();
 

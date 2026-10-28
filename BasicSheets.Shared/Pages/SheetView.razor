@@ -1,278 +1,1006 @@
 @layout BasicSheets.Shared.Layout.MainLayoutClean
 @using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models
+@using System.Text.Json
 @page "/sheets/{file}"
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @inject SettingsService SettingsService
+@inject SheetService SheetService
+@inject BookmarkService BookmarkService
+@inject ThumbnailService ThumbnailService
 @implements IDisposable
 
-@if (showUi)
-{
-    <div class="viewer-header">
-        <button class="hdr-btn" @onclick="GoBack" title="Zurück">
-            <img src="/_content/BasicSheets.Shared/icons/arrow.svg" class="hdr-icon" />
-        </button>
+@* ── Full-screen viewer ───────────────────────────────────────────── *@
+<div class="vbg vbg-@viewerBg @(isEditMode ? "vbg-edit" : "")" @onclick="HandleClick">
+    @if (showStart) { <div class="vnotice"><p>Anfang des Stücks</p></div> }
+    @if (showEnd)   { <div class="vnotice"><p>Ende des Stücks</p></div>   }
+    @if (showError) { <div class="verror"><p>@errorMessage</p></div>       }
+    <div id="page-spinner" class="page-spinner" style="display:none">
+        <div class="spinner-ring"></div>
     </div>
+    <div id="viewer">
+        <canvas id="pdfCanvas"></canvas>
+        <canvas id="markerCanvas"></canvas>
+        <canvas id="noteCanvas"></canvas>
+    </div>
+</div>
 
-    @if (pageCount > 1)
+@* ── Header ───────────────────────────────────────────────────────── *@
+<div id="vhdr" class="vhdr @(showUi || isEditMode ? "" : "vhdr-hidden")">
+
+    @if (!isEditMode)
     {
-        <div class="slider-bar">
-            <span class="page-label">@currentPage / @pageCount</span>
-            <input type="range" min="1" max="@pageCount" @bind="currentPage" @oninput="OnSlider" class="range" />
+        @* Back *@
+        <button class="vhdr-btn" @onclick="GoBack" title="Zurück">
+            <img src="/_content/BasicSheets.Shared/icons/arrow.svg" class="vhdr-icon" />
+        </button>
+
+        @* Settings *@
+        <button class="vhdr-btn @(showQuickPanel && quickPanelTab == 0 ? "vhdr-btn-active" : "")"
+                @onclick="() => ToggleQuickPanel(0)"
+                title="Einstellungen">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                 class="vhdr-icon">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+            </svg>
+        </button>
+
+        @* Bookmark shortcut *@
+        <button class="vhdr-btn @(showQuickPanel && quickPanelTab == 1 ? "vhdr-btn-active" : "")"
+                @onclick="() => ToggleQuickPanel(1)" title="Lesezeichen">
+            <img src="/_content/BasicSheets.Shared/icons/bookmark.svg" class="vhdr-icon" />
+        </button>
+
+        @* Page mode button *@
+        <button class="vhdr-btn @(sheetModeOverride != null ? "vhdr-btn-active" : "")"
+                @onclick="ToggleModeDropdown"
+                title="Seitenansicht (@GetModeName())">
+            <span class="vhdr-mode-sym">@GetModeSym()</span>
+        </button>
+    }
+
+    @* Page slider / edit-mode nav *@
+    @if (isEditMode && pageCount > 1 && !IsScrollMode)
+    {
+        <div class="vhdr-editnav">
+            <button class="vhdr-nav-btn" @onclick="EditPrev" disabled="@(currentPage <= 1)" title="Vorherige Seite">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round" class="vhdr-nav-ico">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+            </button>
+            <span class="vhdr-lbl">@currentPage&thinsp;/&thinsp;@pageCount</span>
+            <button class="vhdr-nav-btn" @onclick="EditNext" disabled="@(currentPage >= pageCount)" title="Nächste Seite">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round" class="vhdr-nav-ico">
+                    <polyline points="9 18 15 12 9 6"/>
+                </svg>
+            </button>
         </div>
     }
-}
+    else
+    {
+        <div class="vhdr-flex"></div>
+    }
 
-@if (showUi && !isEditMode)
+    @* Edit toggle *@
+    <button class="vhdr-btn @(isEditMode ? "vhdr-btn-done" : "")"
+            @onclick="TakeNotes"
+            title="@(isEditMode ? "Fertig" : "Annotieren")">
+        <img src="@(isEditMode
+                    ? "/_content/BasicSheets.Shared/icons/cancel.svg"
+                    : "/_content/BasicSheets.Shared/icons/edit.svg")"
+             class="vhdr-icon" />
+    </button>
+</div>
+
+@* ── Bottom page slider (Seiten-Blättern) ───────────────────────────── *@
+@if (!isEditMode && pageCount > 1 && !IsScrollMode)
 {
-    <div class="viewer-header-right">
-        <button class="hdr-btn" @onclick="TakeNotes" title="Annotieren">
-            <img src="/_content/BasicSheets.Shared/icons/edit.svg" class="hdr-icon" />
-        </button>
+    <div id="vbottom" class="vbottom @(showUi ? "" : "vbottom-hidden")">
+        <input type="range" min="1" max="@pageCount"
+               @bind="currentPage" @oninput="OnSlider"
+               class="vbottom-range" style="--p:@(PagePercent)%" />
+        <span class="vbottom-page">@currentPage<span class="vbottom-sep">/</span>@pageCount</span>
     </div>
 }
-else if (isEditMode)
+
+@* ── Edit tool palette (floating + draggable) ───────────────────────── *@
+@if (isEditMode)
 {
-    <div class="viewer-header-right">
-        <button class="hdr-btn hdr-btn-cancel" @onclick="TakeNotes" title="Fertig">
-            <img src="/_content/BasicSheets.Shared/icons/cancel.svg" class="hdr-icon" />
-        </button>
-    </div>
+    <div id="spanel" class="spanel @(panelCollapsed ? "spanel-collapsed" : "")"
+         style="top:@(panelTop)px; left:@(panelLeft)px"
+         @onclick:stopPropagation="true">
 
-    <div class="annotation-toolbar">
-        <div class="tool-row">
-            <button class="@ToolClass("pen")" @onclick='() => SetTool("pen")' title="Stift">
-                <img src="/_content/BasicSheets.Shared/icons/pen.svg" class="tbr-icon @(activeTool == "pen" ? "tbr-icon-active" : "")" />
-            </button>
-            <button class="@ToolClass("marker")" @onclick='() => SetTool("marker")' title="Marker">
-                <img src="/_content/BasicSheets.Shared/icons/marker.svg" class="tbr-icon @(activeTool == "marker" ? "tbr-icon-active" : "")" />
-            </button>
-            <button class="@ToolClass("eraser")" @onclick='() => SetTool("eraser")' title="Radierer">
-                <img src="/_content/BasicSheets.Shared/icons/eraser.svg" class="tbr-icon @(activeTool == "eraser" ? "tbr-icon-active" : "")" />
-            </button>
-            <button class="@ToolClass("text")" @onclick='() => SetTool("text")' title="Text">
-                <span class="tbr-symbol">T</span>
-            </button>
+        @* Header = drag + tap-to-toggle: tippen klappt ein/aus, ziehen verschiebt *@
+        <div id="spanel-drag" class="spanel-head"
+             title="@(panelCollapsed ? "Antippen zum Ausklappen · ziehen zum Verschieben" : "Antippen zum Einklappen · ziehen zum Verschieben")">
+            <span class="spanel-grip-bar"></span>
+            <svg class="spanel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 15 12 9 18 15"/>
+            </svg>
+        </div>
 
-            <div class="tool-divider"></div>
-
-            <button class="@ToolClass("flat")" @onclick='() => SetTool("flat")' title="Be">
-                <span class="tbr-symbol music">♭</span>
+      @if (!panelCollapsed)
+      {
+        @* Tools (wrapping grid) *@
+        <div class="sp-tools-strip">
+            <button class="@ET("pen")" @onclick='()=>SetTool("pen")' title="Stift">
+                <img src="/_content/BasicSheets.Shared/icons/pen.svg"
+                     class="eticon @(activeTool=="pen"?"eticon-on":"")" />
             </button>
-            <button class="@ToolClass("sharp")" @onclick='() => SetTool("sharp")' title="Kreuz">
-                <span class="tbr-symbol music">♯</span>
+            <button class="@ET("marker")" @onclick='()=>SetTool("marker")' title="Marker">
+                <img src="/_content/BasicSheets.Shared/icons/marker.svg"
+                     class="eticon @(activeTool=="marker"?"eticon-on":"")" />
             </button>
-            <button class="@ToolClass("natural")" @onclick='() => SetTool("natural")' title="Auflösung">
-                <span class="tbr-symbol music">♮</span>
+            <button class="@ET("eraser")" @onclick='()=>SetTool("eraser")' title="Radierer">
+                <img src="/_content/BasicSheets.Shared/icons/eraser.svg"
+                     class="eticon @(activeTool=="eraser"?"eticon-on":"")" />
             </button>
-            <button class="@ToolClass("double-flat")" @onclick='() => SetTool("double-flat")' title="Doppel-Be">
-                <span class="tbr-symbol music sm">𝄫</span>
+            <button class="@ET("text")" @onclick='()=>SetTool("text")' title="Text">
+                <span class="etsym">T</span>
             </button>
-            <button class="@ToolClass("double-sharp")" @onclick='() => SetTool("double-sharp")' title="Doppel-Kreuz">
-                <span class="tbr-symbol music sm">𝄪</span>
-            </button>
-            <button class="@ToolClass("fermata")" @onclick='() => SetTool("fermata")' title="Fermate">
-                <span class="tbr-symbol music sm">𝄐</span>
-            </button>
-            <button class="@ToolClass("trill")" @onclick='() => SetTool("trill")' title="Triller">
-                <span class="tbr-symbol sm">tr</span>
+            <button class="@ET("move")" @onclick='()=>SetTool("move")' title="Verschieben">
+                <img src="/_content/BasicSheets.Shared/icons/move.svg"
+                     class="eticon @(activeTool=="move"?"eticon-on":"")" />
             </button>
 
-            <div class="tool-divider"></div>
+            <span class="et-sep"></span>
 
-            <button class="@ToolClass("crescendo")" @onclick='() => SetTool("crescendo")' title="Crescendo (ziehen)">
-                <img src="/_content/BasicSheets.Shared/icons/crescendo.svg" class="tbr-icon @(activeTool == "crescendo" ? "tbr-icon-active" : "")" />
-            </button>
-            <button class="@ToolClass("decrescendo")" @onclick='() => SetTool("decrescendo")' title="Decrescendo (ziehen)">
-                <img src="/_content/BasicSheets.Shared/icons/decrescendo.svg" class="tbr-icon @(activeTool == "decrescendo" ? "tbr-icon-active" : "")" />
+            <button class="et-tool @(IsStampActive ? "et-tool-on" : "")" @onclick="OpenStampPicker" title="Stempel">
+                <span class="etsym music sm @(CurrentStampIsDyn ? "etsym-dyn" : "")">@CurrentStampSym</span>
             </button>
 
-            <div class="tool-divider"></div>
+            <span class="et-sep"></span>
 
-            <button class="tool-btn action-btn" @onclick="Undo" title="Rückgängig">
-                <img src="/_content/BasicSheets.Shared/icons/arrow.svg" class="tbr-icon" />
+            <button class="@ET("crescendo")" @onclick='()=>SetTool("crescendo")' title="Crescendo">
+                <img src="/_content/BasicSheets.Shared/icons/crescendo.svg"
+                     class="eticon @(activeTool=="crescendo"?"eticon-on":"")" />
             </button>
-            <button class="tool-btn action-btn redo-btn" @onclick="Redo" title="Wiederholen">
-                <img src="/_content/BasicSheets.Shared/icons/arrow.svg" class="tbr-icon" />
-            </button>
-            <button class="tool-btn action-btn" @onclick="ClearPage" title="Seite löschen">
-                <img src="/_content/BasicSheets.Shared/icons/delete.svg" class="tbr-icon" />
+            <button class="@ET("decrescendo")" @onclick='()=>SetTool("decrescendo")' title="Decrescendo">
+                <img src="/_content/BasicSheets.Shared/icons/decrescendo.svg"
+                     class="eticon @(activeTool=="decrescendo"?"eticon-on":"")" />
             </button>
         </div>
 
-        <div class="options-row">
-            <div class="color-picker">
-                @foreach (var c in PenColors)
+        @* Options row *@
+        <div class="sp-opts-row">
+            <button class="et-color-btn" @onclick="OpenColorPicker">
+                <span class="et-color-dot" style="background:@activeColor"></span>
+            </button>
+
+            @if (!IsNoSizeTool)
+            {
+                <input type="range" min="1" max="20" value="@ActiveSize"
+                       class="et-range" @oninput="OnSizeSlider" />
+                <span class="et-size-val">@ActiveSize</span>
+            }
+
+            <div class="et-flex"></div>
+
+            <button class="et-act" @onclick="Undo" title="Rückgängig">
+                <img src="/_content/BasicSheets.Shared/icons/undo.svg" class="eticon" />
+            </button>
+            <button class="et-act" @onclick="Redo" title="Wiederholen">
+                <img src="/_content/BasicSheets.Shared/icons/redo.svg" class="eticon" />
+            </button>
+            <button class="et-act" @onclick="ClearPage" title="Seite leeren">
+                <img src="/_content/BasicSheets.Shared/icons/delete.svg" class="eticon" />
+            </button>
+        </div>
+      }
+    </div>
+}
+
+@* ── Mode dropdown ────────────────────────────────────────────────── *@
+@if (showModeDropdown)
+{
+    <div class="mdrop-bg" @onclick="CloseModeDropdown">
+        <div class="mdrop-box" @onclick:stopPropagation="true">
+            <div class="mdrop-hdr">
+                <span class="mdrop-title">Seitenansicht</span>
+                @if (sheetModeOverride != null)
                 {
-                    <button class="color-swatch @(activeColor == c ? "color-swatch-active" : "")"
-                            style="background:@c" @onclick="() => SetColor(c)"></button>
+                    <span class="mdrop-sub">Dieses Stück</span>
                 }
             </div>
-
-            @if (!IsStampTool)
+            @foreach (var m in ModeOptions)
             {
-                <div class="size-picker">
-                    <button class="size-btn @(activeSize == 1 ? "size-active" : "")" @onclick='() => SetSize(1)'>S</button>
-                    <button class="size-btn @(activeSize == 2 ? "size-active" : "")" @onclick='() => SetSize(2)'>M</button>
-                    <button class="size-btn @(activeSize == 3 ? "size-active" : "")" @onclick='() => SetSize(3)'>L</button>
-                </div>
+                bool active = sheetModeOverride == m.Key;
+                <button class="mdrop-item @(active ? "mdrop-item-on" : "")"
+                        @onclick="() => SetSheetMode(m.Key)">
+                    <span class="mdrop-sym">@m.Sym</span>
+                    <div class="mdrop-info">
+                        <span class="mdrop-lbl">@m.Label</span>
+                        <span class="mdrop-desc">@m.Desc</span>
+                    </div>
+                    @if (active) { <span class="mdrop-check">✓</span> }
+                </button>
             }
         </div>
     </div>
 }
 
-@if (showTextInput)
+@* ── Color picker popup ───────────────────────────────────────────── *@
+@if (showColorPicker)
 {
-    <div class="text-overlay" @onclick="CancelText">
-        <div class="text-box" style="left:@(ClampX(textScreenX))px; top:@(ClampY(textScreenY))px"
-             @onclick:stopPropagation="true">
-            <input @bind="textValue" @bind:event="oninput"
-                   placeholder="Text eingeben…"
-                   @onkeydown="OnTextKey"
-                   autofocus />
-            <button class="text-ok" @onclick="ConfirmText">✓</button>
+    <div class="cpick-bg" @onclick="CloseColorPicker">
+        <div class="cpick-box" @onclick:stopPropagation="true">
+
+            <div class="cpick-hdr">
+                <span class="cpick-title">Farbe</span>
+                <button class="cpick-edit-toggle" @onclick="ToggleColorEditMode">
+                    @(colorEditMode ? "Fertig" : "Bearbeiten")
+                </button>
+            </div>
+
+            <div class="cpick-grid">
+                @for (int i = 0; i < allColors.Count; i++)
+                {
+                    int idx = i;
+                    var c   = allColors[i];
+                    <button class="cpick-item @(activeColor==c[0] && !colorEditMode ? "cpick-item-on" : "")"
+                            @onclick="() => OnColorItemClick(idx)">
+                        <span class="cpick-dot" style="background:@c[0]">
+                            @if (!colorEditMode && activeColor == c[0])
+                            {
+                                <span class="cpick-check">✓</span>
+                            }
+                            @if (colorEditMode)
+                            {
+                                <span class="cpick-pencil">✎</span>
+                            }
+                        </span>
+                        <span class="cpick-nm">@(string.IsNullOrEmpty(c[1]) ? "—" : c[1])</span>
+                    </button>
+                }
+
+                @if (colorEditMode)
+                {
+                    <button class="cpick-item cpick-add-item" @onclick="StartAddColor">
+                        <span class="cpick-dot cpick-dot-add">+</span>
+                        <span class="cpick-nm">Neu</span>
+                    </button>
+                }
+            </div>
+
+            @if (editColorIdx >= 0)
+            {
+                <div class="cpick-form">
+                    <div class="cpick-form-row">
+                        <input type="color" class="cpick-picker" @bind="editColorHex" @bind:event="oninput" />
+                        <input type="text" class="field-input cpick-name-inp"
+                               placeholder="Name (z.B. Wiederholung)"
+                               @bind="editColorName" @bind:event="oninput" />
+                    </div>
+                    <div class="cpick-form-btns">
+                        @if (editColorIdx < allColors.Count)
+                        {
+                            <button class="cpick-del-btn" @onclick="DeleteEditingColor">Löschen</button>
+                        }
+                        <button class="submit-btn cpick-save-btn" @onclick="SaveEditingColor">Speichern</button>
+                    </div>
+                </div>
+            }
+
         </div>
     </div>
 }
 
-<div class="viewer-page" @onclick="HandleClick">
-    @if (showStart) { <div class="show-info"><p>Anfang des Stücks</p></div> }
-    @if (showEnd)   { <div class="show-info"><p>Ende des Stücks</p></div> }
-    @if (showError)
-    {
-        <div class="error-message"><p>@errorMessage</p></div>
-    }
-    else
-    {
-        <div id="viewer">
-            <canvas id="noteCanvas"></canvas>
-            <canvas id="pdfCanvas"></canvas>
+@* ── Stamp picker popup ───────────────────────────────────────────── *@
+@if (showStampPicker)
+{
+    <div class="cpick-bg" @onclick="() => showStampPicker = false">
+        <div class="cpick-box" @onclick:stopPropagation="true">
+            <div class="cpick-hdr">
+                <span class="cpick-title">Stempel</span>
+            </div>
+            <div class="stamp-grid">
+                @foreach (var st in AllStamps)
+                {
+                    var s = st;
+                    <button class="stamp-item @(activeTool == s.Key ? "stamp-item-on" : "")"
+                            @onclick="async () => await PickStamp(s.Key)">
+                        <span class="stamp-sym @(s.Key.StartsWith("dyn-") ? "stamp-dyn" : "")">@s.Sym</span>
+                        <span class="stamp-nm">@s.Label</span>
+                    </button>
+                }
+            </div>
         </div>
-    }
-</div>
+    </div>
+}
+
+@* ── Text-input overlay ───────────────────────────────────────────── *@
+@if (showTextInput)
+{
+    <div class="vtxt-bg" @onclick="CancelText">
+        <div class="vtxt-box"
+             style="left:@(ClampX(textScreenX))px;top:@(ClampY(textScreenY))px"
+             @onclick:stopPropagation="true">
+            <input @bind="textValue" @bind:event="oninput"
+                   placeholder="Text eingeben..."
+                   @onkeydown="OnTextKey" autofocus />
+            <button class="vtxt-ok" @onclick="ConfirmText">&#x2713;</button>
+        </div>
+    </div>
+}
+
+@* ── Bookmark dialog ──────────────────────────────────────────────── *@
+@if (showBookmarkDialog)
+{
+    <div class="cpick-bg" @onclick="CancelBookmark">
+        <div class="cpick-box" @onclick:stopPropagation="true" style="padding:1rem">
+            <div class="cpick-hdr">
+                <span class="cpick-title">Lesezeichen – Seite @currentPage</span>
+                @if (existingBookmark != null)
+                {
+                    <button class="cpick-edit-toggle" style="color:var(--c-danger)" @onclick="RemoveBookmark">Entfernen</button>
+                }
+            </div>
+            <div class="form-group" style="margin-top:0.75rem">
+                <label class="field-label">Bezeichnung</label>
+                <input class="field-input" placeholder="z.B. Verse 1, Chorus…"
+                       @bind="bookmarkLabel" @bind:event="oninput" autofocus />
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+                @foreach (var col in new[]{"#4d8a80","#E53935","#FB8C00","#43A047","#1E88E5","#8E24AA"})
+                {
+                    var c = col;
+                    <button style="width:2rem;height:2rem;border-radius:50%;background:@c;border:@(bookmarkColor==c?"3px solid white":"2px solid transparent");box-shadow:@(bookmarkColor==c?"0 0 0 2px var(--c-primary)":"none");cursor:pointer"
+                            @onclick="() => bookmarkColor = c"></button>
+                }
+            </div>
+            <button class="submit-btn" style="margin-top:0.85rem" @onclick="SaveBookmark">Speichern</button>
+        </div>
+    </div>
+}
+
+@* ── Quick panel (bottom drawer) ─────────────────────────────────── *@
+@if (showQuickPanel)
+{
+    <div class="qp-bg" @onclick="() => showQuickPanel = false">
+        <div class="qp-box" @onclick:stopPropagation="true">
+
+            <div class="qp-tabs">
+                <button class="qp-tab @(quickPanelTab==0?"qp-tab-on":"")" @onclick="() => quickPanelTab = 0">
+                    Einstellungen
+                </button>
+                <button class="qp-tab @(quickPanelTab==1?"qp-tab-on":"")" @onclick="() => quickPanelTab = 1">
+                    Lesezeichen
+                </button>
+            </div>
+
+            @if (quickPanelTab == 0)
+            {
+                <div class="qp-body">
+                    <div class="qp-row">
+                        <span class="qp-label">Ansicht</span>
+                        <div class="seg-group" style="flex:1">
+                            @foreach (var m in ModeOptions.Where(m => m.Key != null))
+                            {
+                                var mk = m;
+                                <button class="seg-btn @(sheetModeOverride==mk.Key?"seg-btn-on":"")"
+                                        @onclick="async () => await SetSheetMode(mk.Key)"
+                                        title="@mk.Label">
+                                    @mk.Sym
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="qp-row">
+                        <span class="qp-label">Hintergrund</span>
+                        <div class="seg-group">
+                            <button class="seg-btn @(viewerBg=="dark"?"seg-btn-on":"")"  @onclick='()=>SetViewerBg("dark")'> Dunkel</button>
+                            <button class="seg-btn @(viewerBg=="gray"?"seg-btn-on":"")"  @onclick='()=>SetViewerBg("gray")'> Grau</button>
+                            <button class="seg-btn @(viewerBg=="white"?"seg-btn-on":"")" @onclick='()=>SetViewerBg("white")'>Hell</button>
+                        </div>
+                    </div>
+
+                    @{
+                        var autoTurnSetting = SettingsService.GetSettings().FirstOrDefault(s => s.Name == "Seiten automatisch umblättern");
+                    }
+                    @if (autoTurnSetting != null)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Auto-Blättern</span>
+                            <div class="seg-group">
+                                @foreach (var opt in autoTurnSetting.Options ?? new())
+                                {
+                                    var parts = opt.Split('|', 2);
+                                    var v = parts[0]; var l = parts.Length > 1 ? parts[1] : v;
+                                    var cv = v;
+                                    <button class="seg-btn @(autoTurnSetting.Value==cv?"seg-btn-on":"")"
+                                            @onclick="() => { autoTurnSetting.Value = cv; SettingsService.SaveSettings(); StopAutoPageTurn(); StartAutoPageTurn(); }">
+                                        @l
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @{
+                        var screenOnSetting = SettingsService.GetSettings().FirstOrDefault(s => s.Name == "Bildschirm wach halten");
+                    }
+                    @if (screenOnSetting != null)
+                    {
+                        var son = screenOnSetting;
+                        <div class="qp-row">
+                            <span class="qp-label">Bildschirm</span>
+                            <label class="switch">
+                                <input type="checkbox" checked="@(son.Value=="true")"
+                                       @onclick="() => ToggleScreenOn(son)" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="qp-body">
+                    @{
+                        var pdfBookmarks = BookmarkService.GetForFile(file ?? "");
+                    }
+                    @if (pdfBookmarks.Count == 0)
+                    {
+                        <div class="empty-state" style="padding:1.5rem 0">
+                            <p class="empty-title" style="font-size:0.85rem">Keine Lesezeichen</p>
+                            <p class="empty-sub">Lang drücken um ein Lesezeichen zu setzen</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var bm in pdfBookmarks)
+                        {
+                            <div class="qp-bm-item" @onclick="async () => await JumpToBookmark(bm)">
+                                <div class="bookmark-dot" style="background:@bm.Color"></div>
+                                <div style="flex:1;min-width:0">
+                                    <div class="qp-bm-title">@(string.IsNullOrEmpty(bm.Label) ? $"Seite {bm.Page}" : bm.Label)</div>
+                                    <div class="qp-bm-sub">Seite @bm.Page</div>
+                                </div>
+                                <button class="vbtn-del" @onclick:stopPropagation="true" @onclick="() => { BookmarkService.Remove(bm.Id); RefreshPageBookmark(); StateHasChanged(); }" title="Löschen">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                                </button>
+                            </div>
+                        }
+                    }
+                    <button class="add-btn" style="margin-top:0.5rem"
+                            @onclick="() => { showQuickPanel = false; OpenBookmarkDialog(); }">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Lesezeichen hinzufügen
+                    </button>
+                </div>
+            }
+
+        </div>
+    </div>
+}
 
 @code {
     [Parameter] public string? file { get; set; }
 
-    private int currentPage = 1;
-    private int pageCount = 1;
-    private bool showUi = true;
-    private bool showStart, showEnd, showError;
+    // ── Viewer state ────────────────────────────────────────────────────
+    private int  currentPage = 1, pageCount = 1, totalPages = 1;
+    private bool showUi = true, showStart, showEnd, showError;
     private string errorMessage = "";
-    private bool isEditMode;
-    private bool enableHandleClick = true;
+    private bool isEditMode, enableHandleClick = true;
+    private string viewerBg = "dark";
 
-    private string activeTool = "pen";
+    // ── Quick panel ─────────────────────────────────────────────────────
+    private bool showQuickPanel = false;
+    private int  quickPanelTab  = 0;
+
+    // ── Tools ────────────────────────────────────────────────────────────
+    private string activeTool  = "pen";
     private string activeColor = "#000000";
-    private int activeSize = 2;
+    private string activeStamp = "flat";   // last-picked stamp (shown on the stamp button)
 
-    private bool showTextInput;
+    private Dictionary<string, int>    toolSizes  = new();
+    private Dictionary<string, string> toolColors = new();
+    private static readonly Dictionary<string, int> ToolDefaultSizes = new()
+    {
+        ["pen"]         = 4,
+        ["marker"]      = 7,
+        ["eraser"]      = 8,
+        ["text"]        = 5,
+        ["crescendo"]   = 4,
+        ["decrescendo"] = 4,
+    };
+    private int ActiveSize => toolSizes.TryGetValue(activeTool, out var s) ? s : ToolDefaultSizes.GetValueOrDefault(activeTool, 5);
+
+    // ── Text overlay ─────────────────────────────────────────────────────
+    private bool   showTextInput;
     private double textCanvasX, textCanvasY, textScreenX, textScreenY;
     private string textValue = "";
 
+    // ── Color system ─────────────────────────────────────────────────────
+    private List<string[]> allColors = new();
+    private bool showColorPicker  = false;
+    private bool showStampPicker  = false;
+    private bool colorEditMode    = false;
+    private int  editColorIdx     = -1;
+    private string editColorHex  = "#FF6B35";
+    private string editColorName = "";
+
+    private static readonly List<string[]> DefaultColors =
+    [
+        ["#000000", "Schwarz"],
+        ["#E53935", "Rot"],
+        ["#1E88E5", "Blau"],
+        ["#43A047", "Grün"],
+        ["#FB8C00", "Orange"],
+        ["#8E24AA", "Lila"],
+    ];
+
+    // ── Page mode ────────────────────────────────────────────────────────
+    private Sheet?  currentSheet      = null;
+    private string? sheetModeOverride = null;
+    private string  effectiveMode     = "single";
+    private bool    showModeDropdown  = false;
+    private record ModeOption(string? Key, string Label, string Sym, string Desc);
+    private static readonly ModeOption[] ModeOptions =
+    [
+        new(null,         "Standard",             "·",  "Verwendet die globale Einstellung"),
+        new("single",     "Einzelne Seite",       "1",  "Eine Seite gleichzeitig anzeigen"),
+        new("two",        "Zwei Seiten",          "II", "Zwei Seiten nebeneinander"),
+        new("half-turn",  "Halbe Seite",          "½",  "Ganze Seite, blättert zur Hälfte"),
+        new("scroll-v",   "Vertikal scrollen",    "↕",  "Alle Seiten untereinander – durchscrollen"),
+    ];
+
+    // ── Auto page turn ───────────────────────────────────────────────────
+    private System.Threading.CancellationTokenSource? _autoTurnCts;
+
+    // ── Auto-hide toolbar ────────────────────────────────────────────────
+    private System.Threading.CancellationTokenSource? _autoHideCts;
+
+    // ── Bookmarks ────────────────────────────────────────────────────────
+    private Bookmark? pageBookmark;
+    private bool showBookmarkDialog;
+    private string bookmarkLabel = "";
+    private string bookmarkColor = "#4d8a80";
+    private Bookmark? existingBookmark;
+
+    // ── Floating tool palette ─────────────────────────────────────────────
+    private int  panelTop = 120, panelLeft = 0;
+    private bool panelCollapsed = false;
+    private bool _needPanelClamp = false;
+
+    // ── Chrome (top header / bottom slider) inset tracking ────────────────
+    private bool _chromeInit = false, _lastTopVis = false, _lastBotVis = false;
+
+    // ── Ref ──────────────────────────────────────────────────────────────
     private DotNetObjectReference<SheetView>? _ref;
 
-    private static readonly string[] PenColors = { "#000000", "#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA" };
-    private static readonly string[] StampTools = { "flat", "sharp", "natural", "double-flat", "double-sharp", "fermata", "trill", "segno", "coda", "text" };
-    private static readonly int[] SizeMap = { 1, 3, 6 };
+    // ── Stamps (music symbols + dynamics) ─────────────────────────────────
+    private record StampDef(string Key, string Sym, string Label);
+    private static readonly StampDef[] AllStamps =
+    [
+        new("flat","♭","Be"),
+        new("sharp","♯","Kreuz"),
+        new("natural","♮","Auflösung"),
+        new("double-flat","𝄫","Doppel-Be"),
+        new("double-sharp","𝄪","Doppel-Kreuz"),
+        new("fermata","𝄐","Fermate"),
+        new("trill","tr","Triller"),
+        new("segno","𝄋","Segno"),
+        new("coda","𝄌","Coda"),
+        new("dyn-ppp","ppp","Pianississimo"),
+        new("dyn-pp","pp","Pianissimo"),
+        new("dyn-p","p","Piano"),
+        new("dyn-mp","mp","Mezzopiano"),
+        new("dyn-mf","mf","Mezzoforte"),
+        new("dyn-f","f","Forte"),
+        new("dyn-ff","ff","Fortissimo"),
+        new("dyn-fff","fff","Fortississimo"),
+        new("dyn-sf","sf","Sforzato"),
+        new("dyn-sfz","sfz","Sforzando"),
+        new("dyn-fp","fp","Fortepiano"),
+    ];
 
-    private bool IsStampTool => StampTools.Contains(activeTool);
-    private string ToolClass(string t) => "tool-btn" + (activeTool == t ? " tool-active" : "");
-    private double ClampX(double x) => Math.Max(4, Math.Min(x, 260));
-    private double ClampY(double y) => Math.Max(4, Math.Min(y, 500));
+    // ── Tool helpers ─────────────────────────────────────────────────────
+    private bool   IsStampActive     => AllStamps.Any(s => s.Key == activeTool);
+    private bool   CurrentStampIsDyn => activeStamp.StartsWith("dyn-");
+    private string CurrentStampSym   => AllStamps.FirstOrDefault(s => s.Key == activeStamp)?.Sym ?? "♭";
+    private bool   IsNoSizeTool      => activeTool == "move" || IsStampActive;
+    private bool   IsScrollMode   => effectiveMode == "scroll-v";
+    private bool   IsHalfTurnMode => effectiveMode == "half-turn";
+    private int    PagePercent    => pageCount > 1 ? (int)Math.Round((currentPage - 1) * 100.0 / (pageCount - 1)) : 0;
+    private string ET(string t) => "et-tool" + (activeTool == t ? " et-tool-on" : "");
+    private double ClampX(double x) => Math.Max(4,  Math.Min(x, 260));
+    private double ClampY(double y) => Math.Max(60, Math.Min(y, 500));
 
+    // ── Mode helpers ─────────────────────────────────────────────────────
+    private string GetModeSym() => effectiveMode switch
+    {
+        "two"       => "II",
+        "half-turn" => "½",
+        "scroll-v"  => "↕",
+        _           => "1"
+    };
+    private string GetModeName() => effectiveMode switch
+    {
+        "two"       => "Zwei Seiten",
+        "half-turn" => "Halbe Seite",
+        "scroll-v"  => "Vertikal scrollen",
+        _           => "Einzelne Seite"
+    };
+
+    // ── Init ─────────────────────────────────────────────────────────────
     protected override async Task OnAfterRenderAsync(bool first)
     {
-        if (!first) return;
+        if (!first)
+        {
+            if (_needPanelClamp)
+            {
+                _needPanelClamp = false;
+                try { await JS.InvokeVoidAsync("clampPanelIntoView"); } catch { }
+            }
+            bool topVis = showUi || isEditMode;
+            bool botVis = showUi && !isEditMode && pageCount > 1 && !IsScrollMode;
+            if (!_chromeInit || topVis != _lastTopVis || botVis != _lastBotVis)
+            {
+                _chromeInit = true; _lastTopVis = topVis; _lastBotVis = botVis;
+                try { await JS.InvokeVoidAsync("updateChromeInsets", topVis, botVis); } catch { }
+            }
+            return;
+        }
+
+        if (string.IsNullOrEmpty(file))
+        {
+            ShowErrorMessage("Keine Datei angegeben.");
+            return;
+        }
 
         _ref = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("setPdfDotNetRef", _ref);
-        await JS.InvokeVoidAsync("initCanvas", "pdfCanvas", "noteCanvas");
+        viewerBg = SettingsService.GetViewerBackground();
+
+        await LoadColorsAsync();
+        await LoadToolStatesAsync();
+
+        currentSheet      = SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == file);
+        sheetModeOverride = currentSheet?.PageMode;
+        if (sheetModeOverride is "half" or "auto" or "scroll-h")
+            sheetModeOverride = null;
+        effectiveMode     = sheetModeOverride ?? SettingsService.GetPageMode();
 
         try
         {
-            string filePath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads", file!);
-            byte[] pdfBytes = await File.ReadAllBytesAsync(filePath);
-
-            if (SettingsService.TwoPageLayout())
-            {
-                pageCount = await JS.InvokeAsync<int>("loadPdfData", file, pdfBytes) - 1;
-                await JS.InvokeVoidAsync("renderTwoPage", 1);
-            }
-            else
-            {
-                pageCount = await JS.InvokeAsync<int>("loadPdfData", file, pdfBytes);
-                await JS.InvokeVoidAsync("renderPage", 1);
-            }
-            StateHasChanged();
+            await JS.InvokeVoidAsync("setPdfDotNetRef", _ref);
+            await JS.InvokeVoidAsync("initCanvas", "pdfCanvas", "markerCanvas", "noteCanvas");
         }
         catch (Exception ex)
         {
-            showError = true;
-            errorMessage = $"Fehler beim Laden: {ex.Message}";
+            ShowErrorMessage($"Canvas konnte nicht initialisiert werden: {ex.Message}");
+            return;
+        }
+
+        try
+        {
+            var gestureConfig = new Dictionary<string, string>
+            {
+                ["swipe_bottom_up"] = SettingsService.GetGestureAction("Geste: Von unten wischen"),
+                ["longpress"]       = SettingsService.GetGestureAction("Geste: Lang halten"),
+                ["2finger_dbltap"]  = SettingsService.GetGestureAction("Geste: 2 Finger Doppeltippen"),
+                ["3finger_left"]    = SettingsService.GetGestureAction("Geste: 3 Finger links"),
+                ["3finger_right"]   = SettingsService.GetGestureAction("Geste: 3 Finger rechts"),
+            };
+            await JS.InvokeVoidAsync("initGestures", gestureConfig);
+            await JS.InvokeVoidAsync("initStylusDetection");
+            await JS.InvokeVoidAsync("setStylusAutoEdit", SettingsService.StylusAutoEdit());
+            await JS.InvokeVoidAsync("setStylusButtonMode", SettingsService.StylusButtonMode());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Gesten konnten nicht geladen werden: {ex.Message}");
+        }
+
+        try
+        {
+            panelTop       = (int)Math.Round(await JS.InvokeAsync<double>("loadPanelTop"));
+            panelLeft      = (int)Math.Round(await JS.InvokeAsync<double>("loadPanelLeft"));
+            panelCollapsed = await JS.InvokeAsync<bool>("loadPanelCollapsed");
+            await JS.InvokeVoidAsync("initPanelDrag", _ref);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Werkzeug-Palette konnte nicht initialisiert werden: {ex.Message}");
+        }
+
+        try
+        {
+            var filePath = Path.Combine(SheetService.UploadFolder, file);
+            if (!File.Exists(filePath))
+            {
+                ShowErrorMessage($"Die Datei «{file}» wurde nicht gefunden. Möglicherweise wurde sie gelöscht.");
+                return;
+            }
+
+            var pdfBytes = await File.ReadAllBytesAsync(filePath);
+            if (pdfBytes.Length == 0)
+            {
+                ShowErrorMessage("Die PDF-Datei ist leer und kann nicht geöffnet werden.");
+                return;
+            }
+
+            totalPages = await JS.InvokeAsync<int>("loadPdfData", file, pdfBytes);
+            if (totalPages <= 0)
+            {
+                ShowErrorMessage("Die PDF-Datei konnte nicht gelesen werden. Ist sie beschädigt?");
+                return;
+            }
+
+            RecalcPageCount();
+
+            // Generate a first-page thumbnail once (cached), reusing the loaded pdfDoc.
+            try
+            {
+                if (!ThumbnailService.Has(file))
+                {
+                    var thumb = await JS.InvokeAsync<string?>("renderThumbnail", 180);
+                    if (!string.IsNullOrEmpty(thumb))
+                        ThumbnailService.Set(file, thumb);
+                }
+            }
+            catch (Exception ex) { Console.WriteLine($"[SheetView] Thumbnail fehlgeschlagen: {ex.Message}"); }
+
+            if (SettingsService.RememberLastPage())
+            {
+                try
+                {
+                    var lastPage = await JS.InvokeAsync<int>("loadLastPage", file);
+                    if (lastPage > 1 && lastPage <= pageCount)
+                        currentPage = lastPage;
+                }
+                catch { /* last page not critical */ }
+            }
+
+            try
+            {
+                var uri   = new Uri(Nav.Uri);
+                var query = uri.Query.TrimStart('?');
+                foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var kv = part.Split('=', 2);
+                    if (kv.Length == 2 && kv[0] == "page" && int.TryParse(kv[1], out var qPage))
+                        if (qPage >= 1 && qPage <= pageCount) currentPage = qPage;
+                }
+            }
+            catch { /* query param parsing not critical */ }
+
+            RefreshPageBookmark();
+            await RenderCurrent();
             StateHasChanged();
+
+            if (SettingsService.KeepScreenOn())
+                _ = JS.InvokeVoidAsync("setWakeLock", true);
+
+            var animSetting = SettingsService.GetSettings().FirstOrDefault(s => s.Name == "Seitenübergang animieren");
+            _ = JS.InvokeVoidAsync("setAnimateTransitions", animSetting?.Value == "true");
+
+            StartAutoPageTurn();
+            StartAutoHide();
+        }
+        catch (JSException ex)
+        {
+            ShowErrorMessage($"PDF-Viewer Fehler: {ex.Message}");
+        }
+        catch (IOException ex)
+        {
+            ShowErrorMessage($"Datei konnte nicht gelesen werden: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage($"Fehler beim Laden: {ex.Message}");
         }
     }
 
-    [JSInvokable]
-    public void ShowTextInput(double canvasX, double canvasY, double screenX, double screenY)
+    private void ShowErrorMessage(string msg)
     {
-        textCanvasX = canvasX;
-        textCanvasY = canvasY;
-        textScreenX = screenX;
-        textScreenY = screenY;
-        showTextInput = true;
+        showError = true;
+        errorMessage = msg;
         StateHasChanged();
     }
 
+    private void RecalcPageCount()
+    {
+        pageCount = effectiveMode switch
+        {
+            "two"       => Math.Max(1, totalPages - 1),
+            "half-turn" => totalPages * 2,
+            "scroll-v"  => 1,
+            _           => totalPages
+        };
+    }
+
+    // ── Auto page turn ────────────────────────────────────────────────────
+    private void StartAutoPageTurn()
+    {
+        StopAutoPageTurn();
+        var secs = SettingsService.AutoPageTurnSeconds();
+        if (secs <= 0 || IsScrollMode || isEditMode) return;
+        _autoTurnCts = new System.Threading.CancellationTokenSource();
+        var token = _autoTurnCts.Token;
+        Task.Run(async () =>
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try { await Task.Delay(secs * 1000, token); }
+                catch (OperationCanceledException) { break; }
+                if (token.IsCancellationRequested) break;
+                if (currentPage < pageCount)
+                {
+                    try
+                    {
+                        await InvokeAsync(async () =>
+                        {
+                            currentPage++;
+                            await RenderCurrent();
+                            if (SettingsService.RememberLastPage())
+                                _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
+                            StateHasChanged();
+                        });
+                    }
+                    catch { break; }
+                }
+                else { break; }
+            }
+        }, token);
+    }
+
+    private void StopAutoPageTurn()
+    {
+        try { _autoTurnCts?.Cancel(); } catch { }
+        _autoTurnCts = null;
+    }
+
+    // ── Auto-hide toolbar ─────────────────────────────────────────────────
+    private void StartAutoHide()
+    {
+        if (!SettingsService.AutoHideToolbar() || isEditMode) return;
+        try { _autoHideCts?.Cancel(); } catch { }
+        _autoHideCts = new System.Threading.CancellationTokenSource();
+        var token = _autoHideCts.Token;
+        Task.Run(async () =>
+        {
+            try { await Task.Delay(3000, token); }
+            catch (OperationCanceledException) { return; }
+            if (token.IsCancellationRequested) return;
+            try { await InvokeAsync(() => { showUi = false; StateHasChanged(); }); }
+            catch { }
+        }, token);
+    }
+
+    private void ResetAutoHide()
+    {
+        if (!SettingsService.AutoHideToolbar() || isEditMode) return;
+        showUi = true;
+        StartAutoHide();
+    }
+
+    private void StopAutoHide()
+    {
+        try { _autoHideCts?.Cancel(); } catch { }
+        _autoHideCts = null;
+    }
+
+    // ── JS-invokable callbacks ────────────────────────────────────────────
+    [JSInvokable]
+    public void ShowTextInput(double cx, double cy, double sx, double sy)
+    {
+        textCanvasX = cx; textCanvasY = cy;
+        textScreenX = sx; textScreenY = sy;
+        showTextInput = true; StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void UpdatePanelPos(double top, double left)
+    {
+        panelTop  = (int)Math.Round(top);
+        panelLeft = (int)Math.Round(left);
+    }
+
+    [JSInvokable]
+    public Task TogglePanelCollapsedFromJs() => InvokeAsync(() =>
+    {
+        panelCollapsed  = !panelCollapsed;
+        _needPanelClamp = true;   // size changes → re-clamp into view after render
+        _ = JS.InvokeVoidAsync("savePanelCollapsed", panelCollapsed);
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public void UpdatePanelTop(double top) { }
+
+    // ── Text overlay ─────────────────────────────────────────────────────
     private async Task OnTextKey(KeyboardEventArgs e)
     {
         if (e.Key == "Enter") await ConfirmText();
         else if (e.Key == "Escape") CancelText();
     }
-
     private async Task ConfirmText()
     {
         if (!string.IsNullOrWhiteSpace(textValue))
         {
-            int px = SizeMap[activeSize - 1] * 8;
-            await JS.InvokeVoidAsync("drawTextOnCanvas", textCanvasX, textCanvasY, textValue, activeColor, px);
+            try
+            {
+                int fontSize = ActiveSize * 3 + 10;
+                await JS.InvokeVoidAsync("drawTextOnCanvas", textCanvasX, textCanvasY,
+                                         textValue, activeColor, fontSize);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SheetView] Text konnte nicht gezeichnet werden: {ex.Message}");
+            }
         }
-        showTextInput = false;
-        textValue = "";
+        showTextInput = false; textValue = "";
     }
-
     private void CancelText() { showTextInput = false; textValue = ""; }
 
+    // ── Page navigation ───────────────────────────────────────────────────
     private async Task OnSlider(ChangeEventArgs e)
     {
-        currentPage = int.Parse(e.Value!.ToString()!);
+        if (!int.TryParse(e.Value?.ToString(), out var page)) return;
+        currentPage = Math.Clamp(page, 1, pageCount);
+        RefreshPageBookmark();
         await RenderCurrent();
+        if (SettingsService.RememberLastPage())
+            _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
     }
 
     private async Task RenderCurrent()
     {
-        if (SettingsService.TwoPageLayout())
-            await JS.InvokeVoidAsync("renderTwoPage", currentPage);
-        else
-            await JS.InvokeVoidAsync("renderPage", currentPage);
+        try
+        {
+            if (effectiveMode == "scroll-v")
+                await JS.InvokeVoidAsync("renderAllV");
+            else if (IsHalfTurnMode)
+            {
+                int  pdfPage = (currentPage + 1) / 2;
+                bool topHalf = currentPage % 2 == 1;
+                await JS.InvokeVoidAsync("renderHalfTurn", pdfPage, topHalf);
+            }
+            else if (effectiveMode == "two")
+                await JS.InvokeVoidAsync("renderTwoPage", currentPage);
+            else
+                await JS.InvokeVoidAsync("renderPage", currentPage);
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage($"Seite konnte nicht gerendert werden: {ex.Message}");
+        }
     }
 
     private async Task HandleClick(MouseEventArgs e)
     {
-        if (!enableHandleClick) return;
-        double x = e.ClientX;
-        double w = await JS.InvokeAsync<double>("getWindowWidth");
+        if (!enableHandleClick || IsScrollMode) return;
+
+        double x, w;
+        try { w = await JS.InvokeAsync<double>("getWindowWidth"); }
+        catch { return; }
+        x = e.ClientX;
 
         if (x < w * 0.35 && currentPage > 1)
         {
             currentPage--;
+            RefreshPageBookmark();
             await RenderCurrent();
+            ResetAutoHide();
+            if (SettingsService.RememberLastPage())
+                _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
         }
         else if (x > w * 0.65 && currentPage < pageCount)
         {
             currentPage++;
+            RefreshPageBookmark();
             await RenderCurrent();
+            ResetAutoHide();
+            if (SettingsService.RememberLastPage())
+                _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
         }
         else if (x < w * 0.35 && currentPage == 1)
         {
@@ -290,30 +1018,426 @@ else if (isEditMode)
         }
         else
         {
-            showUi = !showUi;
+            if (SettingsService.AutoHideToolbar()) { showUi = true; ResetAutoHide(); }
+            else { showUi = !showUi; }
             StateHasChanged();
         }
     }
 
     private void GoBack() => Nav.NavigateTo("/");
 
-    private void TakeNotes()
+    // ── Page mode ─────────────────────────────────────────────────────────
+    private void ToggleModeDropdown() { showModeDropdown = !showModeDropdown; }
+    private void CloseModeDropdown()  { showModeDropdown = false; }
+
+    private async Task SetSheetMode(string? mode)
     {
-        isEditMode = !isEditMode;
-        JS.InvokeVoidAsync("setEditMode", isEditMode);
-        showUi = !isEditMode;
-        enableHandleClick = !isEditMode;
+        showModeDropdown  = false;
+        sheetModeOverride = mode;
+
+        if (currentSheet != null)
+        {
+            currentSheet.PageMode = sheetModeOverride;
+            SheetService.UpdateSheet(currentSheet);
+        }
+
+        effectiveMode = sheetModeOverride ?? SettingsService.GetPageMode();
+        RecalcPageCount();
+        currentPage = Math.Min(currentPage, pageCount);
+
+        StartAutoPageTurn();
+        await RenderCurrent();
+        StateHasChanged();
     }
 
-    private void SetTool(string t) { activeTool = t; JS.InvokeVoidAsync("setTool", t); }
+    // ── Edit-mode page navigation ────────────────────────────────────────
+    private async Task EditPrev()
+    {
+        if (currentPage > 1)
+        {
+            currentPage--;
+            RefreshPageBookmark();
+            await RenderCurrent();
+            if (SettingsService.RememberLastPage())
+                _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
+        }
+    }
 
-    private void SetColor(string c) { activeColor = c; JS.InvokeVoidAsync("setColor", c); }
+    private async Task EditNext()
+    {
+        if (currentPage < pageCount)
+        {
+            currentPage++;
+            RefreshPageBookmark();
+            await RenderCurrent();
+            if (SettingsService.RememberLastPage())
+                _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
+        }
+    }
 
-    private void SetSize(int s) { activeSize = s; JS.InvokeVoidAsync("setPenSize", SizeMap[s - 1]); }
+    // ── Edit mode ─────────────────────────────────────────────────────────
+    private async Task TakeNotes()
+    {
+        isEditMode = !isEditMode;
+        try { await JS.InvokeVoidAsync("setEditMode", isEditMode); }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Edit-Modus konnte nicht gesetzt werden: {ex.Message}");
+            isEditMode = !isEditMode;
+            return;
+        }
 
-    private void Undo()      => JS.InvokeVoidAsync("undoNote");
-    private void Redo()      => JS.InvokeVoidAsync("redoNote");
-    private void ClearPage() => JS.InvokeVoidAsync("clearNotes");
+        enableHandleClick = !isEditMode;
 
-    public void Dispose() => _ref?.Dispose();
+        if (isEditMode)
+        {
+            StopAutoPageTurn();
+            StopAutoHide();
+            showUi = true;
+            await SetTool(SettingsService.GetDefaultTool());
+        }
+        else
+        {
+            StartAutoPageTurn();
+            StartAutoHide();
+        }
+    }
+
+    // ── Size slider ────────────────────────────────────────────────────────
+    private async Task OnSizeSlider(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int v))
+        {
+            v = Math.Clamp(v, 1, 20);
+            toolSizes[activeTool] = v;
+            try { await JS.InvokeVoidAsync("setToolSize", v); }
+            catch { }
+        }
+    }
+
+    // ── Tool default colors ───────────────────────────────────────────────
+    private static readonly Dictionary<string, string> ToolDefaultColors = new()
+    {
+        ["pen"]          = "#000000",
+        ["marker"]       = "#FFD600",
+        ["eraser"]       = "#000000",
+        ["text"]         = "#000000",
+        ["flat"]         = "#000000",
+        ["sharp"]        = "#000000",
+        ["natural"]      = "#000000",
+        ["double-flat"]  = "#000000",
+        ["double-sharp"] = "#000000",
+        ["fermata"]      = "#000000",
+        ["trill"]        = "#000000",
+        ["segno"]        = "#000000",
+        ["coda"]         = "#000000",
+        ["crescendo"]    = "#000000",
+        ["decrescendo"]  = "#000000",
+    };
+
+    // ── Tool state loader ─────────────────────────────────────────────────
+    private async Task LoadToolStatesAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("getToolStates");
+            if (string.IsNullOrEmpty(raw)) return;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("colors", out var colors))
+                foreach (var c in colors.EnumerateObject())
+                    toolColors[c.Name] = c.Value.GetString() ?? ToolDefaultColors.GetValueOrDefault(c.Name, "#000000");
+            if (root.TryGetProperty("sizes", out var sizes))
+                foreach (var s in sizes.EnumerateObject())
+                    if (s.Value.TryGetInt32(out var sz))
+                        toolSizes[s.Name] = Math.Clamp(sz, 1, 20);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Tool-Zustände konnten nicht geladen werden: {ex.Message}");
+        }
+    }
+
+    // ── Tools ────────────────────────────────────────────────────────────
+    private async Task SetTool(string t)
+    {
+        activeTool = t;
+        if (!toolColors.ContainsKey(t))
+            toolColors[t] = ToolDefaultColors.GetValueOrDefault(t, "#000000");
+        if (!toolSizes.ContainsKey(t))
+            toolSizes[t] = ToolDefaultSizes.GetValueOrDefault(t, 5);
+        activeColor = toolColors[t];
+        try { await JS.InvokeVoidAsync("setToolDirect", t, activeColor, toolSizes[t]); }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Tool konnte nicht gesetzt werden: {ex.Message}");
+        }
+    }
+
+    private void SetColor(string c)
+    {
+        activeColor = c;
+        toolColors[activeTool] = c;
+        _ = JS.InvokeVoidAsync("setColor", c);
+    }
+
+    private void Undo()      => _ = JS.InvokeVoidAsync("undoNote");
+    private void Redo()      => _ = JS.InvokeVoidAsync("redoNote");
+    private void ClearPage() => _ = JS.InvokeVoidAsync("clearNotes");
+
+    // ── Color picker ─────────────────────────────────────────────────────
+    private void OpenColorPicker()  { showColorPicker = true; colorEditMode = false; editColorIdx = -1; }
+    private void OpenStampPicker()  { showStampPicker = true; }
+    private async Task PickStamp(string key)
+    {
+        activeStamp = key;
+        await SetTool(key);
+        showStampPicker = false;
+    }
+    private void CloseColorPicker() { showColorPicker = false; colorEditMode = false; editColorIdx = -1; }
+    private void ToggleColorEditMode() { colorEditMode = !colorEditMode; editColorIdx = -1; }
+    private void OnColorItemClick(int idx)
+    {
+        if (idx < 0 || idx >= allColors.Count) return;
+        if (colorEditMode) { EditColor(idx); return; }
+        SetColor(allColors[idx][0]);
+        showColorPicker = false;
+    }
+    private void EditColor(int idx)
+    {
+        if (idx < 0 || idx >= allColors.Count) return;
+        editColorIdx = idx; editColorHex = allColors[idx][0]; editColorName = allColors[idx][1];
+    }
+    private void StartAddColor() { editColorIdx = allColors.Count; editColorHex = "#FF6B35"; editColorName = ""; }
+    private async Task DeleteEditingColor()
+    {
+        if (editColorIdx >= 0 && editColorIdx < allColors.Count)
+        {
+            if (activeColor == allColors[editColorIdx][0] && allColors.Count > 1)
+                SetColor(allColors[0][0]);
+            allColors.RemoveAt(editColorIdx);
+            await SaveColorsAsync();
+        }
+        editColorIdx = -1;
+    }
+    private async Task SaveEditingColor()
+    {
+        if (string.IsNullOrWhiteSpace(editColorHex)) return;
+        var entry = new string[] { editColorHex, (editColorName ?? "").Trim() };
+        if (editColorIdx == allColors.Count) allColors.Add(entry);
+        else if (editColorIdx >= 0 && editColorIdx < allColors.Count) allColors[editColorIdx] = entry;
+        await SaveColorsAsync();
+        editColorIdx = -1;
+    }
+
+    // ── Color persistence ─────────────────────────────────────────────────
+    private async Task LoadColorsAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("loadColors");
+            if (!string.IsNullOrEmpty(raw))
+            {
+                var loaded = JsonSerializer.Deserialize<List<string[]>>(raw);
+                if (loaded != null && loaded.Count > 0) { allColors = loaded; return; }
+            }
+        }
+        catch { }
+
+        try
+        {
+            var oldRaw = await JS.InvokeAsync<string?>("loadLegacyUserColors");
+            var userPart = new List<string[]>();
+            if (!string.IsNullOrEmpty(oldRaw))
+                userPart = JsonSerializer.Deserialize<List<string[]>>(oldRaw) ?? new();
+
+            allColors = DefaultColors.Select(c => (string[])c.Clone()).ToList();
+            foreach (var u in userPart)
+                if (!allColors.Any(d => d[0] == u[0]))
+                    allColors.Add(u);
+            await SaveColorsAsync();
+        }
+        catch
+        {
+            allColors = DefaultColors.Select(c => (string[])c.Clone()).ToList();
+        }
+    }
+
+    private async Task SaveColorsAsync()
+    {
+        try { await JS.InvokeVoidAsync("saveColors", JsonSerializer.Serialize(allColors)); }
+        catch (Exception ex) { Console.WriteLine($"[SheetView] Farben konnten nicht gespeichert werden: {ex.Message}"); }
+    }
+
+    // ── Bookmark helpers ──────────────────────────────────────────────────
+    private void RefreshPageBookmark()
+    {
+        if (string.IsNullOrEmpty(file) || IsScrollMode) { pageBookmark = null; return; }
+        int bmPage = IsHalfTurnMode ? (currentPage + 1) / 2 : currentPage;
+        pageBookmark = BookmarkService.GetOnPage(file, bmPage);
+    }
+
+    private void OpenBookmarkDialog()
+    {
+        if (string.IsNullOrEmpty(file)) return;
+        int bmPage = IsHalfTurnMode ? (currentPage + 1) / 2 : currentPage;
+        existingBookmark = BookmarkService.GetOnPage(file, bmPage);
+        bookmarkLabel    = existingBookmark?.Label ?? "";
+        bookmarkColor    = existingBookmark?.Color ?? "#4d8a80";
+        showBookmarkDialog = true;
+    }
+    private void CancelBookmark() { showBookmarkDialog = false; }
+
+    private void SaveBookmark()
+    {
+        if (string.IsNullOrEmpty(file)) return;
+        int bmPage = IsHalfTurnMode ? (currentPage + 1) / 2 : currentPage;
+        if (existingBookmark != null)
+        {
+            existingBookmark.Label = bookmarkLabel;
+            existingBookmark.Color = bookmarkColor;
+            BookmarkService.Update(existingBookmark);
+        }
+        else
+        {
+            var name = SheetService.GetSheets()
+                           .FirstOrDefault(s => Path.GetFileName(s.FilePath) == file)?.Name ?? file;
+            BookmarkService.Add(new Bookmark
+            {
+                PdfFile   = file,
+                SheetName = name,
+                Page      = bmPage,
+                Label     = bookmarkLabel,
+                Color     = bookmarkColor
+            });
+        }
+        RefreshPageBookmark();
+        showBookmarkDialog = false;
+    }
+
+    private void RemoveBookmark()
+    {
+        if (existingBookmark != null) BookmarkService.Remove(existingBookmark.Id);
+        RefreshPageBookmark();
+        showBookmarkDialog = false;
+    }
+
+    // ── Gesture handler ───────────────────────────────────────────────────
+    [JSInvokable]
+    public async Task OnGesture(string action)
+    {
+        try
+        {
+            switch (action)
+            {
+                case "go_home":
+                    await InvokeAsync(() => Nav.NavigateTo("/"));
+                    break;
+                case "add_bookmark":
+                    await InvokeAsync(() => { OpenBookmarkDialog(); StateHasChanged(); });
+                    break;
+                case "next_page":
+                    if (currentPage < pageCount)
+                    {
+                        currentPage++;
+                        RefreshPageBookmark();
+                        await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
+                    }
+                    break;
+                case "prev_page":
+                    if (currentPage > 1)
+                    {
+                        currentPage--;
+                        RefreshPageBookmark();
+                        await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
+                    }
+                    break;
+                case "first_page":
+                    currentPage = 1;
+                    RefreshPageBookmark();
+                    await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
+                    break;
+                case "last_page":
+                    currentPage = pageCount;
+                    RefreshPageBookmark();
+                    await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
+                    break;
+                case "toggle_edit":
+                    await InvokeAsync(async () => { await TakeNotes(); StateHasChanged(); });
+                    break;
+                case "zoom_reset":
+                    await JS.InvokeVoidAsync("fitToWidthPublic");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Geste «{action}» fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnStylusEvent(bool entering)
+    {
+        try
+        {
+            if (entering && !isEditMode)
+                await InvokeAsync(async () => { await TakeNotes(); StateHasChanged(); });
+            else if (!entering && isEditMode)
+                await InvokeAsync(async () => { await TakeNotes(); StateHasChanged(); });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Stylus-Event fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    // Stylus front button → eraser (engaged/restored from JS). Updates the UI only;
+    // the drawing engine already switched the tool locally.
+    [JSInvokable]
+    public Task OnStylusEraser(bool active, string toolName) => InvokeAsync(() =>
+    {
+        activeTool = toolName;
+        if (toolColors.TryGetValue(toolName, out var c)) activeColor = c;
+        StateHasChanged();
+    });
+
+    // ── Quick panel helpers ───────────────────────────────────────────────
+    private void ToggleQuickPanel(int tab)
+    {
+        if (showQuickPanel && quickPanelTab == tab) showQuickPanel = false;
+        else { quickPanelTab = tab; showQuickPanel = true; }
+    }
+
+    private void ToggleScreenOn(Setting s)
+    {
+        s.Value = s.Value == "true" ? "false" : "true";
+        SettingsService.SaveSettings();
+        _ = JS.InvokeVoidAsync("setWakeLock", s.Value == "true");
+    }
+
+    private void SetViewerBg(string bg)
+    {
+        viewerBg = bg;
+        var s = SettingsService.GetSettings().FirstOrDefault(x => x.Name == "Viewer-Hintergrund");
+        if (s != null) { s.Value = bg; SettingsService.SaveSettings(); }
+    }
+
+    private async Task JumpToBookmark(Bookmark bm)
+    {
+        currentPage = Math.Clamp(bm.Page, 1, pageCount);
+        RefreshPageBookmark();
+        await RenderCurrent();
+        showQuickPanel = false;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        StopAutoPageTurn();
+        StopAutoHide();
+        try { _ = JS.InvokeVoidAsync("setWakeLock", false); } catch { }
+        _ref?.Dispose();
+    }
 }

@@ -1,0 +1,56 @@
+@page "/bookmarks"
+@using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models
+@inject BookmarkService BookmarkService
+@inject SheetService SheetService
+@inject NavigationManager Nav
+
+<PageTitle>Lesezeichen</PageTitle>
+
+<div class="pg-title">Lesezeichen</div>
+
+@{
+    var all = BookmarkService.GetAll().OrderByDescending(b => b.CreatedAt).ToList();
+}
+
+@if (all.Count == 0)
+{
+    <div class="empty-state">
+        <div class="empty-icon">🔖</div>
+        <p class="empty-title">Noch keine Lesezeichen</p>
+        <p class="empty-sub">Tippe in den Noten lang, um ein Lesezeichen zu setzen</p>
+    </div>
+}
+else
+{
+    @foreach (var bm in all)
+    {
+        <div class="bookmark-card" @onclick="() => OpenBookmark(bm)">
+            <div class="bookmark-dot" style="background: @bm.Color"></div>
+            <div class="bookmark-info">
+                <div class="bookmark-title">@(string.IsNullOrEmpty(bm.Label) ? $"Seite {bm.Page}" : bm.Label)</div>
+                <div class="bookmark-sub">@bm.SheetName · Seite @bm.Page</div>
+            </div>
+            <button class="act-btn act-delete"
+                    @onclick:stopPropagation="true"
+                    @onclick="() => Remove(bm.Id)"
+                    title="Löschen">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+            </button>
+        </div>
+    }
+}
+
+@code {
+    private void OpenBookmark(Bookmark bm) =>
+        Nav.NavigateTo($"/sheets/{bm.PdfFile}?page={bm.Page}");
+
+    private void Remove(string id)
+    {
+        BookmarkService.Remove(id);
+        StateHasChanged();
+    }
+}

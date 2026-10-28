@@ -1,0 +1,171 @@
+@page "/search"
+@using BasicSheets.Shared.Services
+@using BasicSheets.Shared.Models;
+@inject SheetService SheetService;
+@inject NavigationManager navigationManager;
+@inject SettingsService SettingsService
+@inject ThumbnailService ThumbnailService
+
+<PageTitle>Suche</PageTitle>
+
+<div class="pg-title">Suche</div>
+
+<div class="search-page-input">
+    <svg class="search-page-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input placeholder="Titel, Komponist, Instrument …"
+           @bind="searchText" @bind:event="oninput" autofocus />
+    @if (!string.IsNullOrWhiteSpace(searchText))
+    {
+        <button class="search-page-clear" @onclick="() => searchText = string.Empty">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </button>
+    }
+</div>
+
+<div class="search-filters">
+    @foreach (var f in Filters)
+    {
+        var fv = f;
+        <button class="search-filter @(selectedFilter == fv.Key ? "search-filter-on" : "")"
+                @onclick="() => selectedFilter = fv.Key">
+            @fv.Label
+        </button>
+    }
+</div>
+
+<div class="main-container">
+    @if (string.IsNullOrWhiteSpace(searchText))
+    {
+        <div class="empty-state">
+            <svg class="search-empty-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <p class="empty-title">Noten durchsuchen</p>
+            <p class="empty-sub">Gib einen Suchbegriff ein, um deine Noten zu finden</p>
+        </div>
+    }
+    else if (Results.Count == 0)
+    {
+        <div class="empty-state">
+            <p class="empty-title">Keine Treffer</p>
+            <p class="empty-sub">Keine Noten gefunden für «@searchText»</p>
+        </div>
+    }
+    else
+    {
+        <div class="search-results-count">@Results.Count @(Results.Count == 1 ? "Ergebnis" : "Ergebnisse")</div>
+        @foreach (Sheet sheet in Results)
+        {
+            <div class="sheet-card" @onclick="() => OpenSheet(sheet)">
+                <div class="sheet-card-inner">
+                    <div class="sheet-thumb @(HasThumb(sheet) ? "sheet-thumb-has-img" : "")">
+                        @if (HasThumb(sheet))
+                        {
+                            <img src="@ThumbFor(sheet)" alt="" loading="lazy" />
+                        }
+                        else
+                        {
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                            </svg>
+                        }
+                    </div>
+                    <div class="sheet-info">
+                        <h3 class="sheet-name">@sheet.Name</h3>
+                        @if (!string.IsNullOrWhiteSpace(sheet.GetInformation()))
+                        {
+                            <p class="sheet-meta">@sheet.GetInformation()</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(sheet.Tags) || !string.IsNullOrWhiteSpace(sheet.Difficulty))
+                        {
+                            <div class="sheet-tags">
+                                @if (!string.IsNullOrWhiteSpace(sheet.Difficulty))
+                                {
+                                    <span class="sheet-tag sheet-tag-diff sheet-tag-diff-@sheet.Difficulty">@DiffLabel(sheet.Difficulty)</span>
+                                }
+                                @foreach (var tag in (sheet.Tags ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    <span class="sheet-tag">@tag</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    string searchText = "";
+    string selectedFilter = "all";
+    private Dictionary<string, string> _thumbs = new();
+
+    protected override void OnInitialized() => _thumbs = ThumbnailService.GetAll();
+
+    private bool HasThumb(Sheet s) => _thumbs.ContainsKey(Path.GetFileName(s.FilePath));
+    private string ThumbFor(Sheet s) => _thumbs.TryGetValue(Path.GetFileName(s.FilePath), out var u) ? u : "";
+
+    private record FilterOption(string Key, string Label);
+    private static readonly FilterOption[] Filters =
+    [
+        new("all", "Alle"),
+        new("Name", "Titel"),
+        new("Composer", "Komponist"),
+        new("Part", "Instrument"),
+        new("Difficulty", "Schwierigkeit"),
+        new("Tags", "Tags"),
+    ];
+
+    private static string DiffLabel(string d) => d switch
+    {
+        "beginner"     => "Anfänger",
+        "intermediate" => "Mittel",
+        "advanced"     => "Fortgeschritten",
+        "expert"       => "Experte",
+        _              => d
+    };
+
+    private List<Sheet> Results
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(searchText)) return new();
+            var term = searchText;
+            return SheetService.GetSheets().Where(s =>
+            {
+                if (selectedFilter == "all")
+                    return (s.Name     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
+                        || (s.Composer ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
+                        || (s.Part     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
+                        || (s.Genre    ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
+                        || (s.Tags     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
+                        || (DiffLabel(s.Difficulty ?? "")).Contains(term, StringComparison.OrdinalIgnoreCase);
+
+                return selectedFilter switch
+                {
+                    "Name"       => (s.Name     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
+                    "Composer"   => (s.Composer ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
+                    "Part"       => (s.Part     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
+                    "Difficulty" => (DiffLabel(s.Difficulty ?? "")).Contains(term, StringComparison.OrdinalIgnoreCase),
+                    "Tags"       => (s.Tags     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
+                    _            => true
+                };
+            }).OrderBy(s => s.Name ?? "").ToList();
+        }
+    }
+
+    private void OpenSheet(Sheet sheet)
+    {
+        var fileName = Path.GetFileName(sheet.FilePath);
+        if (string.IsNullOrEmpty(fileName)) return;
+        navigationManager.NavigateTo($"/sheets/{fileName}");
+    }
+}
