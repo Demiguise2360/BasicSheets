@@ -32,6 +32,8 @@ public class SheetService
         _db.Locked(() => _db.Conn.Insert(sheet));
     }
 
+    public Sheet? GetById(int id) => _db.Locked(() => _db.Conn.Find<Sheet>(id));
+
     public void RemoveSheets(Sheet sheet)
     {
         if (sheet == null) return;
@@ -41,9 +43,17 @@ public class SheetService
             if (!string.IsNullOrEmpty(sheet.FilePath))
             {
                 var fileName = Path.GetFileName(sheet.FilePath);
-                var pdfPath = Path.Combine(UploadFolder, fileName);
-                if (File.Exists(pdfPath))
-                    File.Delete(pdfPath);
+                // Delete the physical file only if no other sheet or part still references it
+                // (page-split songs share one PDF).
+                bool shared = _db.Locked(() =>
+                    _db.Conn.Table<Sheet>().Where(s => s.FilePath == sheet.FilePath && s.Id != sheet.Id).Count() > 0
+                    || _db.Conn.Table<SheetFile>().ToList().Any(f => Path.GetFileName(f.Path) == fileName));
+                if (!shared)
+                {
+                    var pdfPath = Path.Combine(UploadFolder, fileName);
+                    if (File.Exists(pdfPath))
+                        File.Delete(pdfPath);
+                }
             }
         }
         catch (Exception ex)
@@ -51,8 +61,11 @@ public class SheetService
             Console.WriteLine($"[SheetService] PDF konnte nicht gelöscht werden: {ex.Message}");
         }
 
-        var fp = sheet.FilePath;
-        _db.Locked(() => _db.Conn.Execute("DELETE FROM sheets WHERE FilePath = ?", fp));
+        _db.Locked(() =>
+        {
+            _db.Conn.Execute("DELETE FROM sheets WHERE Id = ?", sheet.Id);
+            _db.Conn.Execute("DELETE FROM sheet_files WHERE SheetId = ?", sheet.Id);
+        });
     }
 
     public void UpdateSheet(Sheet updated)
@@ -75,6 +88,9 @@ public class SheetService
             existing.Remarks    = updated.Remarks ?? "";
             existing.Rating     = updated.Rating;
             existing.Keywords   = updated.Keywords ?? "";
+            existing.PageStart  = updated.PageStart;
+            existing.PageEnd    = updated.PageEnd;
+            existing.Transpose  = updated.Transpose;
             existing.PageMode   = updated.PageMode;
             existing.Updated    = DateTime.Now;
 

@@ -26,7 +26,7 @@
             {
                 <div class="file-hint-inner">
                     <span class="file-hint-icon">&#x2795;</span>
-                    <span class="file-hint">PDF auswählen</span>
+                    <span class="file-hint">PDF, Bild oder Text auswählen</span>
                     <span class="file-hint-sub">Tippe, um eine Datei auszuwählen</span>
                 </div>
             }
@@ -140,9 +140,9 @@
             var result = await FilePickerService.PickPdfAsync();
             if (result == null) return;
 
-            if (!result.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            if (!IsSupportedFile(result.FileName))
             {
-                fileError = "Bitte eine PDF-Datei auswählen.";
+                fileError = "Bitte eine PDF-, Bild- oder Textdatei (ChordPro) auswählen.";
                 return;
             }
 
@@ -169,6 +169,14 @@
         new string(Enumerable.Repeat("abcdefghijklmnopqrstuvwxyz0123456789", 20)
             .Select(s => s[Rng.Next(s.Length)]).ToArray());
 
+    private static readonly string[] SupportedExts =
+    {
+        ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
+        ".cho", ".chopro", ".chordpro", ".crd", ".pro", ".txt"
+    };
+    private static bool IsSupportedFile(string name) =>
+        SupportedExts.Any(e => name.EndsWith(e, StringComparison.OrdinalIgnoreCase));
+
     private async Task SaveSheet()
     {
         if (pickedFilePath == null || string.IsNullOrWhiteSpace(sheet.Name)) return;
@@ -178,7 +186,9 @@
 
         try
         {
-            string fileName = RandomName() + ".pdf";
+            string ext = Path.GetExtension(pickedFileName ?? "").ToLowerInvariant();
+            if (string.IsNullOrEmpty(ext)) ext = ".pdf";
+            string fileName = RandomName() + ext;
             string folder = SheetService.UploadFolder;
             Directory.CreateDirectory(folder);
             string destPath = Path.Combine(folder, fileName);

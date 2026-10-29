@@ -9,6 +9,8 @@
 @inject SheetService SheetService
 @inject BookmarkService BookmarkService
 @inject ThumbnailService ThumbnailService
+@inject SetlistService SetlistService
+@inject SheetFileService SheetFileService
 @implements IDisposable
 
 @* ── Full-screen viewer ───────────────────────────────────────────── *@
@@ -25,6 +27,66 @@
         <canvas id="noteCanvas"></canvas>
     </div>
 </div>
+
+@* ── ChordPro / text song (HTML, no canvas) ─────────────────────────── *@
+@if (_isText && _song != null)
+{
+    <div class="vtext vtext-@viewerBg" @onclick="HandleClick">
+        <div class="vtext-doc" style="font-size:@(_textFontPx)px">
+            @if (!string.IsNullOrWhiteSpace(_song.Title))    { <h1 class="vt-title">@_song.Title</h1> }
+            @if (!string.IsNullOrWhiteSpace(_song.Subtitle)) { <div class="vt-subtitle">@_song.Subtitle</div> }
+            @if (!string.IsNullOrWhiteSpace(_song.Artist))   { <div class="vt-artist">@_song.Artist</div> }
+
+            @{
+                var meta = new List<string>();
+                if (!string.IsNullOrWhiteSpace(_song.Key))
+                    meta.Add("Tonart: " + (_transpose == 0 ? _song.Key : ChordTransposer.Transpose(_song.Key, _transpose, _preferFlats)));
+                if (!string.IsNullOrWhiteSpace(_song.Capo))  meta.Add("Capo: " + _song.Capo);
+                if (!string.IsNullOrWhiteSpace(_song.Tempo)) meta.Add("Tempo: " + _song.Tempo);
+            }
+            @if (meta.Count > 0) { <div class="vt-meta">@string.Join(" · ", meta)</div> }
+
+            @if (_song.IsPlainText)
+            {
+                <pre class="vt-pre">@_song.RawText</pre>
+            }
+            else
+            {
+                @foreach (var line in _song.Lines)
+                {
+                    @if (line.Kind == ChordLineKind.Empty)
+                    {
+                        <div class="vt-blank"></div>
+                    }
+                    else if (line.Kind == ChordLineKind.Comment)
+                    {
+                        <div class="vt-comment">@line.Text</div>
+                    }
+                    else if (line.Kind == ChordLineKind.Section)
+                    {
+                        <div class="vt-sectionlabel">@line.Text</div>
+                    }
+                    else if (line.Kind == ChordLineKind.Tab)
+                    {
+                        <pre class="vt-tab">@line.Text</pre>
+                    }
+                    else
+                    {
+                        <div class="vt-line @(line.Segments.Any(s => !string.IsNullOrEmpty(s.Chord)) ? "" : "vt-line-nochord") @(line.Section == "chorus" ? "vt-chorus" : line.Section == "bridge" ? "vt-bridge" : "")">
+                            @foreach (var seg in line.Segments)
+                            {
+                                <span class="vt-seg">
+                                    <span class="vt-chord">@(string.IsNullOrEmpty(seg.Chord) ? "" : DisplayChord(seg.Chord))</span>
+                                    <span class="vt-lyric">@seg.Lyric</span>
+                                </span>
+                            }
+                        </div>
+                    }
+                }
+            }
+        </div>
+    </div>
+}
 
 @* ── Header ───────────────────────────────────────────────────────── *@
 <div id="vhdr" class="vhdr @(showUi || isEditMode ? "" : "vhdr-hidden")">
@@ -48,18 +110,22 @@
             </svg>
         </button>
 
-        @* Bookmark shortcut *@
-        <button class="vhdr-btn @(showQuickPanel && quickPanelTab == 1 ? "vhdr-btn-active" : "")"
-                @onclick="() => ToggleQuickPanel(1)" title="Lesezeichen">
-            <img src="/_content/BasicSheets.Shared/icons/bookmark.svg" class="vhdr-icon" />
-        </button>
+        @* Bookmark + page-mode apply to PDFs/images only, not to text songs *@
+        @if (!_isText)
+        {
+            @* Bookmark shortcut *@
+            <button class="vhdr-btn @(showQuickPanel && quickPanelTab == 1 ? "vhdr-btn-active" : "")"
+                    @onclick="() => ToggleQuickPanel(1)" title="Lesezeichen">
+                <img src="/_content/BasicSheets.Shared/icons/bookmark.svg" class="vhdr-icon" />
+            </button>
 
-        @* Page mode button *@
-        <button class="vhdr-btn @(sheetModeOverride != null ? "vhdr-btn-active" : "")"
-                @onclick="ToggleModeDropdown"
-                title="Seitenansicht (@GetModeName())">
-            <span class="vhdr-mode-sym">@GetModeSym()</span>
-        </button>
+            @* Page mode button *@
+            <button class="vhdr-btn @(sheetModeOverride != null ? "vhdr-btn-active" : "")"
+                    @onclick="ToggleModeDropdown"
+                    title="Seitenansicht (@GetModeName())">
+                <span class="vhdr-mode-sym">@GetModeSym()</span>
+            </button>
+        }
     }
 
     @* Page slider / edit-mode nav *@
@@ -81,20 +147,70 @@
             </button>
         </div>
     }
+    else if (_isText && !isEditMode)
+    {
+        <div class="vhdr-textctrl">
+            @if (InSetlist)
+            {
+                <button class="vhdr-nav-btn" @onclick="GoPrevSong" disabled="@(!HasPrevSong)" title="Vorheriges Stück">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="vhdr-nav-ico"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+            }
+            <button class="vhdr-tbtn" @onclick="TransposeDown" title="Halbton tiefer">&#8722;</button>
+            <span class="vhdr-key" @onclick="ToggleAccidental" title="♯/♭ umschalten">@TransposeLabel</span>
+            <button class="vhdr-tbtn" @onclick="TransposeUp" title="Halbton höher">+</button>
+            <span class="vhdr-tsep"></span>
+            <button class="vhdr-tbtn" @onclick="FontDown" title="Kleiner">A&#8722;</button>
+            <button class="vhdr-tbtn" @onclick="FontUp" title="Größer">A+</button>
+            @if (InSetlist)
+            {
+                <button class="vhdr-nav-btn" @onclick="GoNextSong" disabled="@(!HasNextSong)" title="Nächstes Stück">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="vhdr-nav-ico"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+            }
+        </div>
+    }
+    else if (InSetlist && !isEditMode)
+    {
+        <div class="vhdr-setlist">
+            <button class="vhdr-nav-btn" @onclick="GoPrevSong" disabled="@(!HasPrevSong)" title="Vorheriges Stück">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="vhdr-nav-ico"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span class="vhdr-lbl vhdr-setlist-lbl">@CurrentSongName · @(_setlistIndex + 1)/@_setlistFiles.Count</span>
+            <button class="vhdr-nav-btn" @onclick="GoNextSong" disabled="@(!HasNextSong)" title="Nächstes Stück">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="vhdr-nav-ico"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+        </div>
+    }
+    else if (HasMultipleFiles && !isEditMode)
+    {
+        <div class="vhdr-setlist">
+            <select class="vhdr-fileswitch" @onchange="OnFileSwitch">
+                @foreach (var f in _songFiles)
+                {
+                    var fn = System.IO.Path.GetFileName(f.Path);
+                    <option value="@fn" selected="@(fn == file)">@f.Label</option>
+                }
+            </select>
+        </div>
+    }
     else
     {
         <div class="vhdr-flex"></div>
     }
 
-    @* Edit toggle *@
-    <button class="vhdr-btn @(isEditMode ? "vhdr-btn-done" : "")"
-            @onclick="TakeNotes"
-            title="@(isEditMode ? "Fertig" : "Annotieren")">
-        <img src="@(isEditMode
-                    ? "/_content/BasicSheets.Shared/icons/cancel.svg"
-                    : "/_content/BasicSheets.Shared/icons/edit.svg")"
-             class="vhdr-icon" />
-    </button>
+    @* Edit toggle (annotation is for PDFs/images only) *@
+    @if (!_isText)
+    {
+        <button class="vhdr-btn @(isEditMode ? "vhdr-btn-done" : "")"
+                @onclick="TakeNotes"
+                title="@(isEditMode ? "Fertig" : "Annotieren")">
+            <img src="@(isEditMode
+                        ? "/_content/BasicSheets.Shared/icons/cancel.svg"
+                        : "/_content/BasicSheets.Shared/icons/edit.svg")"
+                 class="vhdr-icon" />
+        </button>
+    }
 </div>
 
 @* ── Bottom page slider (Seiten-Blättern) ───────────────────────────── *@
@@ -377,20 +493,23 @@
             @if (quickPanelTab == 0)
             {
                 <div class="qp-body">
-                    <div class="qp-row">
-                        <span class="qp-label">Ansicht</span>
-                        <div class="seg-group" style="flex:1">
-                            @foreach (var m in ModeOptions.Where(m => m.Key != null))
-                            {
-                                var mk = m;
-                                <button class="seg-btn @(sheetModeOverride==mk.Key?"seg-btn-on":"")"
-                                        @onclick="async () => await SetSheetMode(mk.Key)"
-                                        title="@mk.Label">
-                                    @mk.Sym
-                                </button>
-                            }
+                    @if (!_isText)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Ansicht</span>
+                            <div class="seg-group" style="flex:1">
+                                @foreach (var m in ModeOptions.Where(m => m.Key != null))
+                                {
+                                    var mk = m;
+                                    <button class="seg-btn @(sheetModeOverride==mk.Key?"seg-btn-on":"")"
+                                            @onclick="async () => await SetSheetMode(mk.Key)"
+                                            title="@mk.Label">
+                                        @mk.Sym
+                                    </button>
+                                }
+                            </div>
                         </div>
-                    </div>
+                    }
 
                     <div class="qp-row">
                         <span class="qp-label">Hintergrund</span>
@@ -404,7 +523,7 @@
                     @{
                         var autoTurnSetting = SettingsService.GetSettings().FirstOrDefault(s => s.Name == "Seiten automatisch umblättern");
                     }
-                    @if (autoTurnSetting != null)
+                    @if (autoTurnSetting != null && !_isText)
                     {
                         <div class="qp-row">
                             <span class="qp-label">Auto-Blättern</span>
@@ -630,6 +749,141 @@
         _           => "Einzelne Seite"
     };
 
+    // ── Setlist playback ──────────────────────────────────────────────────
+    private int? _setlistId;
+    private List<string> _setlistFiles = new();
+    private List<string> _setlistNames = new();
+    private int _setlistIndex = -1;
+    private bool InSetlist   => _setlistId.HasValue && _setlistIndex >= 0 && _setlistFiles.Count > 0;
+    private bool HasNextSong => InSetlist && _setlistIndex < _setlistFiles.Count - 1;
+    private bool HasPrevSong => InSetlist && _setlistIndex > 0;
+    private string CurrentSongName =>
+        (_setlistIndex >= 0 && _setlistIndex < _setlistNames.Count) ? _setlistNames[_setlistIndex] : "";
+
+    // Transitions reload the viewer for the adjacent song (forceLoad = full re-init;
+    // simple + safe, not yet seamless — seamless preloading is a follow-up).
+    private void GoNextSong()
+    {
+        if (!HasNextSong) return;
+        Nav.NavigateTo($"/sheets/{_setlistFiles[_setlistIndex + 1]}?setlist={_setlistId}", forceLoad: true);
+    }
+
+    private void GoPrevSong()
+    {
+        if (!HasPrevSong) return;
+        Nav.NavigateTo($"/sheets/{_setlistFiles[_setlistIndex - 1]}?setlist={_setlistId}&at=last", forceLoad: true);
+    }
+
+    // ── Multi-file songs (parts) ──────────────────────────────────────────
+    private List<(string Path, string Label)> _songFiles = new();
+    private bool HasMultipleFiles => _songFiles.Count > 1;
+
+    // ── Image songs ───────────────────────────────────────────────────────
+    private bool _isImage;
+    private static readonly string[] ImageExts = { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp" };
+    private static bool IsImageFile(string? f) =>
+        f != null && ImageExts.Any(e => f.EndsWith(e, StringComparison.OrdinalIgnoreCase));
+
+    // ── ChordPro / text songs ─────────────────────────────────────────────
+    private bool _isText;
+    private ChordSong? _song;
+    private int  _textFontPx  = 18;    // per-session reading size
+    private int  _transpose   = 0;     // semitone offset (−11..11), persisted on the Sheet
+    private bool _preferFlats = false; // chord spelling preference (♯ vs ♭)
+
+    private async Task LoadTextSongAsync()
+    {
+        try
+        {
+            var textPath = Path.Combine(SheetService.UploadFolder, file!);
+            if (!File.Exists(textPath))
+            {
+                ShowErrorMessage($"Die Datei «{file}» wurde nicht gefunden. Möglicherweise wurde sie gelöscht.");
+                return;
+            }
+
+            var raw = await File.ReadAllTextAsync(textPath);
+            _song = ChordPro.Parse(raw, Path.GetExtension(file));
+            pageCount = 1; currentPage = 1;
+
+            if (currentSheet != null)
+                _transpose = Math.Clamp(currentSheet.Transpose, -11, 11);
+
+            if (SettingsService.KeepScreenOn())
+                _ = JS.InvokeVoidAsync("setWakeLock", true);
+
+            StateHasChanged();
+            StartAutoHide();
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage($"Textdatei konnte nicht geladen werden: {ex.Message}");
+        }
+    }
+
+    private string DisplayChord(string chord) =>
+        _transpose == 0 ? chord : ChordTransposer.Transpose(chord, _transpose, _preferFlats);
+
+    private string TransposeLabel
+    {
+        get
+        {
+            var key = string.IsNullOrWhiteSpace(_song?.Key)
+                ? "" : ChordTransposer.Transpose(_song!.Key, _transpose, _preferFlats);
+            var steps = _transpose > 0 ? $"+{_transpose}" : _transpose.ToString();
+            if (!string.IsNullOrEmpty(key)) return _transpose == 0 ? key : $"{key} {steps}";
+            return _transpose == 0 ? "±0" : steps;
+        }
+    }
+
+    private void TransposeDown() => SetTranspose(_transpose - 1);
+    private void TransposeUp()   => SetTranspose(_transpose + 1);
+    private void SetTranspose(int v)
+    {
+        _transpose = Math.Clamp(v, -11, 11);
+        if (currentSheet != null)
+        {
+            currentSheet.Transpose = _transpose;
+            try { SheetService.UpdateSheet(currentSheet); } catch { }
+        }
+        ResetAutoHide();
+        StateHasChanged();
+    }
+
+    private void ToggleAccidental() { _preferFlats = !_preferFlats; ResetAutoHide(); StateHasChanged(); }
+
+    private void FontDown() => SetFont(_textFontPx - 1);
+    private void FontUp()   => SetFont(_textFontPx + 1);
+    private void SetFont(int px) { _textFontPx = Math.Clamp(px, 10, 40); ResetAutoHide(); StateHasChanged(); }
+
+    // ── Page-range songs (split) ──────────────────────────────────────────
+    private bool _hasRange;
+    private int _pageOffset;
+
+    private int? ParseQueryInt(string key)
+    {
+        try
+        {
+            var q = new Uri(Nav.Uri).Query.TrimStart('?');
+            foreach (var part in q.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = part.Split('=', 2);
+                if (kv.Length == 2 && kv[0] == key && int.TryParse(kv[1], out var v)) return v;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private void OnFileSwitch(ChangeEventArgs e)
+    {
+        var sel = e.Value?.ToString();
+        if (string.IsNullOrEmpty(sel) || sel == file) return;
+        var url = $"/sheets/{sel}";
+        if (InSetlist) url += $"?setlist={_setlistId}";
+        Nav.NavigateTo(url, forceLoad: true);
+    }
+
     // ── Init ─────────────────────────────────────────────────────────────
     protected override async Task OnAfterRenderAsync(bool first)
     {
@@ -662,11 +916,27 @@
         await LoadColorsAsync();
         await LoadToolStatesAsync();
 
-        currentSheet      = SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == file);
+        var reqSheetId    = ParseQueryInt("sheet");
+        currentSheet      = (reqSheetId.HasValue ? SheetService.GetById(reqSheetId.Value) : null)
+                            ?? SheetFileService.FindSheetByFile(file)
+                            ?? SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == file);
+        _hasRange         = currentSheet?.HasRange ?? false;
         sheetModeOverride = currentSheet?.PageMode;
         if (sheetModeOverride is "half" or "auto" or "scroll-h")
             sheetModeOverride = null;
         effectiveMode     = sheetModeOverride ?? SettingsService.GetPageMode();
+        if (_hasRange) effectiveMode = "single";
+
+        if (currentSheet != null)
+            _songFiles = SheetFileService.GetSongFiles(currentSheet);
+
+        // ChordPro / text songs render as HTML (no canvas) — skip the whole pdf.js path.
+        _isText = ChordPro.IsTextFile(file);
+        if (_isText)
+        {
+            await LoadTextSongAsync();
+            return;
+        }
 
         try
         {
@@ -727,7 +997,11 @@
                 return;
             }
 
-            totalPages = await JS.InvokeAsync<int>("loadPdfData", file, pdfBytes);
+            _isImage = IsImageFile(file);
+            if (_isImage) effectiveMode = "single";
+            totalPages = _isImage
+                ? await JS.InvokeAsync<int>("loadImageData", file, pdfBytes)
+                : await JS.InvokeAsync<int>("loadPdfData", file, pdfBytes);
             if (totalPages <= 0)
             {
                 ShowErrorMessage("Die PDF-Datei konnte nicht gelesen werden. Ist sie beschädigt?");
@@ -763,12 +1037,35 @@
             {
                 var uri   = new Uri(Nav.Uri);
                 var query = uri.Query.TrimStart('?');
+                string? atParam = null;
                 foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
                 {
                     var kv = part.Split('=', 2);
-                    if (kv.Length == 2 && kv[0] == "page" && int.TryParse(kv[1], out var qPage))
+                    if (kv.Length != 2) continue;
+                    if (kv[0] == "page" && int.TryParse(kv[1], out var qPage))
+                    {
                         if (qPage >= 1 && qPage <= pageCount) currentPage = qPage;
+                    }
+                    else if (kv[0] == "setlist" && int.TryParse(kv[1], out var slId))
+                    {
+                        _setlistId = slId;
+                    }
+                    else if (kv[0] == "at")
+                    {
+                        atParam = kv[1];
+                    }
                 }
+
+                if (_setlistId.HasValue)
+                {
+                    var slSheets  = SetlistService.GetSheets(_setlistId.Value);
+                    _setlistFiles = slSheets.Select(s => Path.GetFileName(s.FilePath)).ToList();
+                    _setlistNames = slSheets.Select(s => s.Name).ToList();
+                    _setlistIndex = _setlistFiles.FindIndex(f => f == file);
+                }
+
+                if (atParam == "last" && pageCount > 0)
+                    currentPage = pageCount;
             }
             catch { /* query param parsing not critical */ }
 
@@ -808,6 +1105,16 @@
 
     private void RecalcPageCount()
     {
+        if (_isImage) { pageCount = 1; _pageOffset = 0; return; }
+        if (_hasRange && currentSheet != null)
+        {
+            int start = Math.Clamp(currentSheet.PageStart, 1, Math.Max(1, totalPages));
+            int end   = Math.Clamp(currentSheet.PageEnd, start, Math.Max(1, totalPages));
+            _pageOffset = start - 1;
+            pageCount = end - start + 1;
+            return;
+        }
+        _pageOffset = 0;
         pageCount = effectiveMode switch
         {
             "two"       => Math.Max(1, totalPages - 1),
@@ -954,8 +1261,14 @@
 
     private async Task RenderCurrent()
     {
+        if (_isText) return;   // text songs render in Blazor markup, not on the canvas
         try
         {
+            if (_isImage)
+            {
+                await JS.InvokeVoidAsync("renderImage");
+                return;
+            }
             if (effectiveMode == "scroll-v")
                 await JS.InvokeVoidAsync("renderAllV");
             else if (IsHalfTurnMode)
@@ -967,7 +1280,7 @@
             else if (effectiveMode == "two")
                 await JS.InvokeVoidAsync("renderTwoPage", currentPage);
             else
-                await JS.InvokeVoidAsync("renderPage", currentPage);
+                await JS.InvokeVoidAsync("renderPage", currentPage + _pageOffset);
         }
         catch (Exception ex)
         {
@@ -977,6 +1290,15 @@
 
     private async Task HandleClick(MouseEventArgs e)
     {
+        // Text songs scroll freely: a tap only toggles the toolbar (no page zones).
+        if (_isText)
+        {
+            if (SettingsService.AutoHideToolbar()) { showUi = true; ResetAutoHide(); }
+            else { showUi = !showUi; }
+            StateHasChanged();
+            return;
+        }
+
         if (!enableHandleClick || IsScrollMode) return;
 
         double x, w;
@@ -1004,6 +1326,7 @@
         }
         else if (x < w * 0.35 && currentPage == 1)
         {
+            if (HasPrevSong) { GoPrevSong(); return; }
             if (!SettingsService.startAndEndHints()) return;
             showStart = true; StateHasChanged();
             await Task.Delay(2000);
@@ -1011,6 +1334,7 @@
         }
         else if (x > w * 0.65 && currentPage == pageCount)
         {
+            if (HasNextSong) { GoNextSong(); return; }
             if (!SettingsService.startAndEndHints()) return;
             showEnd = true; StateHasChanged();
             await Task.Delay(2000);
@@ -1344,6 +1668,10 @@
                         RefreshPageBookmark();
                         await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
                     }
+                    else if (HasNextSong)
+                    {
+                        await InvokeAsync(GoNextSong);
+                    }
                     break;
                 case "prev_page":
                     if (currentPage > 1)
@@ -1351,6 +1679,10 @@
                         currentPage--;
                         RefreshPageBookmark();
                         await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
+                    }
+                    else if (HasPrevSong)
+                    {
+                        await InvokeAsync(GoPrevSong);
                     }
                     break;
                 case "first_page":

@@ -166,6 +166,6 @@
     {
         var fileName = Path.GetFileName(sheet.FilePath);
         if (string.IsNullOrEmpty(fileName)) return;
-        navigationManager.NavigateTo($"/sheets/{fileName}");
+        navigationManager.NavigateTo($"/sheets/{fileName}?sheet={sheet.Id}");
     }
 }

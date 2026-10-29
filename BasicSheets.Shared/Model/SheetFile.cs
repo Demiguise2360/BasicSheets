@@ -20,4 +20,5 @@ public class SheetFile
     public int    PageStart { get; set; } = 0;   // 0 = whole file
     public int    PageEnd   { get; set; } = 0;
     public int    Order     { get; set; } = 0;
+    public string Label     { get; set; } = "";  // instrument/voice, shown in the file switcher
 }

@@ -8,13 +8,14 @@ public class NativeFilePickerService : IFilePickerService
     {
         var options = new PickOptions
         {
-            PickerTitle = "PDF auswählen",
+            PickerTitle = "PDF, Bild oder Text auswählen",
             FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
             {
-                { DevicePlatform.Android, new[] { "application/pdf" } },
-                { DevicePlatform.WinUI, new[] { ".pdf" } },
-                { DevicePlatform.iOS, new[] { "com.adobe.pdf" } },
-                { DevicePlatform.macOS, new[] { "com.adobe.pdf" } },
+                { DevicePlatform.Android, new[] { "application/pdf", "image/*", "text/*" } },
+                { DevicePlatform.WinUI, new[] { ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
+                                                ".cho", ".chopro", ".chordpro", ".crd", ".pro", ".txt" } },
+                { DevicePlatform.iOS, new[] { "com.adobe.pdf", "public.image", "public.text", "public.plain-text" } },
+                { DevicePlatform.macOS, new[] { "com.adobe.pdf", "public.image", "public.text", "public.plain-text" } },
             })
         };
 

@@ -20,11 +20,18 @@ public class Sheet
     public string  Remarks    { get; set; } = "";          // free-text notes / remarks
     public int     Rating     { get; set; } = 0;           // 0–5, reserved for library phase
     public string  Keywords   { get; set; } = "";          // reserved for library phase
+    public int     PageStart  { get; set; } = 0;           // 0 = whole file; >0 = this song is pages [PageStart,PageEnd] of FilePath
+    public int     PageEnd    { get; set; } = 0;
+    public int     Transpose  { get; set; } = 0;           // semitone offset for ChordPro/text songs (-11..11)
     public DateTime Created   { get; set; } = DateTime.Now;
     public DateTime Updated   { get; set; } = DateTime.Now;
 
     /// <summary>null = use global setting; "single" | "two" | "half-turn" | "scroll-v"</summary>
     public string? PageMode   { get; set; } = null;
+
+    /// <summary>True when this song is a page range of a shared PDF (page-split).</summary>
+    [Ignore]
+    public bool HasRange => PageStart > 0 && PageEnd >= PageStart;
 
     /// <summary>Files of this song. Stored in the <c>sheet_files</c> table, not on the
     /// sheet row — reserved for multi-file songs (Phase 2). Not persisted here.</summary>

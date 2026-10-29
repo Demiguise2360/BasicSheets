@@ -3,6 +3,7 @@
 @using BasicSheets.Shared.Models
 @inject SheetService SheetService
 @inject CollectionService CollectionService
+@inject SheetFileService SheetFileService
 @inject NavigationManager navigationManager
 
 <PageTitle>Bearbeiten</PageTitle>
@@ -118,6 +119,44 @@
                 </div>
             </div>
 
+            @* ── Weitere Dateien (Stimmen / Parts) ── *@
+            <div class="edit-section-label">Weitere Dateien</div>
+
+            @if (parts.Count > 0)
+            {
+                <div class="parts-list">
+                    @for (int i = 0; i < parts.Count; i++)
+                    {
+                        var p = parts[i];
+                        var idx = i;
+                        <div class="part-row">
+                            <input class="field-input part-label" value="@p.Label" placeholder="Bezeichnung"
+                                   @onchange="e => OnPartLabelChanged(p.Id, e)" />
+                            <span class="part-file">@System.IO.Path.GetFileName(p.Path)</span>
+                            <div class="part-ops">
+                                <button type="button" class="iconbtn" disabled="@(idx == 0)" @onclick="() => MovePart(p.Id, -1)" title="Nach oben">↑</button>
+                                <button type="button" class="iconbtn" disabled="@(idx == parts.Count - 1)" @onclick="() => MovePart(p.Id, 1)" title="Nach unten">↓</button>
+                                <button type="button" class="iconbtn iconbtn-del" @onclick="() => RemovePart(p.Id)" title="Entfernen">✕</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="part-add">
+                <div class="file-zone @(partFile != null ? "file-zone-ok" : "")" style="padding:0.9rem">
+                    <InputFile OnChange="OnPartFileSelected" accept=".pdf" id="part-input" />
+                    <label for="part-input" class="file-zone-label">
+                        <span class="@(partFile != null ? "file-chosen" : "file-hint")">@(partFile?.Name ?? "Zusätzliche PDF (Stimme / Part)")</span>
+                    </label>
+                </div>
+                <div class="coll-add">
+                    <input class="field-input" placeholder="Bezeichnung (z.B. Geige)" @bind="partLabel" />
+                    <button type="button" class="coll-add-btn" disabled="@(partFile == null)" @onclick="AddPart">+</button>
+                </div>
+                @if (partError != null) { <p class="field-error">@partError</p> }
+            </div>
+
             @* ── Ansicht ── *@
             <div class="edit-section-label">Ansicht</div>
 
@@ -136,6 +175,42 @@
                             @onclick='()=>{ sheet.PageMode = "scroll-v"; }'>Vertikal scrollen</button>
                 </div>
             </div>
+
+            @if (!IsImage(sheet.FilePath))
+            {
+                <div class="edit-section-label">In Stücke aufteilen</div>
+                <p class="field-hint" style="margin:0 0 0.4rem">Teilt diese PDF nach Seitenbereichen in mehrere Stücke auf (sie teilen sich dieselbe Datei).</p>
+
+                @if (splitRanges.Count > 0)
+                {
+                    <div class="parts-list">
+                        @for (int i = 0; i < splitRanges.Count; i++)
+                        {
+                            var r = splitRanges[i];
+                            var idx = i;
+                            <div class="split-row">
+                                <input class="field-input split-name" placeholder="Name" @bind="r.Name" />
+                                <input class="field-input split-pg" type="number" min="1" @bind="r.Start" />
+                                <span class="split-dash">–</span>
+                                <input class="field-input split-pg" type="number" min="1" @bind="r.End" />
+                                <button type="button" class="iconbtn iconbtn-del" @onclick="() => RemoveSplitRange(idx)" title="Entfernen">✕</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <button type="button" class="add-btn" @onclick="AddSplitRange">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+                    Bereich hinzufügen
+                </button>
+
+                @if (splitRanges.Count > 0)
+                {
+                    <label class="split-opt"><input type="checkbox" @bind="removeOriginalAfterSplit" /> Original danach entfernen</label>
+                    <button type="button" class="submit-btn" style="background:var(--c-warn)" @onclick="DoSplit">In @splitRanges.Count Stück(e) aufteilen</button>
+                    @if (splitError != null) { <p class="field-error">@splitError</p> }
+                }
+            }
 
             <button class="submit-btn" @onclick="SaveChanges"
                     disabled="@(string.IsNullOrWhiteSpace(sheet.Name) || isSaving)">
@@ -161,6 +236,11 @@
     private HashSet<int> selectedCollectionIds = new();
     private string newCollectionName = "";
 
+    private List<SheetFile> parts = new();
+    private IBrowserFile? partFile;
+    private string partLabel = "";
+    private string? partError;
+
     protected override void OnInitialized()
     {
         if (string.IsNullOrEmpty(fileName))
@@ -178,6 +258,89 @@
         sheet = found;
         allCollections = CollectionService.GetAll();
         selectedCollectionIds = CollectionService.GetForSheet(sheet.Id).Select(c => c.Id).ToHashSet();
+        parts = SheetFileService.GetParts(sheet.Id);
+    }
+
+    private void OnPartFileSelected(InputFileChangeEventArgs e)
+    {
+        partFile = e.File;
+        partError = (partFile != null && !IsPdf(partFile)) ? "Bitte eine PDF-Datei auswählen." : null;
+    }
+
+    private async Task AddPart()
+    {
+        if (partFile == null) return;
+        if (!IsPdf(partFile)) { partError = "Bitte eine PDF-Datei auswählen."; return; }
+        if (partFile.Size > MaxFileSize) { partError = "Die Datei ist zu gross (max. 30 MB)."; return; }
+        try
+        {
+            string name = RandomName() + ".pdf";
+            Directory.CreateDirectory(SheetService.UploadFolder);
+            string dest = Path.Combine(SheetService.UploadFolder, name);
+            await using (var fs = new FileStream(dest, FileMode.Create))
+                await partFile.OpenReadStream(MaxFileSize).CopyToAsync(fs);
+
+            SheetFileService.AddPart(sheet.Id, $"uploads/{name}", partLabel);
+            parts = SheetFileService.GetParts(sheet.Id);
+            partFile = null; partLabel = ""; partError = null;
+        }
+        catch (Exception ex) { partError = $"Fehler: {ex.Message}"; }
+    }
+
+    private void RemovePart(int fileId)
+    {
+        SheetFileService.RemovePart(fileId);
+        parts = SheetFileService.GetParts(sheet.Id);
+    }
+
+    private void MovePart(int fileId, int dir)
+    {
+        SheetFileService.Move(sheet.Id, fileId, dir);
+        parts = SheetFileService.GetParts(sheet.Id);
+    }
+
+    private void OnPartLabelChanged(int fileId, ChangeEventArgs e)
+    {
+        SheetFileService.UpdateLabel(fileId, e.Value?.ToString() ?? "");
+        parts = SheetFileService.GetParts(sheet.Id);
+    }
+
+    private static readonly Random _rng = new();
+    private static string RandomName() =>
+        new string(Enumerable.Repeat("abcdefghijklmnopqrstuvwxyz0123456789", 20).Select(s => s[_rng.Next(s.Length)]).ToArray());
+
+    // ── Page-range splitting ──────────────────────────────────────────────
+    private class SplitRange { public string Name = ""; public int Start = 1; public int End = 1; }
+    private List<SplitRange> splitRanges = new();
+    private bool removeOriginalAfterSplit = true;
+    private string? splitError;
+
+    private static readonly string[] ImgExts = { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp" };
+    private static bool IsImage(string? f) =>
+        f != null && ImgExts.Any(e => f.EndsWith(e, StringComparison.OrdinalIgnoreCase));
+
+    private void AddSplitRange() => splitRanges.Add(new SplitRange { Start = 1, End = 1 });
+    private void RemoveSplitRange(int idx) { if (idx >= 0 && idx < splitRanges.Count) splitRanges.RemoveAt(idx); }
+
+    private void DoSplit()
+    {
+        var valid = splitRanges.Where(r => r.Start >= 1 && r.End >= r.Start).ToList();
+        if (valid.Count == 0) { splitError = "Bitte mindestens einen gültigen Seitenbereich angeben."; return; }
+
+        foreach (var r in valid)
+        {
+            SheetService.AddSheets(new Sheet
+            {
+                Name       = string.IsNullOrWhiteSpace(r.Name) ? $"{sheet.Name} ({r.Start}–{r.End})" : r.Name.Trim(),
+                FilePath   = sheet.FilePath,
+                Composer   = sheet.Composer, Part = sheet.Part, Genre = sheet.Genre,
+                Year       = sheet.Year, Difficulty = sheet.Difficulty, Tags = sheet.Tags,
+                PageStart  = r.Start, PageEnd = r.End, PageMode = sheet.PageMode
+            });
+        }
+
+        if (removeOriginalAfterSplit) SheetService.RemoveSheets(sheet);
+        navigationManager.NavigateTo("/");
     }
 
     private void ToggleCollection(int id)
@@ -229,7 +392,7 @@
                     return;
                 }
 
-                string folder = Path.Combine(AppContext.BaseDirectory, "wwwroot", "uploads");
+                string folder = SheetService.UploadFolder;
                 Directory.CreateDirectory(folder);
                 string path = Path.Combine(folder, Path.GetFileName(sheet.FilePath));
 

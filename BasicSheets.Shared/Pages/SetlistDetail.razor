@@ -137,7 +137,7 @@ else
     {
         var fileName = Path.GetFileName(sheet.FilePath);
         if (string.IsNullOrEmpty(fileName)) return;
-        Nav.NavigateTo($"/sheets/{fileName}");
+        Nav.NavigateTo($"/sheets/{fileName}?setlist={Id}");
     }
 
     private void Play()

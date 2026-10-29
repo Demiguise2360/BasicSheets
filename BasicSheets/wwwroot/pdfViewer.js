@@ -103,13 +103,41 @@ const STAMP_SYM   = {
 //  PDF loading
 // ═══════════════════════════════════════════════════════════════════
 
+let imgEl = null, imgUrl = null, isImageDoc = false;
+
 async function destroyCurrentPdf() {
     _pageCache.clear();
     if (pdfDoc) {
         try { await pdfDoc.destroy(); } catch {}
         pdfDoc = null;
     }
+    isImageDoc = false;
+    try { if (imgUrl) { URL.revokeObjectURL(imgUrl); imgUrl = null; } } catch {}
+    imgEl = null;
 }
+
+function _mimeForImage(fn) {
+    const e = (fn.split('.').pop() || '').toLowerCase();
+    return ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+              gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp' })[e] || 'application/octet-stream';
+}
+
+// Load an image file as a single-"page" document. Reuses the same canvas + annotation
+// machinery as PDFs via renderImage(), so zoom/pan/fit/annotations all work unchanged.
+window.loadImageData = async function(filename, data) {
+    await destroyCurrentPdf();
+    currentPdfKey = filename;
+    const blob = new Blob([data], { type: _mimeForImage(filename) });
+    imgUrl = URL.createObjectURL(blob);
+    imgEl = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error("image load failed"));
+        im.src = imgUrl;
+    });
+    isImageDoc = true;
+    return 1;
+};
 
 window.loadPdfData = async function(filename, data) {
     await destroyCurrentPdf();
@@ -220,6 +248,31 @@ window.renderPage = async function(num) {
     endPageTransition();
     hideSpinner();
     preloadAround(num);
+};
+
+// Single-image render — mirrors renderPage's post-render sequence (baseWidth/baseHeight +
+// loadNotes + applyPageScaling), so fit/zoom/pan/annotations behave exactly as for a PDF page.
+window.renderImage = async function() {
+    if (!imgEl) return;
+    cancelActiveRender();
+    scrollMode = null; halfSide = null; _displayMode = 'single';
+    pageNum = 1;
+    showSpinner();
+    let w = imgEl.naturalWidth || 1, h = imgEl.naturalHeight || 1;
+    const maxDim = 2600;
+    const sc = Math.min(1, maxDim / Math.max(w, h));
+    w = Math.max(1, Math.round(w * sc));
+    h = Math.max(1, Math.round(h * sc));
+    canvas.width = markerCanvas.width = noteCanvas.width  = w;
+    canvas.height = markerCanvas.height = noteCanvas.height = h;
+    penCanvas.width = w; penCanvas.height = h;
+    ctx.fillStyle = "white"; ctx.fillRect(0, 0, w, h);
+    try { ctx.drawImage(imgEl, 0, 0, w, h); } catch (e) {}
+    baseWidth = w; baseHeight = h;
+    loadNotes();
+    if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
+    applyPageScaling();
+    hideSpinner();
 };
 
 window.renderTwoPage = async function(num) {
@@ -2011,6 +2064,18 @@ function hideSpinner() {
 // ── First-page thumbnail (reuses the already-loaded pdfDoc) ─────────
 window.renderThumbnail = async function (maxW) {
     try {
+        if (isImageDoc && imgEl) {
+            const iw  = imgEl.naturalWidth || (maxW || 180);
+            const isc = (maxW || 180) / iw;
+            const tiw = Math.max(1, Math.round(iw * isc));
+            const tih = Math.max(1, Math.round((imgEl.naturalHeight || iw) * isc));
+            const ic  = document.createElement('canvas');
+            ic.width = tiw; ic.height = tih;
+            const icx = ic.getContext('2d');
+            icx.fillStyle = '#ffffff'; icx.fillRect(0, 0, tiw, tih);
+            icx.drawImage(imgEl, 0, 0, tiw, tih);
+            return ic.toDataURL('image/jpeg', 0.72);
+        }
         if (!pdfDoc) return null;
         const page = await pdfDoc.getPage(1);
         const base = page.getViewport({ scale: 1 });
