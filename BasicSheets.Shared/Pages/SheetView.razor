@@ -1914,6 +1914,8 @@
     // ── Audio backing track ────────────────────────────────────────────────
     private bool   _hasAudio, _audioPlaying, _audioSeeking;
     private double _audioPos, _audioDur, _audioRate = 1.0;
+    private double _resumePos;
+    private bool   _resumePending;
     private static readonly double[] AudioRates = { 0.5, 0.75, 1.0, 1.25, 1.5 };
     private string PosStr   => _audioPos.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
     private string MaxStr   => (_audioDur > 0 ? _audioDur : 0).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
@@ -1925,6 +1927,7 @@
     private async Task LoadAudioAsync()
     {
         _hasAudio = false; _audioPlaying = false; _audioSeeking = false; _audioPos = 0; _audioDur = 0; _audioRate = 1.0;
+        _resumePos = 0; _resumePending = false;
         _loopState = 0; _loopA = _loopB = 0;
         try { await JS.InvokeVoidAsync("clearAudioLoop"); } catch { }
         if (currentSheet == null || string.IsNullOrWhiteSpace(currentSheet.AudioPath)) return;
@@ -1935,6 +1938,11 @@
             var bytes = await File.ReadAllBytesAsync(ap);
             if (bytes.Length == 0) return;
             _hasAudio = await JS.InvokeAsync<bool>("loadAudioData", bytes, AudioMime(currentSheet.AudioPath));
+            if (_hasAudio)
+            {
+                try { _resumePos = await JS.InvokeAsync<double>("loadAudioPos", file ?? ""); } catch { _resumePos = 0; }
+                _resumePending = _resumePos > 1;   // resume where the track was last left (set on metadata load)
+            }
         }
         catch { _hasAudio = false; }
     }
@@ -1952,6 +1960,7 @@
         if (!_hasAudio) return;
         _audioPlaying = !_audioPlaying;
         try { await JS.InvokeVoidAsync(_audioPlaying ? "playAudio" : "pauseAudio"); } catch { _audioPlaying = false; }
+        if (!_audioPlaying) { try { await JS.InvokeVoidAsync("saveAudioPos", file ?? "", _audioPos); } catch { } }   // remember position on pause
         StateHasChanged();
     }
     private async Task AudioSkip(double delta)
@@ -1974,13 +1983,26 @@
     public Task OnAudioTime(double pos, double dur) => InvokeAsync(() =>
     {
         if (dur > 0) _audioDur = dur;
+        if (_resumePending && dur > 0)
+        {
+            _resumePending = false;
+            if (_resumePos > 1 && _resumePos < dur - 1)   // skip resume if finished/near end
+            {
+                _audioPos = _resumePos;
+                try { _ = JS.InvokeVoidAsync("seekAudio", _resumePos); } catch { }
+                StateHasChanged();
+                return;                                   // don't overwrite with the stale (pre-seek) pos this tick
+            }
+        }
         if (!_audioSeeking) _audioPos = pos;        // don't fight an in-progress scrub
         StateHasChanged();
     });
     [JSInvokable]
     public Task OnAudioEnded() => InvokeAsync(() =>
     {
-        _audioPlaying = false; _audioPos = 0; StateHasChanged();
+        _audioPlaying = false; _audioPos = 0;
+        try { _ = JS.InvokeVoidAsync("saveAudioPos", file ?? "", 0); } catch { }   // finished → next open starts over
+        StateHasChanged();
     });
 
     private void OnSeekInput(ChangeEventArgs e)
@@ -2970,6 +2992,7 @@
         try { _ = JS.InvokeVoidAsync("stopAutoScroll"); } catch { }
         _metroRunning = false;
         try { _ = JS.InvokeVoidAsync("stopMetronome"); } catch { }
+        if (_hasAudio) { try { _ = JS.InvokeVoidAsync("saveAudioPos", file ?? "", _audioPos); } catch { } }
         try { _ = JS.InvokeVoidAsync("unloadAudio"); } catch { }
         try { _ = JS.InvokeVoidAsync("disposeKeyNav"); } catch { }
         try { _ = JS.InvokeVoidAsync("setWakeLock", false); } catch { }

@@ -1624,6 +1624,8 @@ window.setAudioRate = function(r) {
 let _loopA = null, _loopB = null;   // audio A–B practice loop (seconds), or null
 window.setAudioLoop   = function(a, b) { _loopA = (a != null && a >= 0) ? a : null; _loopB = (b != null && _loopA != null && b > _loopA) ? b : null; };
 window.clearAudioLoop = function() { _loopA = null; _loopB = null; };
+window.saveAudioPos = function(key, sec) { try { localStorage.setItem('bs_audiopos_' + key, String(sec || 0)); } catch {} };
+window.loadAudioPos = function(key) { try { const v = parseFloat(localStorage.getItem('bs_audiopos_' + key)); return isNaN(v) ? 0 : v; } catch { return 0; } };
 window.unloadAudio = function() {
     const el = _audio(); if (el) { try { el.pause(); } catch {} el.removeAttribute('src'); try { el.load(); } catch {} }
     if (_audioUrl) { try { URL.revokeObjectURL(_audioUrl); } catch {} _audioUrl = null; }
