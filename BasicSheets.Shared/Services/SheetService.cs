@@ -110,6 +110,7 @@ public class SheetService
             existing.Bpm        = updated.Bpm;
             existing.Beats      = updated.Beats;
             existing.AudioPath  = updated.AudioPath ?? "";
+            existing.ScrollSpeed = updated.ScrollSpeed;
             existing.PageMode   = updated.PageMode;
             existing.Updated    = DateTime.Now;
 

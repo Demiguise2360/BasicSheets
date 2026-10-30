@@ -1605,6 +1605,8 @@
         {
             await JS.InvokeVoidAsync("setPdfDotNetRef", _ref);
             try { _autoScrollSpeed = (int)Math.Round(await JS.InvokeAsync<double>("getAutoScrollSpeed")); } catch { }
+            if (currentSheet != null && currentSheet.ScrollSpeed > 0)                 // per-song speed overrides the global default
+                _autoScrollSpeed = Math.Clamp(currentSheet.ScrollSpeed, 4, 300);
             await JS.InvokeVoidAsync("initCanvas", "pdfCanvas", "markerCanvas", "noteCanvas");
         }
         catch (Exception ex)
@@ -1884,7 +1886,16 @@
     {
         _autoScrollSpeed = Math.Clamp(px, 4, 300);
         try { await JS.InvokeVoidAsync("setAutoScrollSpeed", _autoScrollSpeed); } catch { }
+        PersistScrollSpeed();
         StateHasChanged();
+    }
+
+    // Remember this song's auto-scroll speed so it reopens at the same pace (0 = fall back to the global default).
+    private void PersistScrollSpeed()
+    {
+        if (currentSheet == null || currentSheet.ScrollSpeed == _autoScrollSpeed) return;
+        currentSheet.ScrollSpeed = _autoScrollSpeed;
+        try { SheetService.UpdateSheet(currentSheet); } catch { }
     }
 
     // Timed auto-scroll: pick a duration, scroll from top to bottom over that time (scroll-v).
@@ -1898,6 +1909,7 @@
         int secs = Math.Max(5, _autoScrollMinutes * 60);
         _autoScrollSpeed = (int)Math.Clamp(Math.Round(range / secs), 4, 300);
         try { await JS.InvokeVoidAsync("setAutoScrollSpeed", _autoScrollSpeed); } catch { }
+        PersistScrollSpeed();
         StopAutoPageTurn();
         _autoScrolling = true;
         try { if (!await JS.InvokeAsync<bool>("startAutoScroll", _autoScrollSpeed)) _autoScrolling = false; }

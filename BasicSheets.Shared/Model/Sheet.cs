@@ -28,6 +28,7 @@ public class Sheet
     public int     Bpm        { get; set; } = 0;           // per-song metronome tempo (0 = default 100)
     public int     Beats      { get; set; } = 0;           // per-song metronome beats/measure (0 = default 4)
     public string  AudioPath  { get; set; } = "";          // optional backing-track file name in UploadFolder ("" = none)
+    public int     ScrollSpeed { get; set; } = 0;          // per-song auto-scroll speed in px/s (0 = use the global default)
     public DateTime Created   { get; set; } = DateTime.Now;
     public DateTime Updated   { get; set; } = DateTime.Now;
 
