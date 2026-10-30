@@ -2582,8 +2582,15 @@ window.initBtnCanvas = function(id) {
     btnCanvas = document.getElementById(id);
     if (!btnCanvas) return;
     btnCtx = btnCanvas.getContext('2d');
-    btnCanvas.style.pointerEvents = 'none';
-    btnCanvas.style.zIndex = '5';
+    // Overlay the PDF canvas exactly; it rides #viewer's transform like the other layers.
+    btnCanvas.style.position = 'absolute';
+    btnCanvas.style.top = '0';
+    btnCanvas.style.left = '0';
+    btnCanvas.style.width = '100%';
+    btnCanvas.style.height = '100%';
+    btnCanvas.style.display = 'block';
+    btnCanvas.style.pointerEvents = 'none';   // taps fall through to the viewer's click handler
+    btnCanvas.style.zIndex = '5';             // above pdf/marker/note so link markers stay visible
 };
 
 window.setPageButtons = function(buttons) {
@@ -2593,14 +2600,15 @@ window.setPageButtons = function(buttons) {
 
 window.setPlacingMode = function(on) { _isPlacingBtn = on; };
 
-// Returns id of tapped button (source or target), or null
+// Returns id of tapped button (source or target), or null. Distance is measured in
+// screen pixels so the tap target stays the same size at any zoom level.
 window.getButtonAtScreen = function(sx, sy) {
     if (!baseWidth || !baseHeight || !_pageButtons.length) return null;
-    const cx = (sx - panX) / zoom;
-    const cy = (sy - panY) / zoom;
-    const HIT = 30;
+    const HIT = 32;   // screen-px radius
     for (const b of _pageButtons) {
-        if (Math.hypot(b.nx * baseWidth - cx, b.ny * baseHeight - cy) < HIT) {
+        const bx = b.nx * baseWidth  * zoom + panX;
+        const by = b.ny * baseHeight * zoom + panY;
+        if (Math.hypot(bx - sx, by - sy) < HIT) {
             return b.id + (b.isTarget ? ':target' : ':source');
         }
     }
@@ -2631,7 +2639,7 @@ function _drawButtons() {
 }
 
 function _drawMarker(ctx, cx, cy, label, color, isTarget) {
-    const R = 20;
+    const R = 24;
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.35)';
     ctx.shadowBlur  = 5;

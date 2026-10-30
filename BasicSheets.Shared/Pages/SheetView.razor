@@ -12,6 +12,7 @@
 @inject SetlistService SetlistService
 @inject SheetFileService SheetFileService
 @inject CropService CropService
+@inject ViewerButtonService ViewerButtonService
 @implements IDisposable
 
 @* ── Full-screen viewer ───────────────────────────────────────────── *@
@@ -27,8 +28,18 @@
         <canvas id="pdfCanvas"></canvas>
         <canvas id="markerCanvas"></canvas>
         <canvas id="noteCanvas"></canvas>
+        <canvas id="btnCanvas"></canvas>
     </div>
 </div>
+
+@* ── Link-point placement hint (sibling of .vbg so its taps don't page-turn) ── *@
+@if (_placingLink)
+{
+    <div class="vnotice" style="top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 5.5rem);pointer-events:auto;display:flex;gap:0.75rem;align-items:center">
+        <span>Tippe auf die Stelle für den Sprungpunkt</span>
+        <button class="seg-btn" @onclick="CancelPlaceLink" @onclick:stopPropagation="true">Abbrechen</button>
+    </div>
+}
 
 @* ── ChordPro / text song (HTML, no canvas) ─────────────────────────── *@
 @if (_isText && _song != null)
@@ -477,6 +488,30 @@
     </div>
 }
 
+@* ── Link-point target dialog ────────────────────────────────────── *@
+@if (_showLinkDialog)
+{
+    <div class="cpick-bg" @onclick="CancelLink">
+        <div class="cpick-box" @onclick:stopPropagation="true" style="padding:1rem">
+            <div class="cpick-hdr">
+                <span class="cpick-title">Sprungpunkt – von Seite @currentPage</span>
+            </div>
+            <div class="form-group" style="margin-top:0.75rem">
+                <label class="field-label">Zielseite (1–@pageCount)</label>
+                <input class="field-input" type="number" min="1" max="@pageCount" @bind="_linkTargetPage" />
+            </div>
+            <div class="form-group" style="margin-top:0.75rem">
+                <label class="field-label">Beschriftung (optional)</label>
+                <input class="field-input" placeholder="z.B. DC, Coda" maxlength="8" @bind="_linkLabel" />
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.85rem">
+                <button class="submit-btn" style="flex:1" @onclick="SaveLink">Speichern</button>
+                <button class="seg-btn" @onclick="CancelLink">Abbrechen</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* ── Quick panel (bottom drawer) ─────────────────────────────────── *@
 @if (showQuickPanel)
 {
@@ -634,6 +669,28 @@
                                 <div class="seg-group">
                                     <button class="seg-btn" @onclick="ResetCrop" title="Zuschnitt dieser Seite entfernen">Seite</button>
                                     <button class="seg-btn" @onclick="ResetAllCrops" title="Alle Zuschnitte entfernen">Alle</button>
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    @if (LinksActive && pageCount > 1)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Sprungpunkte</span>
+                            <div class="seg-group">
+                                <button class="seg-btn" @onclick="StartPlaceLink"
+                                        title="Danach auf die Stelle tippen, die zu einer anderen Seite springen soll">＋ Setzen</button>
+                            </div>
+                        </div>
+                        @foreach (var lp in _linkPoints.Where(b => b.SourcePage == currentPage).OrderBy(b => b.TargetPage))
+                        {
+                            var lpc = lp;
+                            <div class="qp-row">
+                                <span class="qp-label" style="opacity:.75">S.@lpc.SourcePage → S.@lpc.TargetPage@(string.IsNullOrEmpty(lpc.Label) ? "" : $" ({lpc.Label})")</span>
+                                <div class="seg-group">
+                                    <button class="seg-btn" @onclick="() => EditLink(lpc)" title="Zielseite ändern">Ändern</button>
+                                    <button class="seg-btn" @onclick="() => RemoveLink(lpc.Id)" title="Sprungpunkt löschen">✕</button>
                                 </div>
                             </div>
                         }
@@ -1270,6 +1327,18 @@
     // ── Crop (per page) ───────────────────────────────────────────────────
     private Dictionary<int, Crop> _crops = new();
 
+    // ── Link points (tappable jump regions; stored as placed ViewerButtons keyed by PDF file) ──
+    private List<ViewerButton> _linkPoints = new();
+    private bool   _placingLink    = false;   // armed: the next page tap drops a link point
+    private bool   _showLinkDialog = false;
+    private double _linkNX, _linkNY;           // where the pending point was tapped (normalized)
+    private int    _linkTargetPage = 1;        // page this point jumps to
+    private string _linkLabel      = "";       // optional short marker label (e.g. "DC", "Coda")
+    private string? _linkEditId    = null;     // non-null while editing an existing point
+    // Link points only make sense on a single, non-scrolling PDF page.
+    private bool LinksActive => !_isText && !_isImage && !isEditMode && !_cropEditMode && effectiveMode == "single";
+    private sealed class NormPt { public double x { get; set; } public double y { get; set; } }
+
     private async Task AutoCrop()
     {
         if (_isText || effectiveMode != "single") return;
@@ -1608,6 +1677,7 @@
             if (currentSheet != null && currentSheet.ScrollSpeed > 0)                 // per-song speed overrides the global default
                 _autoScrollSpeed = Math.Clamp(currentSheet.ScrollSpeed, 4, 300);
             await JS.InvokeVoidAsync("initCanvas", "pdfCanvas", "markerCanvas", "noteCanvas");
+            try { await JS.InvokeVoidAsync("initBtnCanvas", "btnCanvas"); } catch { }   // link-point marker overlay
         }
         catch (Exception ex)
         {
@@ -1689,6 +1759,7 @@
             RecalcPageCount();
 
             if (currentSheet != null) _crops = CropService.GetCrops(currentSheet.Id);
+            _linkPoints = ViewerButtonService.GetForFile(file ?? "");
 
             // Generate a first-page thumbnail once (cached), reusing the loaded pdfDoc.
             try
@@ -2162,6 +2233,7 @@
                 if (icrop != null) await JS.InvokeVoidAsync("setCrop", icrop.L, icrop.T, icrop.R, icrop.B);
                 else await JS.InvokeVoidAsync("clearCrop");
                 await JS.InvokeVoidAsync("renderImage");
+                await PushPageButtons();
                 return;
             }
             if (effectiveMode == "scroll-v")
@@ -2193,11 +2265,25 @@
                 else await JS.InvokeVoidAsync("clearCrop");
                 await JS.InvokeVoidAsync("renderPage", pdfPage);
             }
+            await PushPageButtons();
         }
         catch (Exception ex)
         {
             ShowErrorMessage($"Seite konnte nicht gerendert werden: {ex.Message}");
         }
+    }
+
+    // Push the current page's link-point markers to the viewer overlay. Empty in modes
+    // where link points don't apply, which also clears any stale markers from a prior page.
+    private async Task PushPageButtons()
+    {
+        var list = new List<object>();
+        if (LinksActive)
+        {
+            foreach (var b in _linkPoints.Where(b => b.SourcePage == currentPage && b.SourceNX >= 0))
+                list.Add(new { id = b.Id, nx = b.SourceNX, ny = b.SourceNY, label = b.Label, color = b.Color, isTarget = false });
+        }
+        try { await JS.InvokeVoidAsync("setPageButtons", list); } catch { }
     }
 
     private async Task HandleClick(MouseEventArgs e)
@@ -2209,6 +2295,23 @@
             else { showUi = !showUi; }
             StateHasChanged();
             return;
+        }
+
+        // Link points: while armed, a tap drops a new point; otherwise a tap on an
+        // existing point jumps to its target page. Checked before the page-turn zones.
+        if (LinksActive)
+        {
+            if (_placingLink) { await PlaceLinkAt(e.ClientX, e.ClientY); return; }
+            try
+            {
+                var hit = await JS.InvokeAsync<string?>("getButtonAtScreen", e.ClientX, e.ClientY);
+                if (!string.IsNullOrEmpty(hit) && hit.EndsWith(":source"))
+                {
+                    var lp = _linkPoints.FirstOrDefault(b => b.Id == hit[..^7]);
+                    if (lp != null) { await JumpPage(lp.TargetPage); ResetAutoHide(); return; }
+                }
+            }
+            catch { }
         }
 
         if (!enableHandleClick || IsScrollMode) return;
@@ -2258,6 +2361,96 @@
             else { showUi = !showUi; }
             StateHasChanged();
         }
+    }
+
+    // ── Link points (tappable jump regions) ─────────────────────────────────
+    private void StartPlaceLink()
+    {
+        showQuickPanel = false;
+        _placingLink   = true;
+        StateHasChanged();
+    }
+
+    private void CancelPlaceLink()
+    {
+        _placingLink = false;
+        StateHasChanged();
+    }
+
+    private async Task PlaceLinkAt(double sx, double sy)
+    {
+        _placingLink = false;
+        NormPt n;
+        try { n = await JS.InvokeAsync<NormPt>("screenToNormalized", sx, sy); }
+        catch { StateHasChanged(); return; }
+        _linkNX         = n.x;
+        _linkNY         = n.y;
+        _linkEditId     = null;
+        _linkLabel      = "";
+        _linkTargetPage = Math.Clamp(currentPage + 1, 1, pageCount);
+        _showLinkDialog = true;
+        StateHasChanged();
+    }
+
+    private void EditLink(ViewerButton lp)
+    {
+        showQuickPanel  = false;
+        _linkEditId     = lp.Id;
+        _linkLabel      = lp.Label ?? "";
+        _linkTargetPage = Math.Clamp(lp.TargetPage, 1, pageCount);
+        _showLinkDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task SaveLink()
+    {
+        if (string.IsNullOrEmpty(file)) { _showLinkDialog = false; return; }
+        _linkTargetPage = Math.Clamp(_linkTargetPage, 1, pageCount);
+        var label = (_linkLabel ?? "").Trim();
+        if (label.Length > 8) label = label[..8];
+
+        if (_linkEditId != null)
+        {
+            var ex = _linkPoints.FirstOrDefault(b => b.Id == _linkEditId);
+            if (ex != null) { ex.TargetPage = _linkTargetPage; ex.Label = label; ViewerButtonService.Update(ex); }
+        }
+        else
+        {
+            ViewerButtonService.Add(new ViewerButton
+            {
+                PdfFile    = file,
+                SourcePage = currentPage,
+                SourceNX   = _linkNX,
+                SourceNY   = _linkNY,
+                TargetPage = _linkTargetPage,
+                TargetNX   = -1,
+                TargetNY   = -1,
+                Label      = label,
+                Color      = "#387373",
+                Action     = "jump",
+            });
+        }
+
+        _linkPoints     = ViewerButtonService.GetForFile(file);
+        _showLinkDialog = false;
+        _linkEditId     = null;
+        await PushPageButtons();
+        StateHasChanged();
+    }
+
+    private void CancelLink()
+    {
+        _showLinkDialog = false;
+        _linkEditId     = null;
+        StateHasChanged();
+    }
+
+    private async Task RemoveLink(string id)
+    {
+        ViewerButtonService.Remove(id);
+        _linkPoints = ViewerButtonService.GetForFile(file ?? "");
+        await PushPageButtons();
+        StateHasChanged();
     }
 
     private void GoBack() => Nav.NavigateTo("/");
