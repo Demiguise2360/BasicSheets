@@ -1523,16 +1523,18 @@ window.isLandscape = () => window.innerWidth > window.innerHeight;
 let _metroCtx = null, _metroTimer = null;
 let _metroNextNote = 0, _metroBeat = 0;
 let _metroBpm = 100, _metroBeats = 4, _metroRunning = false;
-let _metroMuted = false, _metroAccent = true;
+let _metroMuted = false, _metroAccent = true, _metroSubdiv = 1;
 const _METRO_LOOKAHEAD = 25;     // ms between scheduler ticks
 const _METRO_AHEAD = 0.12;       // sec of audio scheduled ahead of the clock
 
-function _metroScheduleClick(time, isDown) {
+function _metroScheduleClick(time, isDown, isMain) {
     const ctx = _metroCtx; if (!ctx || _metroMuted) return;   // muted = visual pulse only, no sound
+    const main = isMain !== false;                            // sub-division clicks are higher + quieter
     const osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.frequency.value = isDown ? 1600 : 1000;
+    osc.frequency.value = isDown ? 1600 : (main ? 1000 : 1300);
+    const peak = isDown ? 0.7 : (main ? 0.45 : 0.22);
     gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.exponentialRampToValueAtTime(isDown ? 0.7 : 0.45, time + 0.001);
+    gain.gain.exponentialRampToValueAtTime(peak, time + 0.001);
     gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.05);
     osc.connect(gain); gain.connect(ctx.destination);
     osc.start(time); osc.stop(time + 0.06);
@@ -1547,7 +1549,11 @@ function _metroScheduler() {
     const ctx = _metroCtx; if (!ctx) return;
     while (_metroNextNote < ctx.currentTime + _METRO_AHEAD) {
         const isDown = _metroAccent && (_metroBeat % _metroBeats) === 0;
-        _metroScheduleClick(_metroNextNote, isDown);
+        _metroScheduleClick(_metroNextNote, isDown, true);
+        if (_metroSubdiv > 1) {                               // extra clicks within the beat (8ths / triplets / 16ths)
+            const step = (60.0 / _metroBpm) / _metroSubdiv;
+            for (let k = 1; k < _metroSubdiv; k++) _metroScheduleClick(_metroNextNote + k * step, false, false);
+        }
         const delayMs = Math.max(0, (_metroNextNote - ctx.currentTime) * 1000);
         setTimeout(() => { if (_metroRunning) _metroPulse(isDown); }, delayMs);
         _metroNextNote += 60.0 / _metroBpm;
@@ -1576,6 +1582,7 @@ window.setMetronomeBeats = function(beats) { _metroBeats = Math.max(1, Math.min(
 window.isMetronomeRunning = function() { return _metroRunning; };
 window.setMetronomeMuted  = function(on) { _metroMuted  = !!on; };
 window.setMetronomeAccent = function(on) { _metroAccent = (on !== false); };
+window.setMetronomeSubdiv = function(n) { _metroSubdiv = Math.max(1, Math.min(4, (n | 0) || 1)); };
 
 
 // ═══════════════════════════════════════════════════════════════════

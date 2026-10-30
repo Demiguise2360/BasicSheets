@@ -559,6 +559,15 @@
                             <button class="seg-btn @(_metroAccent?"seg-btn-on":"")" @onclick="ToggleMetroAccent" title="Betonung auf Zählzeit 1">@(_metroAccent ? "Betont" : "Gleich")</button>
                         </div>
                     </div>
+                    <div class="qp-row">
+                        <span class="qp-label">Unterteilung</span>
+                        <div class="seg-group">
+                            <button class="seg-btn @(_metroSubdiv==1?"seg-btn-on":"")" @onclick="() => SetMetroSubdiv(1)">Aus</button>
+                            <button class="seg-btn @(_metroSubdiv==2?"seg-btn-on":"")" @onclick="() => SetMetroSubdiv(2)">8tel</button>
+                            <button class="seg-btn @(_metroSubdiv==3?"seg-btn-on":"")" @onclick="() => SetMetroSubdiv(3)">Triole</button>
+                            <button class="seg-btn @(_metroSubdiv==4?"seg-btn-on":"")" @onclick="() => SetMetroSubdiv(4)">16tel</button>
+                        </div>
+                    </div>
 
                     @if (_hasAudio)
                     {
@@ -2711,6 +2720,7 @@
     private bool _metroRunning;
     private bool _metroMuted;
     private bool _metroAccent = true;
+    private int  _metroSubdiv = 1;
 
     private async Task ToggleMetronome()
     {
@@ -2751,6 +2761,12 @@
     {
         _metroAccent = !_metroAccent;
         try { await JS.InvokeVoidAsync("setMetronomeAccent", _metroAccent); } catch { }
+        StateHasChanged();
+    }
+    private async Task SetMetroSubdiv(int n)
+    {
+        _metroSubdiv = Math.Clamp(n, 1, 4);
+        try { await JS.InvokeVoidAsync("setMetronomeSubdiv", _metroSubdiv); } catch { }
         StateHasChanged();
     }
     private void PersistMetro()
