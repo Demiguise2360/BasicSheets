@@ -116,6 +116,13 @@ public class SettingsService
             Value       = "dark",
             Options     = ["dark|Dunkel", "gray|Grau", "white|Hell"]
         });
+        AddIfMissing(new Setting
+        {
+            Name        = "Noten invertieren",
+            Description = "Nachtmodus: kehrt die Farben der Noten um (weiß auf schwarz) für dunkle Umgebungen.",
+            Type        = "toggle",
+            Value       = "false"
+        });
         var oldAutoZoom = _settings.FirstOrDefault(s => s.Name == "Auto-Zoom");
         if (oldAutoZoom != null)
             _settings.Remove(oldAutoZoom);
@@ -309,6 +316,12 @@ public class SettingsService
     {
         var s = _settings.FirstOrDefault(x => x.Name == "Viewer-Hintergrund");
         return s?.Value ?? "dark";
+    }
+
+    public bool InvertColors()
+    {
+        var s = _settings.FirstOrDefault(x => x.Name == "Noten invertieren");
+        return s?.Value == "true";
     }
 
     public string GetDefaultTool()

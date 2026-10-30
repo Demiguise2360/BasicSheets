@@ -157,6 +157,33 @@
                 @if (partError != null) { <p class="field-error">@partError</p> }
             </div>
 
+            @* ── Audio (Begleitung) ── *@
+            <div class="edit-section-label">Audio (Begleitung)</div>
+            @if (!string.IsNullOrEmpty(sheet.AudioPath))
+            {
+                <div class="part-row">
+                    <span class="part-file">@System.IO.Path.GetFileName(sheet.AudioPath)</span>
+                    <div class="part-ops">
+                        <button type="button" class="iconbtn iconbtn-del" @onclick="RemoveAudio" title="Entfernen">✕</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="part-add">
+                    <div class="file-zone @(audioFile != null ? "file-zone-ok" : "")" style="padding:0.9rem">
+                        <InputFile OnChange="OnAudioFileSelected" accept="audio/*,.mp3,.m4a,.aac,.ogg,.wav,.flac,.opus" id="audio-input" />
+                        <label for="audio-input" class="file-zone-label">
+                            <span class="@(audioFile != null ? "file-chosen" : "file-hint")">@(audioFile?.Name ?? "Audiodatei (MP3, M4A, …)")</span>
+                        </label>
+                    </div>
+                    <div class="coll-add">
+                        <button type="button" class="coll-add-btn" disabled="@(audioFile == null)" @onclick="AddAudio">+</button>
+                    </div>
+                </div>
+            }
+            @if (audioError != null) { <p class="field-error">@audioError</p> }
+
             @* ── Ansicht ── *@
             <div class="edit-section-label">Ansicht</div>
 
@@ -297,6 +324,36 @@
     {
         SheetFileService.Move(sheet.Id, fileId, dir);
         parts = SheetFileService.GetParts(sheet.Id);
+    }
+
+    // ── Audio backing track ──────────────────────────────────────────────
+    private const long MaxAudioSize = 50L * 1024 * 1024;
+    private IBrowserFile? audioFile;
+    private string? audioError;
+    private void OnAudioFileSelected(InputFileChangeEventArgs e) { audioFile = e.File; audioError = null; }
+    private async Task AddAudio()
+    {
+        if (audioFile == null) return;
+        if (audioFile.Size > MaxAudioSize) { audioError = "Die Datei ist zu gross (max. 50 MB)."; return; }
+        try
+        {
+            var ext = Path.GetExtension(audioFile.Name);
+            if (string.IsNullOrWhiteSpace(ext)) ext = ".mp3";
+            string name = RandomName() + ext.ToLowerInvariant();
+            Directory.CreateDirectory(SheetService.UploadFolder);
+            string dest = Path.Combine(SheetService.UploadFolder, name);
+            await using (var fs = new FileStream(dest, FileMode.Create))
+                await audioFile.OpenReadStream(MaxAudioSize).CopyToAsync(fs);
+            SheetService.SetAudioPath(sheet.FilePath, name);
+            sheet.AudioPath = name;
+            audioFile = null; audioError = null;
+        }
+        catch (Exception ex) { audioError = $"Fehler: {ex.Message}"; }
+    }
+    private void RemoveAudio()
+    {
+        SheetService.SetAudioPath(sheet.FilePath, "");
+        sheet.AudioPath = "";
     }
 
     private void OnPartLabelChanged(int fileId, ChangeEventArgs e)

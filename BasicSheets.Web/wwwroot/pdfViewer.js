@@ -226,7 +226,7 @@ window.renderPage = async function(num) {
     } else {
         const page = await pdfDoc.getPage(num);
         if (gen !== _renderGen) return;
-        const vp   = page.getViewport({ scale: 2 });
+        const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
         w = Math.ceil(vp.width); h = Math.ceil(vp.height);
         canvas.width = markerCanvas.width = noteCanvas.width  = w;
         canvas.height = markerCanvas.height = noteCanvas.height = h;
@@ -258,17 +258,23 @@ window.renderImage = async function() {
     scrollMode = null; halfSide = null; _displayMode = 'single';
     pageNum = 1;
     showSpinner();
-    let w = imgEl.naturalWidth || 1, h = imgEl.naturalHeight || 1;
+    let iw = imgEl.naturalWidth || 1, ih = imgEl.naturalHeight || 1;
     const maxDim = 2600;
-    const sc = Math.min(1, maxDim / Math.max(w, h));
-    w = Math.max(1, Math.round(w * sc));
-    h = Math.max(1, Math.round(h * sc));
-    canvas.width = markerCanvas.width = noteCanvas.width  = w;
-    canvas.height = markerCanvas.height = noteCanvas.height = h;
-    penCanvas.width = w; penCanvas.height = h;
-    ctx.fillStyle = "white"; ctx.fillRect(0, 0, w, h);
-    try { ctx.drawImage(imgEl, 0, 0, w, h); } catch (e) {}
-    baseWidth = w; baseHeight = h;
+    const sc = Math.min(1, maxDim / Math.max(iw, ih));
+    iw = Math.max(1, Math.round(iw * sc));
+    ih = Math.max(1, Math.round(ih * sc));
+    const swap = (pageRotation === 90 || pageRotation === 270);
+    const cw = swap ? ih : iw, ch = swap ? iw : ih;
+    canvas.width = markerCanvas.width = noteCanvas.width  = cw;
+    canvas.height = markerCanvas.height = noteCanvas.height = ch;
+    penCanvas.width = cw; penCanvas.height = ch;
+    ctx.fillStyle = "white"; ctx.fillRect(0, 0, cw, ch);
+    ctx.save();
+    ctx.translate(cw / 2, ch / 2);
+    ctx.rotate(pageRotation * Math.PI / 180);
+    try { ctx.drawImage(imgEl, -iw / 2, -ih / 2, iw, ih); } catch (e) {}
+    ctx.restore();
+    baseWidth = cw; baseHeight = ch;
     loadNotes();
     if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
     applyPageScaling();
@@ -282,9 +288,15 @@ window.renderTwoPage = async function(num) {
     showSpinner();
     beginPageTransition(num);
     pageNum = num;
-    const p1 = await pdfDoc.getPage(num);
+    // Map the display slot → PDF pages via the custom sequence (null = natural order).
+    const _seq = _renderSeq();
+    const _leftPdf  = _seq ? _seq[Math.max(1, Math.min(num, _seq.length)) - 1] : num;
+    const _rightNum = num + 1;
+    const _rightPdf = _seq ? (_rightNum <= _seq.length ? _seq[_rightNum - 1] : 0)
+                           : (_rightNum <= pdfDoc.numPages ? _rightNum : 0);
+    const p1 = await pdfDoc.getPage(_leftPdf);
     if (gen !== _renderGen) return;
-    const v1 = p1.getViewport({ scale: 2 });
+    const v1 = p1.getViewport({ scale: 2, rotation: pageRotation });
     const t1 = makeCanvas(Math.ceil(v1.width), Math.ceil(v1.height));
     const c1 = t1.getContext("2d");
     c1.fillStyle = "white"; c1.fillRect(0, 0, t1.width, t1.height);
@@ -292,10 +304,10 @@ window.renderTwoPage = async function(num) {
     if (gen !== _renderGen) return;
 
     let t2 = null;
-    if (num + 1 <= pdfDoc.numPages) {
-        const p2 = await pdfDoc.getPage(num + 1);
+    if (_rightPdf >= 1) {
+        const p2 = await pdfDoc.getPage(_rightPdf);
         if (gen !== _renderGen) return;
-        const v2 = p2.getViewport({ scale: 2 });
+        const v2 = p2.getViewport({ scale: 2, rotation: pageRotation });
         t2 = makeCanvas(Math.ceil(v2.width), Math.ceil(v2.height));
         const c2 = t2.getContext("2d");
         c2.fillStyle = "white"; c2.fillRect(0, 0, t2.width, t2.height);
@@ -349,7 +361,7 @@ window.renderHalfTurn = async function(num, topHalf) {
     pageNum = num;
     const page = await pdfDoc.getPage(num);
     if (gen !== _renderGen) return;
-    const vp   = page.getViewport({ scale: 2 });
+    const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
     const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
 
     canvas.width = markerCanvas.width = noteCanvas.width  = w;
@@ -401,6 +413,56 @@ function _applyHalfTurnFit(topHalf) {
 // ── Vertical scroll mode ────────────────────────────────────────────
 // All pages rendered into one tall canvas. User scrolls freely.
 
+// ── Custom page sequence (reorder / duplicate / hide) for scroll modes ──
+// Array of 1-based PDF page numbers, or null = natural order. Blazor sets it
+// from the song's PageOrder before a scroll re-render; renderAllV/H apply it.
+let _pageSeq = null;
+window.setPageSequence = function(arr) {
+    _pageSeq = (Array.isArray(arr) && arr.length) ? arr.slice() : null;
+};
+function _renderSeq() {
+    if (!_pageSeq || !_pageSeq.length || !pdfDoc) return null;
+    const v = _pageSeq.filter(n => Number.isInteger(n) && n >= 1 && n <= pdfDoc.numPages);
+    return v.length ? v : null;
+}
+
+// Per-render page offsets inside the composite scroll canvas (for scroll-to-page).
+// _scrollOrder[i] = the PDF page drawn at display slot i; _scrollTops/_scrollLefts[i] = its canvas offset.
+let _scrollOrder = null, _scrollTops = [], _scrollLefts = [];
+window.scrollToSlot = function(idx) {
+    if (!_scrollOrder || !_scrollOrder.length) return false;
+    idx = Math.max(0, Math.min(_scrollOrder.length - 1, idx));
+    if (_displayMode === 'scroll-v' && idx < _scrollTops.length) {
+        panY = getHeaderHeight() - _scrollTops[idx] * zoom;   // slot top under the header
+        clampPan(); applyView(); return true;
+    }
+    if (_displayMode === 'scroll-h' && idx < _scrollLefts.length) {
+        panX = -_scrollLefts[idx] * zoom;                     // slot left at the left edge
+        clampPan(); applyView(); return true;
+    }
+    return false;
+};
+window.scrollToPdfPage = function(p) {
+    if (!_scrollOrder) return false;
+    const idx = _scrollOrder.indexOf(p);        // first slot showing this PDF page
+    return idx < 0 ? false : window.scrollToSlot(idx);
+};
+// Current slot (0-based) nearest at/above the top-left of the view, or -1.
+window.getScrollSlot = function() {
+    if (!_scrollOrder || !_scrollOrder.length) return -1;
+    if (_displayMode === 'scroll-v') {
+        const y = (getHeaderHeight() - panY) / zoom;
+        let i = 0; for (let k = 0; k < _scrollTops.length; k++) { if (_scrollTops[k] <= y + 1) i = k; else break; }
+        return i;
+    }
+    if (_displayMode === 'scroll-h') {
+        const x = -panX / zoom;
+        let i = 0; for (let k = 0; k < _scrollLefts.length; k++) { if (_scrollLefts[k] <= x + 1) i = k; else break; }
+        return i;
+    }
+    return -1;
+};
+
 window.renderAllV = async function() {
     _displayMode = 'scroll-v';
     scrollMode = "scroll-v"; halfSide = null;
@@ -412,10 +474,11 @@ window.renderAllV = async function() {
     const gap = 24;
     const pages = [];
 
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const _order = _renderSeq() || Array.from({ length: pdfDoc.numPages }, (_, k) => k + 1);
+    for (const i of _order) {
         const page = await pdfDoc.getPage(i);
         if (gen !== _renderGen) return;
-        const vp   = page.getViewport({ scale: 2 });
+        const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
         const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
         const tmp = makeCanvas(w, h);
         const tc  = tmp.getContext("2d");
@@ -432,9 +495,11 @@ window.renderAllV = async function() {
     canvas.height = markerCanvas.height = noteCanvas.height = totalH;
     penCanvas.width = maxW; penCanvas.height = totalH;
 
+    _scrollOrder = _order.slice(); _scrollTops = []; _scrollLefts = [];
     ctx.fillStyle = "#2a2a2a"; ctx.fillRect(0, 0, maxW, totalH);
     let y = 0;
     for (const pg of pages) {
+        _scrollTops.push(y);
         ctx.drawImage(pg, Math.round((maxW - pg.width) / 2), y);
         y += pg.height + gap;
     }
@@ -444,6 +509,60 @@ window.renderAllV = async function() {
     if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
     // Scroll mode: always fit to width, user scrolls vertically
     fitToWidth();
+    endPageTransition();
+    hideSpinner();
+};
+
+
+// ── Horizontal scroll mode ──────────────────────────────────────────
+// All pages rendered side by side into one wide canvas. User scrolls freely.
+
+window.renderAllH = async function() {
+    _displayMode = 'scroll-h';
+    scrollMode = "scroll-h"; halfSide = null;
+    cancelActiveRender();
+    const gen = _renderGen;
+    showSpinner();
+    beginPageTransition(null);
+    pageNum = -1;
+    const gap = 24;
+    const pages = [];
+
+    const _order = _renderSeq() || Array.from({ length: pdfDoc.numPages }, (_, k) => k + 1);
+    for (const i of _order) {
+        const page = await pdfDoc.getPage(i);
+        if (gen !== _renderGen) return;
+        const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
+        const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
+        const tmp = makeCanvas(w, h);
+        const tc  = tmp.getContext("2d");
+        tc.fillStyle = "white"; tc.fillRect(0, 0, w, h);
+        await page.render({ canvasContext: tc, viewport: vp }).promise;
+        if (gen !== _renderGen) return;
+        pages.push(tmp);
+    }
+
+    const maxH   = Math.max(...pages.map(p => p.height));
+    const totalW = pages.reduce((a, p) => a + p.width, 0) + gap * (pages.length - 1);
+
+    canvas.width = markerCanvas.width = noteCanvas.width  = totalW;
+    canvas.height = markerCanvas.height = noteCanvas.height = maxH;
+    penCanvas.width = totalW; penCanvas.height = maxH;
+
+    _scrollOrder = _order.slice(); _scrollLefts = []; _scrollTops = [];
+    ctx.fillStyle = "#2a2a2a"; ctx.fillRect(0, 0, totalW, maxH);
+    let x = 0;
+    for (const pg of pages) {
+        _scrollLefts.push(x);
+        ctx.drawImage(pg, x, Math.round((maxH - pg.height) / 2));
+        x += pg.width + gap;
+    }
+
+    baseWidth = totalW; baseHeight = maxH;
+    loadNotes();
+    if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
+    // Scroll mode: always fit to height, user scrolls horizontally
+    fitToHeight();
     endPageTransition();
     hideSpinner();
 };
@@ -470,8 +589,20 @@ function availViewH() {
     return window.innerHeight - _chromeTop - _chromeBottom;
 }
 
+// ── Crop: an effective content box within the page, framed to fill the screen ──
+let cropRect = null;   // { l, t, r, b } fractions of base dims, or null
+let cropEditing = false;   // true while the manual crop editor is open (suppresses pan/zoom/gestures)
+let pageRotation = 0;      // display rotation in degrees (0 | 90 | 180 | 270), applied to every render
+function _cropActive() { return cropRect && _displayMode === 'single'; }
+function _cw()  { return _cropActive() ? (cropRect.r - cropRect.l) * baseWidth  : baseWidth; }
+function _ch()  { return _cropActive() ? (cropRect.b - cropRect.t) * baseHeight : baseHeight; }
+function _cox() { return _cropActive() ? cropRect.l * baseWidth  : 0; }
+function _coy() { return _cropActive() ? cropRect.t * baseHeight : 0; }
+
 function getFitZoom() {
     if (!baseWidth || !baseHeight) return 1;
+    if (_cropActive()) return window.innerWidth / _cw();
+    if (_displayMode === 'scroll-h') return availViewH() / baseHeight;   // fit height, scroll sideways
     if (_displayMode === 'scroll-v' || _displayMode === 'half-turn')
         return window.innerWidth / baseWidth;
     const viewW = window.innerWidth;
@@ -485,7 +616,7 @@ function isZoomed() {
 
 function shouldPan() {
     const vw = window.innerWidth;
-    return baseWidth * zoom > vw + 2 || baseHeight * zoom > availViewH() + 2;
+    return _cw() * zoom > vw + 2 || _ch() * zoom > availViewH() + 2;
 }
 
 function clampZoom(z) {
@@ -508,10 +639,10 @@ function applyView() {
 function fitToWidth() {
     const hdrH = getHeaderHeight();
     zoom = getFitZoom();
-    const scaledH = baseHeight * zoom;
-    const viewH   = availViewH();
-    panX = 0;
-    panY = scaledH <= viewH ? hdrH + (viewH - scaledH) / 2 : hdrH;
+    const ch    = _ch() * zoom;
+    const viewH = availViewH();
+    panX = -_cox() * zoom;
+    panY = (ch <= viewH ? hdrH + (viewH - ch) / 2 : hdrH) - _coy() * zoom;
     applyView();
 }
 
@@ -519,21 +650,20 @@ function fitToScreen() {
     const hdrH  = getHeaderHeight();
     const viewW = window.innerWidth;
     const viewH = availViewH();
-    zoom = Math.min(viewW / baseWidth, viewH / baseHeight);
-    const scaledW = baseWidth * zoom;
-    const scaledH = baseHeight * zoom;
-    panX = (viewW - scaledW) / 2;
-    panY = hdrH + (viewH - scaledH) / 2;
+    zoom = Math.min(viewW / _cw(), viewH / _ch());
+    const cw = _cw() * zoom, ch = _ch() * zoom;
+    panX = (viewW - cw) / 2 - _cox() * zoom;
+    panY = hdrH + (viewH - ch) / 2 - _coy() * zoom;
     applyView();
 }
 
 function fitToHeight() {
     const hdrH  = getHeaderHeight();
     const viewH = availViewH();
-    zoom = viewH / baseHeight;
-    const scaledW = baseWidth * zoom;
-    panX = scaledW <= window.innerWidth ? (window.innerWidth - scaledW) / 2 : 0;
-    panY = hdrH;
+    zoom = viewH / _ch();
+    const cw = _cw() * zoom;
+    panX = (cw <= window.innerWidth ? (window.innerWidth - cw) / 2 : 0) - _cox() * zoom;
+    panY = hdrH - _coy() * zoom;
     applyView();
 }
 
@@ -541,11 +671,10 @@ function fitFullScreen() {
     const hdrH  = getHeaderHeight();
     const viewW = window.innerWidth;
     const viewH = availViewH();
-    zoom = Math.max(viewW / baseWidth, viewH / baseHeight);
-    const scaledW = baseWidth * zoom;
-    const scaledH = baseHeight * zoom;
-    panX = (viewW - scaledW) / 2;
-    panY = hdrH + (viewH - scaledH) / 2;
+    zoom = Math.max(viewW / _cw(), viewH / _ch());
+    const cw = _cw() * zoom, ch = _ch() * zoom;
+    panX = (viewW - cw) / 2 - _cox() * zoom;
+    panY = hdrH + (viewH - ch) / 2 - _coy() * zoom;
     applyView();
 }
 
@@ -567,21 +696,127 @@ window.setPageScaling = function(mode) {
     }
 };
 
+// ── Crop control ────────────────────────────────────────────────────
+// Set the crop for the page about to render (applied by the render's own
+// applyPageScaling). Clear/too-small/full-page => no crop.
+window.setCrop = function(l, t, r, b) {
+    if (l == null || t == null || r == null || b == null) { cropRect = null; return; }
+    l = Math.max(0, Math.min(1, l)); t = Math.max(0, Math.min(1, t));
+    r = Math.max(0, Math.min(1, r)); b = Math.max(0, Math.min(1, b));
+    if (r - l < 0.05 || b - t < 0.05 || (l < 0.002 && t < 0.002 && r > 0.998 && b > 0.998))
+        cropRect = null;
+    else
+        cropRect = { l, t, r, b };
+};
+window.clearCrop = function() { cropRect = null; };
+window.refit     = function() { try { applyPageScaling(); } catch (e) {} };
+
+// Manual crop editor: clear any crop, show the whole page fit-to-screen, freeze
+// pan/zoom/gestures, and return the page's on-screen rect [x, y, w, h] so the
+// Blazor overlay can map screen coords <-> page fractions.
+window.beginCropEdit = function() {
+    cropRect = null;
+    const prev = pageScaling;
+    pageScaling = 'fit-screen';
+    applyPageScaling();
+    pageScaling = prev;
+    cropEditing = true;
+    return [panX, panY, baseWidth * zoom, baseHeight * zoom];
+};
+window.endCropEdit = function() { cropEditing = false; };
+
+// Display rotation (clockwise, multiples of 90). Render functions read pageRotation.
+// Clears the page cache so cached (old-rotation) pages aren't served after a change.
+window.setRotation = function(deg) {
+    pageRotation = ((Math.round((deg || 0) / 90) * 90) % 360 + 360) % 360;
+    try { _pageCache.clear(); } catch (e) {}
+};
+
+// Detect the content bounding box of the current page (non-white region), as
+// [l, t, r, b] fractions, or null when there's nothing to crop.
+window.autoDetectCrop = function() {
+    try {
+        if (!canvas || !baseWidth || !baseHeight) return null;
+        const sw = Math.min(canvas.width, 400);
+        const sh = Math.max(1, Math.round(canvas.height * sw / canvas.width));
+        const tmp = makeCanvas(sw, sh);
+        const tctx = tmp.getContext("2d", { willReadFrequently: true });
+        tctx.drawImage(canvas, 0, 0, sw, sh);
+        const img = tctx.getImageData(0, 0, sw, sh);
+        return _detectContentBox(img.data, sw, sh, 245, 0.015);
+    } catch (e) { return null; }
+};
+
+// Batch: render each page small and detect its content box. Returns an array where
+// element i is the [l,t,r,b] crop for page i+1, or [] when there's nothing to crop;
+// null if aborted. Renders to throwaway canvases, so the on-screen page is untouched.
+window.autoDetectCropAll = async function() {
+    try {
+        if (!pdfDoc) return null;
+        const gen = _renderGen;
+        const out = [];
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+            const page = await pdfDoc.getPage(i);
+            if (gen !== _renderGen) return null;   // navigated away → abort
+            const vp1 = page.getViewport({ scale: 1 });
+            const scale = Math.min(2, 500 / vp1.width);
+            const vp = page.getViewport({ scale });
+            const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
+            const tmp = makeCanvas(w, h);
+            const tctx = tmp.getContext("2d", { willReadFrequently: true });
+            tctx.fillStyle = "white"; tctx.fillRect(0, 0, w, h);
+            await page.render({ canvasContext: tctx, viewport: vp }).promise;
+            if (gen !== _renderGen) return null;
+            const img = tctx.getImageData(0, 0, w, h);
+            const box = _detectContentBox(img.data, w, h, 245, 0.015);
+            out.push(box || []);
+        }
+        return out;
+    } catch (e) { return null; }
+};
+
+// Pure bounding-box scan (kept separate so it can be unit-tested).
+function _detectContentBox(data, sw, sh, thresh, padFrac) {
+    let minX = sw, minY = sh, maxX = -1, maxY = -1;
+    for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+            const i = (y * sw + x) * 4;
+            if (data[i + 3] <= 10) continue;   // transparent = background
+            const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+            if (lum < thresh) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+    if (maxX < minX || maxY < minY) return null;          // blank page
+    const padX = sw * padFrac, padY = sh * padFrac;
+    const l = Math.max(0, (minX - padX) / sw);
+    const t = Math.max(0, (minY - padY) / sh);
+    const r = Math.min(1, (maxX + 1 + padX) / sw);
+    const b = Math.min(1, (maxY + 1 + padY) / sh);
+    if (r - l > 0.98 && b - t > 0.98) return null;        // essentially full page
+    return [l, t, r, b];
+}
+
 function clampPan() {
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const w  = baseWidth * zoom, h = baseHeight * zoom;
+    const vw = window.innerWidth;
+    const w  = _cw() * zoom, h = _ch() * zoom;
     const hdrH  = getHeaderHeight();
     const viewH = availViewH();
+    const ox = _cox() * zoom, oy = _coy() * zoom;
 
-    if (w <= vw) panX = (vw - w) / 2;
-    else panX = Math.min(0, Math.max(vw - w, panX));
+    if (w <= vw) panX = (vw - w) / 2 - ox;
+    else panX = Math.min(-ox, Math.max(vw - w - ox, panX));
 
     if (h <= viewH) {
-        panY = hdrH + (viewH - h) / 2;
+        panY = hdrH + (viewH - h) / 2 - oy;
     } else if (halfSide !== null) {
-        panY = Math.max(hdrH - h / 2, Math.min(hdrH, panY));
+        panY = Math.max(hdrH - h / 2 - oy, Math.min(hdrH - oy, panY));
     } else {
-        panY = Math.min(hdrH, Math.max(hdrH + viewH - h, panY));
+        panY = Math.min(hdrH - oy, Math.max(hdrH + viewH - h - oy, panY));
     }
 }
 
@@ -595,15 +830,16 @@ function smoothZoomTo(targetZoom, cx, cy) {
     let ePX = cx - (cx - sPX) * ratio;
     let ePY = cy - (cy - sPY) * ratio;
 
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const w = baseWidth * targetZoom, h = baseHeight * targetZoom;
+    const vw = window.innerWidth;
+    const w = _cw() * targetZoom, h = _ch() * targetZoom;
     const hdrH = getHeaderHeight(), viewH = availViewH();
+    const ox = _cox() * targetZoom, oy = _coy() * targetZoom;
 
-    if (w <= vw) ePX = (vw - w) / 2;
-    else ePX = Math.min(0, Math.max(vw - w, ePX));
-    if (h <= viewH) ePY = hdrH + (viewH - h) / 2;
-    else if (halfSide !== null) ePY = Math.max(hdrH - h / 2, Math.min(hdrH, ePY));
-    else ePY = Math.min(hdrH, Math.max(hdrH + viewH - h, ePY));
+    if (w <= vw) ePX = (vw - w) / 2 - ox;
+    else ePX = Math.min(-ox, Math.max(vw - w - ox, ePX));
+    if (h <= viewH) ePY = hdrH + (viewH - h) / 2 - oy;
+    else if (halfSide !== null) ePY = Math.max(hdrH - h / 2 - oy, Math.min(hdrH - oy, ePY));
+    else ePY = Math.min(hdrH - oy, Math.max(hdrH + viewH - h - oy, ePY));
 
     const dur = 250, t0 = performance.now();
     (function step(now) {
@@ -619,6 +855,36 @@ function smoothZoomTo(targetZoom, cx, cy) {
 
 window.getWindowWidth = () => window.innerWidth;
 
+// ── PDF embedded outline (table of contents) ────────────────────────
+// Flattens the PDF's own bookmark tree to [{title, page, level}] with
+// 1-based page numbers. Dest-less nodes get page 0 (Blazor filters them out).
+window.getPdfOutline = async function() {
+    if (!pdfDoc || typeof pdfDoc.getOutline !== 'function') return [];
+    let outline;
+    try { outline = await pdfDoc.getOutline(); } catch { return []; }
+    if (!outline || !outline.length) return [];
+    const out = [];
+    async function resolvePage(dest) {
+        try {
+            let d = dest;
+            if (typeof d === 'string') d = await pdfDoc.getDestination(d);
+            if (!Array.isArray(d) || !d.length || d[0] == null || typeof d[0] !== 'object') return 0;
+            const idx = await pdfDoc.getPageIndex(d[0]);
+            return (idx | 0) + 1;
+        } catch { return 0; }
+    }
+    async function walk(nodes, level) {
+        for (const n of nodes) {
+            let page = 0;
+            if (n && n.dest != null) page = await resolvePage(n.dest);
+            out.push({ title: ((n && n.title) || '').trim() || '—', page: page, level: level });
+            if (n && n.items && n.items.length) await walk(n.items, level + 1);
+        }
+    }
+    try { await walk(outline, 0); } catch {}
+    return out;
+};
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  Interaction — unified touch + mouse (MobileSheets-style)
@@ -626,6 +892,48 @@ window.getWindowWidth = () => window.innerWidth;
 
 let _currentBg = null;
 let _clickCapture = null;
+
+// Keyboard / page-turner-pedal navigation. Most Bluetooth foot pedals (AirTurn,
+// PageFlip, …) send key events — map them to gestures. The map is user-remappable
+// (localStorage 'bs_keymap'); a capture mode binds the next key to a chosen action.
+const DEFAULT_KEYMAP = {
+    'ArrowRight': 'next_page', 'ArrowDown': 'next_page', 'PageDown': 'next_page', ' ': 'next_page', 'Spacebar': 'next_page',
+    'ArrowLeft': 'prev_page', 'ArrowUp': 'prev_page', 'PageUp': 'prev_page',
+    'Home': 'first_page', 'End': 'last_page',
+    'b': 'add_bookmark', 'B': 'add_bookmark', 'm': 'toggle_metronome', 'M': 'toggle_metronome', 'p': 'toggle_audio', 'P': 'toggle_audio'
+};
+let _keyMap = null, _captureAction = null;
+function _loadKeyMap() {
+    try { const raw = localStorage.getItem('bs_keymap'); if (raw) { const m = JSON.parse(raw); if (m && typeof m === 'object') return m; } } catch {}
+    return Object.assign({}, DEFAULT_KEYMAP);
+}
+function _saveKeyMap() { try { localStorage.setItem('bs_keymap', JSON.stringify(_keyMap)); } catch {} }
+window.getKeyMap     = function() { if (!_keyMap) _keyMap = _loadKeyMap(); try { return JSON.stringify(_keyMap); } catch { return '{}'; } };
+window.setKeyCapture = function(action) { _captureAction = action || null; };
+window.resetKeyMap   = function() { _keyMap = Object.assign({}, DEFAULT_KEYMAP); try { localStorage.removeItem('bs_keymap'); } catch {} };
+
+function onKeyNav(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;        // leave browser/OS shortcuts alone
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (!_keyMap) _keyMap = _loadKeyMap();
+    if (_captureAction) {                                  // settings "assign a key" mode
+        e.preventDefault();
+        if (e.key !== 'Escape') { _keyMap[e.key] = _captureAction; _saveKeyMap(); }
+        const a = (e.key !== 'Escape') ? _captureAction : '';
+        _captureAction = null;
+        if (dotNetRef) dotNetRef.invokeMethodAsync('OnKeyCaptured', e.key, a).catch(() => {});
+        return;
+    }
+    if (editMode || cropEditing) return;                   // don't hijack while annotating / cropping
+    const action = _keyMap[e.key];
+    if (!action) return;
+    e.preventDefault();
+    if (dotNetRef) dotNetRef.invokeMethodAsync('OnGesture', action).catch(() => {});
+}
+// Bound globally (covers canvas AND text/ChordPro songs); remove-then-add is idempotent.
+window.initKeyNav    = function() { document.removeEventListener('keydown', onKeyNav); document.addEventListener('keydown', onKeyNav); };
+window.disposeKeyNav = function() { document.removeEventListener('keydown', onKeyNav); };
 
 function teardownListeners() {
     if (_currentBg) {
@@ -670,7 +978,7 @@ function setupInteraction() {
 // ── Touch ──────────────────────────────────────────────────────────
 
 function onTouchStart(e) {
-    if (editMode) return;
+    if (editMode || cropEditing) return;
     stopInertia();
     if (e.touches.length === 1) {
         _touchDragging = true;
@@ -692,12 +1000,13 @@ function onTouchStart(e) {
 }
 
 function onTouchMove(e) {
-    if (editMode) return;
+    if (editMode || cropEditing) return;
 
     if (e.touches.length === 2) {
         e.preventDefault();
         _touchDragging = false;
         _wasPinching = true;
+        _autoScrollInterrupt();
         const a = e.touches[0], b = e.touches[1];
         const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
         const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
@@ -719,6 +1028,7 @@ function onTouchMove(e) {
         if (!_touchMoved && Math.hypot(dx, dy) > DRAG_THRESHOLD) _touchMoved = true;
         if (_touchMoved) {
             _suppressClick = true;
+            _autoScrollInterrupt();
             if (shouldPan()) {
                 e.preventDefault();
                 panX = _touchInitPanX + dx;
@@ -739,7 +1049,7 @@ function onTouchMove(e) {
 }
 
 function onTouchEnd(e) {
-    if (editMode) return;
+    if (editMode || cropEditing) return;
     if (e.touches.length === 0) {
         if (_wasPinching === false && _twoFingerTapStart > 0 && !lastDist) {
             const elapsed = Date.now() - _twoFingerTapStart;
@@ -781,11 +1091,83 @@ function stopInertia() {
     _velX = _velY = 0;
 }
 
+// ── Auto-scroll (smooth continuous vertical scroll) ─────────────────
+// Distinct from the timed "auto page turn": this glides panY downward at a
+// constant screen-px/sec until the content bottom, then asks Blazor
+// (OnAutoScrollEnd) whether to advance a page and resume, or stop. A user
+// pan/zoom pauses it (OnAutoScrollState false).
+let _autoScrollId = null;
+let _autoScrollSpeed = 40;      // screen px per second
+let _autoScrollLast = 0;
+let _autoScrollMoved = false;
+try { const _s = parseFloat(localStorage.getItem('bs_autoscroll_speed')); if (!isNaN(_s) && _s > 0) _autoScrollSpeed = _s; } catch {}
+
+window.isAutoScrolling    = function() { return _autoScrollId !== null; };
+window.getAutoScrollSpeed = function() { return _autoScrollSpeed; };
+window.setAutoScrollSpeed = function(pxPerSec) {
+    const v = Number(pxPerSec);
+    if (!isNaN(v) && v > 0) _autoScrollSpeed = Math.max(4, Math.min(300, v));
+    try { localStorage.setItem('bs_autoscroll_speed', String(_autoScrollSpeed)); } catch {}
+    return _autoScrollSpeed;
+};
+// Total vertical scroll distance (screen px) in scroll-v — for timed auto-scroll.
+window.getScrollRange = function() {
+    if (_displayMode !== 'scroll-v' || !baseHeight) return 0;
+    return Math.max(0, baseHeight * zoom - availViewH());
+};
+
+window.startAutoScroll = function(pxPerSec) {
+    if (pxPerSec != null) window.setAutoScrollSpeed(pxPerSec);
+    if (_autoScrollId !== null) return true;           // already running
+    if (editMode || cropEditing) return false;
+    stopInertia();
+    _autoScrollMoved = false;
+    _autoScrollLast  = performance.now();
+    _autoScrollId    = requestAnimationFrame(_autoScrollStep);
+    return true;
+};
+window.stopAutoScroll = function() { _autoScrollStop(); };
+
+function _autoScrollStop() {
+    if (_autoScrollId !== null) { cancelAnimationFrame(_autoScrollId); _autoScrollId = null; }
+}
+
+function _autoScrollStep(now) {
+    if (_autoScrollId === null) return;
+    if (editMode || cropEditing) { _autoScrollStop(); _autoScrollNotify(false); return; }
+    const dt = Math.min(0.1, (now - _autoScrollLast) / 1000);
+    _autoScrollLast = now;
+    if (dt <= 0) { _autoScrollId = requestAnimationFrame(_autoScrollStep); return; }  // skip zero-length frames
+    const before = panY;
+    panY -= _autoScrollSpeed * dt;     // scroll down = content up = panY decreasing
+    clampPan(); applyView();
+    if (panY < before - 0.01) {        // moved → keep going
+        _autoScrollMoved = true;
+        _autoScrollId = requestAnimationFrame(_autoScrollStep);
+    } else {                           // clamp blocked it → bottom reached (or nothing to scroll)
+        _autoScrollReachedEnd();
+    }
+}
+
+function _autoScrollNotify(running) {
+    if (dotNetRef) dotNetRef.invokeMethodAsync('OnAutoScrollState', running).catch(function() {});
+}
+function _autoScrollReachedEnd() {
+    const moved = _autoScrollMoved;
+    _autoScrollStop();
+    if (dotNetRef) dotNetRef.invokeMethodAsync('OnAutoScrollEnd', moved).catch(function() { _autoScrollNotify(false); });
+    else _autoScrollNotify(false);
+}
+function _autoScrollInterrupt() {
+    if (_autoScrollId !== null) { _autoScrollStop(); _autoScrollNotify(false); }
+}
+
 // ── Mouse ──────────────────────────────────────────────────────────
 
 function onWheelZoom(e) {
-    if (!canvas || editMode) return;
+    if (!canvas || editMode || cropEditing) return;
     e.preventDefault();
+    _autoScrollInterrupt();
     const oz = zoom;
     zoom = clampZoom(zoom * (e.deltaY < 0 ? 1.12 : 0.88));
     panX = e.clientX - (e.clientX - panX) * (zoom / oz);
@@ -794,7 +1176,7 @@ function onWheelZoom(e) {
 }
 
 function onMouseDown(e) {
-    if (editMode || e.button !== 0) return;
+    if (editMode || cropEditing || e.button !== 0) return;
     _panDragging = true;
     _panStartX = e.clientX - panX; _panStartY = e.clientY - panY;
     document.body.style.cursor = 'grabbing';
@@ -802,6 +1184,7 @@ function onMouseDown(e) {
 
 function onMouseMove(e) {
     if (!_panDragging) return;
+    _autoScrollInterrupt();
     panX = e.clientX - _panStartX; panY = e.clientY - _panStartY;
     clampPan(); applyView();
 }
@@ -1029,6 +1412,93 @@ window.savePanelCollapsed = v => { try { localStorage.setItem("bs_panel_collapse
 
 
 // ═══════════════════════════════════════════════════════════════════
+//  Corner action box (FAB) — draggable, saves {top,left} to localStorage
+// ═══════════════════════════════════════════════════════════════════
+
+let fabRef = null, fabDragObserver = null, _fabResizeBound = false;
+
+window.initFabDrag = function(ref) {
+    fabRef = ref;
+    if (fabDragObserver) fabDragObserver.disconnect();
+    tryAttachFabDrag();
+    fabDragObserver = new MutationObserver(tryAttachFabDrag);
+    fabDragObserver.observe(document.body, { childList: true, subtree: true });
+    if (!_fabResizeBound) {
+        _fabResizeBound = true;
+        window.addEventListener('resize', () => { if (document.getElementById("vfab")) clampFabIntoView(); });
+    }
+};
+
+function clampFabTo(p, fab) {
+    const maxLeft = Math.max(0, window.innerWidth  - fab.offsetWidth);
+    const maxTop  = Math.max(0, window.innerHeight - fab.offsetHeight);
+    return { top: Math.max(0, Math.min(maxTop, p.top)), left: Math.max(0, Math.min(maxLeft, p.left)) };
+}
+function loadFabPosRaw() {
+    try {
+        const raw = localStorage.getItem("bs_fab_pos");
+        if (raw) { const p = JSON.parse(raw); if (p && typeof p.top === 'number' && typeof p.left === 'number') return p; }
+    } catch {}
+    return null;
+}
+function applyFabPos(fab) {
+    const pos = loadFabPosRaw();
+    if (!pos) return;                 // never dragged → keep the CSS default (bottom-right)
+    const c = clampFabTo(pos, fab);
+    fab.style.left = c.left + "px"; fab.style.top = c.top + "px";
+    fab.style.right = "auto"; fab.style.bottom = "auto";
+}
+function persistFabPos(fab) {
+    const top  = Math.round(parseFloat(fab.style.top)  || 0);
+    const left = Math.round(parseFloat(fab.style.left) || 0);
+    try { localStorage.setItem("bs_fab_pos", JSON.stringify({ top, left })); } catch {}
+}
+function clampFabIntoView() {
+    const fab = document.getElementById("vfab");
+    if (!fab || !loadFabPosRaw()) return;
+    const c = clampFabTo({ top: parseFloat(fab.style.top) || 0, left: parseFloat(fab.style.left) || 0 }, fab);
+    fab.style.left = c.left + "px"; fab.style.top = c.top + "px";
+    fab.style.right = "auto"; fab.style.bottom = "auto";
+    persistFabPos(fab);
+}
+
+function tryAttachFabDrag() {
+    const fab = document.getElementById("vfab");
+    if (!fab || fab._dragAttached) return;
+    fab._dragAttached = true;
+    applyFabPos(fab);                 // re-apply a saved position whenever the FAB reappears
+
+    let dragging = false, moved = false;
+    let startX = 0, startY = 0, startTop = 0, startLeft = 0;
+    const TAP_SLOP = 10;              // movement below this = a tap (open/close), above = a drag
+
+    fab.addEventListener("pointerdown", e => {
+        e.preventDefault(); e.stopPropagation();
+        dragging = true; moved = false;
+        try { fab.setPointerCapture(e.pointerId); } catch {}
+        const r = fab.getBoundingClientRect();
+        startTop = r.top; startLeft = r.left;
+        startX = e.clientX; startY = e.clientY;
+    });
+    fab.addEventListener("pointermove", e => {
+        if (!dragging) return;
+        if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < TAP_SLOP) return;
+        moved = true;
+        const c = clampFabTo({ top: startTop + (e.clientY - startY), left: startLeft + (e.clientX - startX) }, fab);
+        fab.style.left = c.left + "px"; fab.style.top = c.top + "px";
+        fab.style.right = "auto"; fab.style.bottom = "auto";
+    });
+    fab.addEventListener("pointerup", () => {
+        if (!dragging) return;
+        dragging = false;
+        if (moved) persistFabPos(fab);
+        else if (fabRef) fabRef.invokeMethodAsync("ToggleActionBoxFromJs").catch(() => {});
+    });
+    fab.addEventListener("pointercancel", () => { dragging = false; });
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
 //  Color persistence
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1041,6 +1511,116 @@ window.saveUserColors = window.saveColors;
 
 // ── Orientation helper ─────────────────────────────────────────────
 window.isLandscape = () => window.innerWidth > window.innerHeight;
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  Metronome — Web Audio click + visual pulse (lookahead scheduling)
+// ═══════════════════════════════════════════════════════════════════
+// Entirely self-contained: does not touch the viewer render / annotation /
+// navigation paths. Precise audio is scheduled on the Web Audio clock; the
+// visual pulse rides a setTimeout per beat (cosmetic).
+
+let _metroCtx = null, _metroTimer = null;
+let _metroNextNote = 0, _metroBeat = 0;
+let _metroBpm = 100, _metroBeats = 4, _metroRunning = false;
+let _metroMuted = false, _metroAccent = true;
+const _METRO_LOOKAHEAD = 25;     // ms between scheduler ticks
+const _METRO_AHEAD = 0.12;       // sec of audio scheduled ahead of the clock
+
+function _metroScheduleClick(time, isDown) {
+    const ctx = _metroCtx; if (!ctx || _metroMuted) return;   // muted = visual pulse only, no sound
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.frequency.value = isDown ? 1600 : 1000;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(isDown ? 0.7 : 0.45, time + 0.001);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.05);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(time); osc.stop(time + 0.06);
+}
+function _metroPulse(isDown) {
+    const el = document.getElementById('vmetro-dot'); if (!el) return;
+    el.classList.remove('metro-on', 'metro-down');
+    void el.offsetWidth;             // restart the CSS animation
+    el.classList.add(isDown ? 'metro-down' : 'metro-on');
+}
+function _metroScheduler() {
+    const ctx = _metroCtx; if (!ctx) return;
+    while (_metroNextNote < ctx.currentTime + _METRO_AHEAD) {
+        const isDown = _metroAccent && (_metroBeat % _metroBeats) === 0;
+        _metroScheduleClick(_metroNextNote, isDown);
+        const delayMs = Math.max(0, (_metroNextNote - ctx.currentTime) * 1000);
+        setTimeout(() => { if (_metroRunning) _metroPulse(isDown); }, delayMs);
+        _metroNextNote += 60.0 / _metroBpm;
+        _metroBeat++;
+    }
+}
+window.startMetronome = function(bpm, beats) {
+    if (bpm)   _metroBpm   = Math.max(20, Math.min(300, bpm | 0));
+    if (beats) _metroBeats = Math.max(1, Math.min(16, beats | 0));
+    if (_metroRunning) return true;
+    try {
+        if (!_metroCtx) _metroCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_metroCtx.state === 'suspended') _metroCtx.resume();
+    } catch (e) { return false; }
+    _metroRunning = true; _metroBeat = 0;
+    _metroNextNote = _metroCtx.currentTime + 0.06;
+    _metroTimer = setInterval(_metroScheduler, _METRO_LOOKAHEAD);
+    return true;
+};
+window.stopMetronome = function() {
+    _metroRunning = false;
+    if (_metroTimer) { clearInterval(_metroTimer); _metroTimer = null; }
+};
+window.setMetronomeBpm   = function(bpm)   { _metroBpm   = Math.max(20, Math.min(300, bpm | 0)); return _metroBpm; };
+window.setMetronomeBeats = function(beats) { _metroBeats = Math.max(1, Math.min(16, beats | 0)); return _metroBeats; };
+window.isMetronomeRunning = function() { return _metroRunning; };
+window.setMetronomeMuted  = function(on) { _metroMuted  = !!on; };
+window.setMetronomeAccent = function(on) { _metroAccent = (on !== false); };
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  Audio backing-track playback (self-contained; no viewer coupling)
+// ═══════════════════════════════════════════════════════════════════
+let _audioEl = null, _audioUrl = null;
+function _audio() { if (!_audioEl) _audioEl = document.getElementById('vaudio'); return _audioEl; }
+
+window.loadAudioData = function(bytes, mime) {
+    const el = _audio(); if (!el) return false;
+    try {
+        if (_audioUrl) { try { URL.revokeObjectURL(_audioUrl); } catch {} _audioUrl = null; }
+        _audioUrl = URL.createObjectURL(new Blob([bytes], { type: mime || 'audio/mpeg' }));
+        el.src = _audioUrl;
+        if (!el._bsHooked) {
+            el._bsHooked = true;
+            const report = () => {
+                if (_loopB != null && el.currentTime >= _loopB - 0.03) { try { el.currentTime = _loopA || 0; } catch {} }   // A–B practice loop
+                if (dotNetRef) dotNetRef.invokeMethodAsync('OnAudioTime', el.currentTime || 0, isFinite(el.duration) ? el.duration : 0).catch(() => {});
+            };
+            el.addEventListener('timeupdate', report);
+            el.addEventListener('loadedmetadata', report);
+            el.addEventListener('ended', () => { if (dotNetRef) dotNetRef.invokeMethodAsync('OnAudioEnded').catch(() => {}); });
+        }
+        el.load();
+        return true;
+    } catch (e) { return false; }
+};
+window.playAudio  = function() { const el = _audio(); if (el) { const p = el.play(); if (p && p.catch) p.catch(() => {}); } };
+window.pauseAudio = function() { const el = _audio(); if (el) el.pause(); };
+window.seekAudio  = function(sec) { const el = _audio(); if (el && isFinite(sec)) { try { el.currentTime = Math.max(0, sec); } catch {} } };
+window.setAudioRate = function(r) {
+    const el = _audio(); if (!el) return;
+    try {
+        el.playbackRate = Math.max(0.25, Math.min(4, r || 1));
+        el.preservesPitch = true; el.mozPreservesPitch = true; el.webkitPreservesPitch = true;   // keep pitch when slowed
+    } catch {}
+};
+let _loopA = null, _loopB = null;   // audio A–B practice loop (seconds), or null
+window.setAudioLoop   = function(a, b) { _loopA = (a != null && a >= 0) ? a : null; _loopB = (b != null && _loopA != null && b > _loopA) ? b : null; };
+window.clearAudioLoop = function() { _loopA = null; _loopB = null; };
+window.unloadAudio = function() {
+    const el = _audio(); if (el) { try { el.pause(); } catch {} el.removeAttribute('src'); try { el.load(); } catch {} }
+    if (_audioUrl) { try { URL.revokeObjectURL(_audioUrl); } catch {} _audioUrl = null; }
+};
 
 
 // ── Page transition animation ──────────────────────────────────────
@@ -1594,10 +2174,59 @@ function getFullState() {
     };
 }
 
+// ── Rotation-canonical note storage ─────────────────────────────────
+// Annotations are persisted in rotation-0 ("canonical") page coordinates so they
+// stay anchored to the page content across rotations. Active only in single-page
+// style modes at a non-zero rotation; at rotation 0 it is the identity, so existing
+// data and behaviour are byte-for-byte unchanged.
+function _notesCanonActive() {
+    return pageRotation !== 0 && (_displayMode === 'single' || _displayMode === 'half-turn');
+}
+function _canonDims() {
+    const swap = (pageRotation === 90 || pageRotation === 270);
+    return { W0: swap ? baseHeight : baseWidth, H0: swap ? baseWidth : baseHeight };
+}
+function _toCanon(x, y, W0, H0) {   // current-rotation canvas → canonical (rotation 0)
+    switch (pageRotation) {
+        case 90:  return { x: y,      y: H0 - x };
+        case 180: return { x: W0 - x, y: H0 - y };
+        case 270: return { x: W0 - y, y: x };
+        default:  return { x, y };
+    }
+}
+function _fromCanon(x, y, W0, H0) { // canonical (rotation 0) → current-rotation canvas
+    switch (pageRotation) {
+        case 90:  return { x: H0 - y, y: x };
+        case 180: return { x: W0 - x, y: H0 - y };
+        case 270: return { x: y,      y: W0 - x };
+        default:  return { x, y };
+    }
+}
+function _mapNotePoints(st, mapFn) {
+    const mapArr = (arr) => {
+        for (const o of arr || []) {
+            if (o.points) { for (const p of o.points) { const r = mapFn(p.x, p.y); p.x = r.x; p.y = r.y; } }
+            else if (typeof o.x === 'number' && typeof o.y === 'number') { const r = mapFn(o.x, o.y); o.x = r.x; o.y = r.y; }
+            else if (typeof o.x1 === 'number') { const a = mapFn(o.x1, o.y1), b = mapFn(o.x2, o.y2); o.x1 = a.x; o.y1 = a.y; o.x2 = b.x; o.y2 = b.y; }
+        }
+    };
+    mapArr(st.penStrokes); mapArr(st.markerData); mapArr(st.stampData);
+    mapArr(st.textData);   mapArr(st.hairpinData);
+    return st;
+}
+
 function saveNotes() { persistNotes(); pushUndo(); }
 
 function persistNotes() {
-    try { localStorage.setItem(storageKey(), JSON.stringify(getFullState())); } catch {}
+    try {
+        let st = getFullState();
+        if (_notesCanonActive()) {
+            const d = _canonDims();
+            st = _mapNotePoints(st, (x, y) => _toCanon(x, y, d.W0, d.H0));
+            st.w = d.W0; st.h = d.H0;
+        }
+        localStorage.setItem(storageKey(), JSON.stringify(st));
+    } catch {}
 }
 
 function loadNotes() {
@@ -1635,6 +2264,11 @@ function loadNotes() {
 
     let data;
     try { data = JSON.parse(raw); } catch { pushUndo(); return; }
+
+    if (_notesCanonActive()) {
+        const d = _canonDims();
+        data = _mapNotePoints(data, (x, y) => _fromCanon(x, y, d.W0, d.H0));
+    }
 
     if (data.markerData)  markerAnnotations  = data.markerData;
     if (data.stampData)   stampAnnotations   = data.stampData;
@@ -1814,6 +2448,7 @@ function setupGestureListeners() {
 }
 
 function fireGesture(gestureId) {
+    if (cropEditing) return;
     const action = gestureConfig[gestureId] || 'none';
     if (!action || action === 'none') return;
     if (action === 'zoom_reset') { fitToWidth(); return; }
@@ -2021,7 +2656,7 @@ async function preloadPage(num) {
     if (_pageCache.has(num) || !pdfDoc || num < 1 || num > pdfDoc.numPages) return;
     try {
         const page = await pdfDoc.getPage(num);
-        const vp   = page.getViewport({ scale: 2 });
+        const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
         const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
         const c = makeCanvas(w, h);
         const cx = c.getContext('2d');
@@ -2062,37 +2697,57 @@ function hideSpinner() {
 
 
 // ── First-page thumbnail (reuses the already-loaded pdfDoc) ─────────
-window.renderThumbnail = async function (maxW) {
+// Render a first-page (or image) thumbnail. When a crop (cl,ct,cr,cb fractions) is
+// given, the thumbnail shows only that region — so the library mirrors the cropped view.
+window.renderThumbnail = async function (maxW, cl, ct, cr, cb) {
     try {
+        const w = maxW || 180;
         if (isImageDoc && imgEl) {
-            const iw  = imgEl.naturalWidth || (maxW || 180);
-            const isc = (maxW || 180) / iw;
-            const tiw = Math.max(1, Math.round(iw * isc));
-            const tih = Math.max(1, Math.round((imgEl.naturalHeight || iw) * isc));
-            const ic  = document.createElement('canvas');
-            ic.width = tiw; ic.height = tih;
-            const icx = ic.getContext('2d');
-            icx.fillStyle = '#ffffff'; icx.fillRect(0, 0, tiw, tih);
-            icx.drawImage(imgEl, 0, 0, tiw, tih);
-            return ic.toDataURL('image/jpeg', 0.72);
+            const iw  = imgEl.naturalWidth || w;
+            const ih  = imgEl.naturalHeight || iw;
+            const isc = w / iw;
+            const fw  = Math.max(1, Math.round(iw * isc));
+            const fh  = Math.max(1, Math.round(ih * isc));
+            const full = document.createElement('canvas');
+            full.width = fw; full.height = fh;
+            const fcx = full.getContext('2d');
+            fcx.fillStyle = '#ffffff'; fcx.fillRect(0, 0, fw, fh);
+            fcx.drawImage(imgEl, 0, 0, fw, fh);
+            return _thumbOut(full, cl, ct, cr, cb);
         }
         if (!pdfDoc) return null;
         const page = await pdfDoc.getPage(1);
         const base = page.getViewport({ scale: 1 });
-        const scale = (maxW || 180) / base.width;
-        const vp = page.getViewport({ scale: scale });
-        const c = document.createElement('canvas');
-        c.width  = Math.max(1, Math.round(vp.width));
-        c.height = Math.max(1, Math.round(vp.height));
-        const ctx = c.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, c.width, c.height);
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-        return c.toDataURL('image/jpeg', 0.72);
+        const vp = page.getViewport({ scale: w / base.width, rotation: pageRotation });
+        const full = document.createElement('canvas');
+        full.width  = Math.max(1, Math.round(vp.width));
+        full.height = Math.max(1, Math.round(vp.height));
+        const fcx = full.getContext('2d');
+        fcx.fillStyle = '#ffffff'; fcx.fillRect(0, 0, full.width, full.height);
+        await page.render({ canvasContext: fcx, viewport: vp }).promise;
+        return _thumbOut(full, cl, ct, cr, cb);
     } catch (e) {
         return null;
     }
 };
+
+// Return the full canvas as JPEG, or just its [cl,ct,cr,cb] sub-rectangle when a crop is given.
+function _thumbOut(full, cl, ct, cr, cb) {
+    const hasCrop = (typeof cl === 'number' && typeof cr === 'number' &&
+                     cr - cl > 0.01 && cb - ct > 0.01 &&
+                     !(cl <= 0.002 && ct <= 0.002 && cr >= 0.998 && cb >= 0.998));
+    if (!hasCrop) return full.toDataURL('image/jpeg', 0.72);
+    const sx = Math.max(0, Math.round(cl * full.width));
+    const sy = Math.max(0, Math.round(ct * full.height));
+    const sw = Math.max(1, Math.round((cr - cl) * full.width));
+    const sh = Math.max(1, Math.round((cb - ct) * full.height));
+    const out = document.createElement('canvas');
+    out.width = sw; out.height = sh;
+    const ocx = out.getContext('2d');
+    ocx.fillStyle = '#ffffff'; ocx.fillRect(0, 0, sw, sh);
+    ocx.drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+    return out.toDataURL('image/jpeg', 0.72);
+}
 
 // ── Dark mode toggle ────────────────────────────────────────────────
 window.setDarkMode = function (on) {

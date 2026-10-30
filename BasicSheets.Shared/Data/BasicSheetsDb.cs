@@ -60,6 +60,7 @@ public class BasicSheetsDb
         Conn.CreateTable<SettingRow>();
         Conn.CreateTable<SchemaMeta>();
         Conn.CreateTable<Thumbnail>();
+        Conn.CreateTable<Crop>();
 
         LegacyJsonMigrator.RunIfNeeded(this);
     }

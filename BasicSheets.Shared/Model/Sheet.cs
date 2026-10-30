@@ -23,6 +23,11 @@ public class Sheet
     public int     PageStart  { get; set; } = 0;           // 0 = whole file; >0 = this song is pages [PageStart,PageEnd] of FilePath
     public int     PageEnd    { get; set; } = 0;
     public int     Transpose  { get; set; } = 0;           // semitone offset for ChordPro/text songs (-11..11)
+    public int     Rotation   { get; set; } = 0;           // display rotation in degrees (0 | 90 | 180 | 270)
+    public string  PageOrder  { get; set; } = "";          // custom page sequence, CSV of 1-based pages ("" = natural)
+    public int     Bpm        { get; set; } = 0;           // per-song metronome tempo (0 = default 100)
+    public int     Beats      { get; set; } = 0;           // per-song metronome beats/measure (0 = default 4)
+    public string  AudioPath  { get; set; } = "";          // optional backing-track file name in UploadFolder ("" = none)
     public DateTime Created   { get; set; } = DateTime.Now;
     public DateTime Updated   { get; set; } = DateTime.Now;
 

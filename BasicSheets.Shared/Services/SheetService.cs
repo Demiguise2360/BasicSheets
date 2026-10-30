@@ -68,6 +68,20 @@ public class SheetService
         });
     }
 
+    /// <summary>Set (or clear with "") only a song's backing-track audio file, without touching other fields.</summary>
+    public void SetAudioPath(string filePath, string audioPath)
+    {
+        if (string.IsNullOrEmpty(filePath)) return;
+        _db.Locked(() =>
+        {
+            var existing = _db.Conn.Table<Sheet>().FirstOrDefault(s => s.FilePath == filePath);
+            if (existing == null) return;
+            existing.AudioPath = audioPath ?? "";
+            existing.Updated   = DateTime.Now;
+            _db.Conn.Update(existing);
+        });
+    }
+
     public void UpdateSheet(Sheet updated)
     {
         if (updated == null) return;
@@ -91,6 +105,11 @@ public class SheetService
             existing.PageStart  = updated.PageStart;
             existing.PageEnd    = updated.PageEnd;
             existing.Transpose  = updated.Transpose;
+            existing.Rotation   = updated.Rotation;
+            existing.PageOrder  = updated.PageOrder ?? "";
+            existing.Bpm        = updated.Bpm;
+            existing.Beats      = updated.Beats;
+            existing.AudioPath  = updated.AudioPath ?? "";
             existing.PageMode   = updated.PageMode;
             existing.Updated    = DateTime.Now;
 

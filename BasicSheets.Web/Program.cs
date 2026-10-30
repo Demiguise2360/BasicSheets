@@ -19,6 +19,7 @@ builder.Services.AddSingleton<SetlistService>();
 builder.Services.AddSingleton<CollectionService>();
 builder.Services.AddSingleton<ThumbnailService>();
 builder.Services.AddSingleton<SheetFileService>();
+builder.Services.AddSingleton<CropService>();
 builder.Services.AddSingleton<SettingsService>();
 builder.Services.AddSingleton<BookmarkService>();
 builder.Services.AddSingleton<ViewerButtonService>();

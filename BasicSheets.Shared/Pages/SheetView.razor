@@ -11,12 +11,14 @@
 @inject ThumbnailService ThumbnailService
 @inject SetlistService SetlistService
 @inject SheetFileService SheetFileService
+@inject CropService CropService
 @implements IDisposable
 
 @* ── Full-screen viewer ───────────────────────────────────────────── *@
-<div class="vbg vbg-@viewerBg @(isEditMode ? "vbg-edit" : "")" @onclick="HandleClick">
+<div class="vbg vbg-@viewerBg @(isEditMode ? "vbg-edit" : "") @(_invert ? "vbg-invert" : "")" @onclick="HandleClick">
     @if (showStart) { <div class="vnotice"><p>Anfang des Stücks</p></div> }
     @if (showEnd)   { <div class="vnotice"><p>Ende des Stücks</p></div>   }
+    @if (_batchNotice != null) { <div class="vnotice"><p>@_batchNotice</p></div> }
     @if (showError) { <div class="verror"><p>@errorMessage</p></div>       }
     <div id="page-spinner" class="page-spinner" style="display:none">
         <div class="spinner-ring"></div>
@@ -520,6 +522,114 @@
                         </div>
                     </div>
 
+                    @if (!_isText)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Nachtmodus</span>
+                            <label class="switch">
+                                <input type="checkbox" checked="@_invert" @onclick="ToggleInvert" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    }
+
+                    <div class="qp-row">
+                        <span class="qp-label">Metronom</span>
+                        <div class="seg-group">
+                            <button class="seg-btn @(_metroRunning?"seg-btn-on":"")" @onclick="ToggleMetronome" title="Metronom starten/stoppen">@(_metroRunning ? "⏸" : "▶") @_metroBpm</button>
+                            <button class="seg-btn" @onclick="() => SetMetroBpm(-5)" title="Langsamer">−</button>
+                            <button class="seg-btn" @onclick="() => SetMetroBpm(5)" title="Schneller">+</button>
+                            <button class="seg-btn" @onclick="TapTempo" title="Tempo tippen">Tap</button>
+                        </div>
+                    </div>
+                    <div class="qp-row">
+                        <span class="qp-label">Taktart</span>
+                        <div class="seg-group">
+                            @foreach (var b in new[] { 2, 3, 4, 6 })
+                            {
+                                var bb = b;
+                                <button class="seg-btn @(_metroBeats==bb?"seg-btn-on":"")" @onclick="() => SetMetroBeats(bb)">@bb</button>
+                            }
+                        </div>
+                    </div>
+                    <div class="qp-row">
+                        <span class="qp-label">Klick</span>
+                        <div class="seg-group">
+                            <button class="seg-btn @(_metroMuted?"seg-btn-on":"")" @onclick="ToggleMetroMute" title="Nur optischer Takt (stumm)">@(_metroMuted ? "🔇 Stumm" : "🔊 Ton")</button>
+                            <button class="seg-btn @(_metroAccent?"seg-btn-on":"")" @onclick="ToggleMetroAccent" title="Betonung auf Zählzeit 1">@(_metroAccent ? "Betont" : "Gleich")</button>
+                        </div>
+                    </div>
+
+                    @if (_hasAudio)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Audio-Loop</span>
+                            <div class="seg-group">
+                                <button class="seg-btn @(_loopState==2?"seg-btn-on":"")" @onclick="CycleLoop"
+                                        title="A setzen → B setzen → Loop → löschen (an der aktuellen Audioposition)">@LoopLabel</button>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="qp-row">
+                        <span class="qp-label">Pedal/Taste</span>
+                        <div class="seg-group">
+                            <button class="seg-btn @(_capturing=="next_page"?"seg-btn-on":"")" @onclick='() => CaptureKey("next_page")'>@(_capturing=="next_page" ? "Taste…" : "Weiter")</button>
+                            <button class="seg-btn @(_capturing=="prev_page"?"seg-btn-on":"")" @onclick='() => CaptureKey("prev_page")'>@(_capturing=="prev_page" ? "Taste…" : "Zurück")</button>
+                            <button class="seg-btn" @onclick="ResetKeys" title="Auf Standard zurücksetzen">↺</button>
+                        </div>
+                    </div>
+                    @if (_keyCapMsg != null)
+                    {
+                        <div class="qp-row"><span class="qp-label"></span><span style="font-size:0.8rem;opacity:0.75">@_keyCapMsg</span></div>
+                    }
+
+                    @if (!_isText)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Drehen</span>
+                            <div class="seg-group">
+                                <button class="seg-btn" @onclick="RotatePage" title="90° im Uhrzeigersinn drehen">&#x21bb; @(_rotation)°</button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!_isText && !_isImage && !_hasRange && totalPages > 1)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Seiten</span>
+                            <div class="seg-group">
+                                <button class="seg-btn" @onclick="OpenPageMgr" title="Seiten neu anordnen, duplizieren, ausblenden">Verwalten@(HasPageOrder ? " ●" : "")</button>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!_isText && effectiveMode == "single")
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Zuschneiden</span>
+                            <div class="seg-group">
+                                <button class="seg-btn" @onclick="AutoCrop" title="Ränder automatisch zuschneiden">Auto</button>
+                                @if (totalPages > 1)
+                                {
+                                    <button class="seg-btn" @onclick="BatchAutoCrop" disabled="@_batchBusy"
+                                            title="Alle Seiten automatisch zuschneiden">@(_batchBusy ? "…" : "Alle")</button>
+                                }
+                                <button class="seg-btn" @onclick="EnterCropEdit" title="Manuell zuschneiden">Bearbeiten</button>
+                            </div>
+                        </div>
+                        @if (_crops.Count > 0)
+                        {
+                            <div class="qp-row">
+                                <span class="qp-label">Zurücksetzen</span>
+                                <div class="seg-group">
+                                    <button class="seg-btn" @onclick="ResetCrop" title="Zuschnitt dieser Seite entfernen">Seite</button>
+                                    <button class="seg-btn" @onclick="ResetAllCrops" title="Alle Zuschnitte entfernen">Alle</button>
+                                </div>
+                            </div>
+                        }
+                    }
+
                     @{
                         var autoTurnSetting = SettingsService.GetSettings().FirstOrDefault(s => s.Name == "Seiten automatisch umblättern");
                     }
@@ -540,6 +650,34 @@
                                 }
                             </div>
                         </div>
+                    }
+
+                    @if (CanAutoScroll)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Auto-Scroll</span>
+                            <div class="seg-group">
+                                <button class="seg-btn @(_autoScrolling?"seg-btn-on":"")" @onclick="ToggleAutoScroll"
+                                        title="Gleichmäßig durch die Seite scrollen (zum Blättern Fit-Breite oder Vertikal-Scroll verwenden)">
+                                    @(_autoScrolling ? "⏸ Stop" : "▶ Start")
+                                </button>
+                                <button class="seg-btn" @onclick="() => SetAutoScrollSpeed(_autoScrollSpeed - 10)" title="Langsamer">−</button>
+                                <button class="seg-btn" style="min-width:3em" disabled>@_autoScrollSpeed</button>
+                                <button class="seg-btn" @onclick="() => SetAutoScrollSpeed(_autoScrollSpeed + 10)" title="Schneller">+</button>
+                            </div>
+                        </div>
+                        @if (effectiveMode == "scroll-v")
+                        {
+                            <div class="qp-row">
+                                <span class="qp-label">Dauer</span>
+                                <div class="seg-group">
+                                    <button class="seg-btn" @onclick="() => { _autoScrollMinutes = Math.Max(1, _autoScrollMinutes - 1); }" title="Kürzer">−</button>
+                                    <button class="seg-btn" style="min-width:4em" disabled>@_autoScrollMinutes min</button>
+                                    <button class="seg-btn" @onclick="() => { _autoScrollMinutes = Math.Min(60, _autoScrollMinutes + 1); }" title="Länger">+</button>
+                                    <button class="seg-btn" @onclick="StartTimedAutoScroll" title="In dieser Zeit gleichmäßig bis zum Ende scrollen">▶ Zeit</button>
+                                </div>
+                            </div>
+                        }
                     }
 
                     @{
@@ -600,6 +738,211 @@
     </div>
 }
 
+<audio id="vaudio" preload="metadata" style="display:none"></audio>
+
+@* ── Audio backing-track player (shown when a track is attached) ─────── *@
+@if (_hasAudio)
+{
+    <div class="vaudiobar">
+        <button class="vap-btn" @onclick="() => AudioSkip(-10)" title="10 s zurück">&#x00ab; 10</button>
+        <button class="vap-btn vap-btn-main" @onclick="ToggleAudioPlay" title="@(_audioPlaying ? "Pause" : "Wiedergabe")">@(_audioPlaying ? "⏸" : "▶")</button>
+        <button class="vap-btn" @onclick="() => AudioSkip(10)" title="10 s vor">10 &#x00bb;</button>
+        <input class="vaudio-seek" type="range" min="0" max="@MaxStr" step="0.1" value="@PosStr" @oninput="OnSeekInput" @onchange="OnSeekChange" />
+        <span class="vaudio-t">@FmtTime(_audioPos) / @FmtTime(_audioDur)</span>
+        <button class="vap-btn" @onclick="CycleRate" title="Wiedergabetempo (Tonhöhe bleibt)">@RateLabel</button>
+    </div>
+}
+
+@* ── Metronome beat indicator (shown while running) ─────────────────── *@
+@if (_metroRunning)
+{
+    <div class="vmetro">
+        <div id="vmetro-dot"></div>
+        <span class="vmetro-lbl">&#x2669; @_metroBpm</span>
+    </div>
+}
+
+@* ── Corner action box (floating quick-access) ──────────────────────── *@
+@if (!_isText && !isEditMode && !_cropEditMode && !showTextInput && !showBookmarkDialog && !showQuickPanel)
+{
+    <button id="vfab" class="vfab @(showActionBox ? "vfab-on" : "")" @onclick="() => { }" @onclick:stopPropagation="true" title="Schnellzugriff (ziehen zum Verschieben)">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="5" cy="5" r="1.7"/><circle cx="12" cy="5" r="1.7"/><circle cx="19" cy="5" r="1.7"/>
+            <circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/>
+            <circle cx="5" cy="19" r="1.7"/><circle cx="12" cy="19" r="1.7"/><circle cx="19" cy="19" r="1.7"/>
+        </svg>
+    </button>
+}
+
+@if (showActionBox)
+{
+    <div class="vab-bg" @onclick="() => showActionBox = false">
+        <div class="vab-box" @onclick:stopPropagation="true">
+
+            @if (!_isText && !_isImage && totalPages > 1)
+            {
+                <div class="vab-section">
+                    <div class="vab-head">Gehe zu Seite</div>
+                    <div class="vab-pagerow">
+                        <input type="number" class="vab-goto" min="1" max="@(IsScrollMode ? totalPages : pageCount)"
+                               @bind="_gotoPage" @bind:event="oninput" @onkeydown="OnGotoKey" />
+                        <span class="vab-gototot">/ @(IsScrollMode ? totalPages : pageCount)</span>
+                        <button class="vab-nav vab-nav-wide" @onclick="GoToPage">Los</button>
+                    </div>
+                </div>
+            }
+
+            @if (!IsScrollMode && pageCount > 1)
+            {
+                <div class="vab-section">
+                    <div class="vab-head">Seiten</div>
+                    <div class="vab-pagerow">
+                        <button class="vab-nav" @onclick="() => JumpPage(1)" disabled="@(currentPage <= 1)" title="Erste Seite">&#x23ee;</button>
+                        <button class="vab-nav" @onclick="() => JumpPage(currentPage - 1)" disabled="@(currentPage <= 1)" title="Zurück">&#x25c0;</button>
+                        <span class="vab-pageind">@currentPage / @pageCount</span>
+                        <button class="vab-nav" @onclick="() => JumpPage(currentPage + 1)" disabled="@(currentPage >= pageCount)" title="Weiter">&#x25b6;</button>
+                        <button class="vab-nav" @onclick="() => JumpPage(pageCount)" disabled="@(currentPage >= pageCount)" title="Letzte Seite">&#x23ed;</button>
+                    </div>
+                </div>
+            }
+
+            @if (IsScrollMode && ScrollSlotCount > 1)
+            {
+                <div class="vab-section">
+                    <div class="vab-head">Seiten</div>
+                    <div class="vab-pagerow">
+                        <button class="vab-nav" @onclick="() => ScrollToSlotUi(0)" disabled="@(_scrollSlot <= 0)" title="Erste Seite">&#x23ee;</button>
+                        <button class="vab-nav" @onclick="() => ScrollStep(-1)" disabled="@(_scrollSlot <= 0)" title="Zurück">&#x25c0;</button>
+                        <span class="vab-pageind">@(_scrollSlot + 1) / @ScrollSlotCount</span>
+                        <button class="vab-nav" @onclick="() => ScrollStep(1)" disabled="@(_scrollSlot >= ScrollSlotCount - 1)" title="Weiter">&#x25b6;</button>
+                        <button class="vab-nav" @onclick="() => ScrollToSlotUi(ScrollSlotCount - 1)" disabled="@(_scrollSlot >= ScrollSlotCount - 1)" title="Letzte Seite">&#x23ed;</button>
+                    </div>
+                </div>
+            }
+
+            @if (InSetlist)
+            {
+                <div class="vab-section">
+                    <div class="vab-head">Stück &middot; @(_setlistIndex + 1)/@_setlistFiles.Count</div>
+                    <div class="vab-pagerow">
+                        <button class="vab-nav vab-nav-wide" @onclick="GoPrevSong" disabled="@(!HasPrevSong)">&#x25c0; Vorheriges</button>
+                        <button class="vab-nav vab-nav-wide" @onclick="GoNextSong" disabled="@(!HasNextSong)">Nächstes &#x25b6;</button>
+                    </div>
+                </div>
+            }
+
+            @if (CanShowOutline && _outline.Count > 0)
+            {
+                <div class="vab-section">
+                    <div class="vab-head">Inhalt</div>
+                    <div class="vab-bmlist">
+                        @foreach (var oe in _outline)
+                        {
+                            <button class="vab-bm @(oe.Level > 0 ? "vab-ol-sub" : "")"
+                                    style="padding-left:@(OlPad(oe.Level))rem"
+                                    @onclick="async () => await JumpOutline(oe)">
+                                <span class="vab-bmlbl">@oe.Title</span>
+                                <span class="vab-bmpg">S. @oe.Page</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="vab-section">
+                <div class="vab-head">Lesezeichen</div>
+                @{
+                    var abBookmarks = BookmarkService.GetForFile(file ?? "");
+                }
+                @if (abBookmarks.Count == 0)
+                {
+                    <div class="vab-empty">Noch keine Lesezeichen</div>
+                }
+                else
+                {
+                    <div class="vab-bmlist">
+                        @foreach (var bm in abBookmarks)
+                        {
+                            <button class="vab-bm" @onclick="async () => await JumpToBookmarkAb(bm)">
+                                <span class="vab-bmdot" style="background:@bm.Color"></span>
+                                <span class="vab-bmlbl">@(string.IsNullOrEmpty(bm.Label) ? $"Seite {bm.Page}" : bm.Label)</span>
+                                <span class="vab-bmpg">S. @bm.Page</span>
+                            </button>
+                        }
+                    </div>
+                }
+                <button class="vab-add" @onclick="() => { showActionBox = false; OpenBookmarkDialog(); }">
+                    &#x2b; Lesezeichen hier setzen
+                </button>
+            </div>
+
+        </div>
+    </div>
+}
+
+@* ── Page manager (reorder / duplicate / hide) ──────────────────────── *@
+@if (_pageMgrMode)
+{
+    <div class="pmgr">
+        <div class="pmgr-box" @onclick:stopPropagation="true">
+            <div class="pmgr-head">Seiten verwalten</div>
+            <div class="pmgr-list">
+                @for (int i = 0; i < _pageMgrList.Count; i++)
+                {
+                    int idx = i;
+                    <div class="pmgr-row">
+                        <span class="pmgr-pos">@(idx + 1)</span>
+                        <span class="pmgr-pg">Seite @_pageMgrList[idx]</span>
+                        <div class="pmgr-acts">
+                            <button class="pmgr-btn" @onclick="() => PmMoveUp(idx)" disabled="@(idx == 0)" title="Nach oben">&#x2191;</button>
+                            <button class="pmgr-btn" @onclick="() => PmMoveDown(idx)" disabled="@(idx == _pageMgrList.Count - 1)" title="Nach unten">&#x2193;</button>
+                            <button class="pmgr-btn" @onclick="() => PmDuplicate(idx)" title="Duplizieren">&#x29c9;</button>
+                            <button class="pmgr-btn pmgr-del" @onclick="() => PmRemove(idx)" disabled="@(_pageMgrList.Count <= 1)" title="Entfernen">&#x2715;</button>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="pmgr-add">
+                <select class="pmgr-sel" @bind="_pmgrAddPage">
+                    @for (int p = 1; p <= totalPages; p++)
+                    {
+                        <option value="@p">Seite @p</option>
+                    }
+                </select>
+                <button class="pmgr-addbtn" @onclick="PmAddPage">+ Hinzufügen</button>
+            </div>
+            <div class="pmgr-bar">
+                <button class="pmgr-barbtn" @onclick="PmReset">Zurücksetzen</button>
+                <button class="pmgr-barbtn" @onclick="CancelPageMgr">Abbrechen</button>
+                <button class="pmgr-barbtn pmgr-save" @onclick="SavePageMgr">Speichern</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Manual crop editor overlay ─────────────────────────────────────── *@
+@if (_cropEditMode)
+{
+    <div class="cropedit" @onpointermove="CropDragMove" @onpointerup="CropDragEnd" @onpointercancel="CropDragEnd">
+        <div class="cropedit-rect" style="left:@Px(RxVal);top:@Px(RyVal);width:@Px(RwVal);height:@Px(RhVal)">
+            <div class="cropedit-body" @onpointerdown='e => StartCropDrag(e, "body")'></div>
+            <div class="ch ch-nw" @onpointerdown='e => StartCropDrag(e, "nw")'></div>
+            <div class="ch ch-n"  @onpointerdown='e => StartCropDrag(e, "n")'></div>
+            <div class="ch ch-ne" @onpointerdown='e => StartCropDrag(e, "ne")'></div>
+            <div class="ch ch-w"  @onpointerdown='e => StartCropDrag(e, "w")'></div>
+            <div class="ch ch-e"  @onpointerdown='e => StartCropDrag(e, "e")'></div>
+            <div class="ch ch-sw" @onpointerdown='e => StartCropDrag(e, "sw")'></div>
+            <div class="ch ch-s"  @onpointerdown='e => StartCropDrag(e, "s")'></div>
+            <div class="ch ch-se" @onpointerdown='e => StartCropDrag(e, "se")'></div>
+        </div>
+        <div class="cropedit-bar">
+            <button class="cropedit-btn" @onclick="CancelCropEdit">Abbrechen</button>
+            <button class="cropedit-btn" @onclick="CropEditAuto">Auto</button>
+            <button class="cropedit-btn cropedit-save" @onclick="SaveCropEdit">Speichern</button>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public string? file { get; set; }
 
@@ -609,6 +952,7 @@
     private string errorMessage = "";
     private bool isEditMode, enableHandleClick = true;
     private string viewerBg = "dark";
+    private bool   _invert;
 
     // ── Quick panel ─────────────────────────────────────────────────────
     private bool showQuickPanel = false;
@@ -669,10 +1013,15 @@
         new("two",        "Zwei Seiten",          "II", "Zwei Seiten nebeneinander"),
         new("half-turn",  "Halbe Seite",          "½",  "Ganze Seite, blättert zur Hälfte"),
         new("scroll-v",   "Vertikal scrollen",    "↕",  "Alle Seiten untereinander – durchscrollen"),
+        new("scroll-h",   "Horizontal scrollen",  "↔",  "Alle Seiten nebeneinander – seitlich scrollen"),
     ];
 
     // ── Auto page turn ───────────────────────────────────────────────────
     private System.Threading.CancellationTokenSource? _autoTurnCts;
+
+    // ── Auto-scroll (smooth continuous scroll) ───────────────────────────
+    private bool _autoScrolling;
+    private int  _autoScrollSpeed = 40;
 
     // ── Auto-hide toolbar ────────────────────────────────────────────────
     private System.Threading.CancellationTokenSource? _autoHideCts;
@@ -726,7 +1075,8 @@
     private bool   CurrentStampIsDyn => activeStamp.StartsWith("dyn-");
     private string CurrentStampSym   => AllStamps.FirstOrDefault(s => s.Key == activeStamp)?.Sym ?? "♭";
     private bool   IsNoSizeTool      => activeTool == "move" || IsStampActive;
-    private bool   IsScrollMode   => effectiveMode == "scroll-v";
+    private bool   IsScrollMode   => effectiveMode == "scroll-v" || effectiveMode == "scroll-h";
+    private bool   CanAutoScroll  => !_isText && (effectiveMode == "single" || effectiveMode == "scroll-v");
     private bool   IsHalfTurnMode => effectiveMode == "half-turn";
     private int    PagePercent    => pageCount > 1 ? (int)Math.Round((currentPage - 1) * 100.0 / (pageCount - 1)) : 0;
     private string ET(string t) => "et-tool" + (activeTool == t ? " et-tool-on" : "");
@@ -739,6 +1089,7 @@
         "two"       => "II",
         "half-turn" => "½",
         "scroll-v"  => "↕",
+        "scroll-h"  => "↔",
         _           => "1"
     };
     private string GetModeName() => effectiveMode switch
@@ -746,6 +1097,7 @@
         "two"       => "Zwei Seiten",
         "half-turn" => "Halbe Seite",
         "scroll-v"  => "Vertikal scrollen",
+        "scroll-h"  => "Horizontal scrollen",
         _           => "Einzelne Seite"
     };
 
@@ -860,6 +1212,303 @@
     private bool _hasRange;
     private int _pageOffset;
 
+    // ── Page order (reorder / duplicate / hide pages) ──────────────────────
+    private List<int> _pageOrder = new();
+    private bool HasPageOrder => _pageOrder.Count > 0;
+    private int PdfPageFor(int displayPage)
+    {
+        if (HasPageOrder)
+            return _pageOrder[Math.Clamp(displayPage - 1, 0, _pageOrder.Count - 1)];
+        return displayPage + _pageOffset;
+    }
+
+    private bool _pageMgrMode;
+    private List<int> _pageMgrList = new();
+    private int _pmgrAddPage = 1;
+
+    private void OpenPageMgr()
+    {
+        if (_isText || _isImage || _hasRange || totalPages <= 1) return;
+        _pageMgrList = HasPageOrder ? new List<int>(_pageOrder) : Enumerable.Range(1, totalPages).ToList();
+        _pmgrAddPage = 1;
+        showQuickPanel = false;
+        _pageMgrMode = true;
+    }
+    private void PmMoveUp(int i)    { if (i > 0) (_pageMgrList[i - 1], _pageMgrList[i]) = (_pageMgrList[i], _pageMgrList[i - 1]); }
+    private void PmMoveDown(int i)  { if (i < _pageMgrList.Count - 1) (_pageMgrList[i + 1], _pageMgrList[i]) = (_pageMgrList[i], _pageMgrList[i + 1]); }
+    private void PmDuplicate(int i) { _pageMgrList.Insert(i + 1, _pageMgrList[i]); }
+    private void PmRemove(int i)    { if (_pageMgrList.Count > 1) _pageMgrList.RemoveAt(i); }
+    private void PmReset()          { _pageMgrList = Enumerable.Range(1, totalPages).ToList(); }
+    private void PmAddPage()        { if (_pmgrAddPage >= 1 && _pmgrAddPage <= totalPages) _pageMgrList.Add(_pmgrAddPage); }
+    private void CancelPageMgr()    { _pageMgrMode = false; }
+
+    private async Task SavePageMgr()
+    {
+        _pageMgrMode = false;
+        bool natural = PageOrderUtil.IsNatural(_pageMgrList, totalPages);
+        _pageOrder = natural ? new List<int>() : new List<int>(_pageMgrList);
+        if (currentSheet != null)
+        {
+            currentSheet.PageOrder = natural ? "" : PageOrderUtil.Serialize(_pageMgrList);
+            try { SheetService.UpdateSheet(currentSheet); } catch { }
+        }
+        RecalcPageCount();
+        currentPage = Math.Clamp(currentPage, 1, pageCount);
+        await RenderCurrent();
+        StateHasChanged();
+    }
+
+    // ── Crop (per page) ───────────────────────────────────────────────────
+    private Dictionary<int, Crop> _crops = new();
+
+    private async Task AutoCrop()
+    {
+        if (_isText || effectiveMode != "single") return;
+        int pdfPage = _isImage ? 1 : currentPage + _pageOffset;
+        try
+        {
+            var rect = await JS.InvokeAsync<double[]?>("autoDetectCrop");
+            if (rect == null || rect.Length < 4) return;
+            await JS.InvokeVoidAsync("setCrop", rect[0], rect[1], rect[2], rect[3]);
+            await JS.InvokeVoidAsync("refit");
+            if (currentSheet != null)
+            {
+                CropService.SetCrop(currentSheet.Id, pdfPage, rect[0], rect[1], rect[2], rect[3]);
+                _crops[pdfPage] = new Crop { SheetId = currentSheet.Id, Page = pdfPage, L = rect[0], T = rect[1], R = rect[2], B = rect[3] };
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"[SheetView] Auto-Crop fehlgeschlagen: {ex.Message}"); }
+        if (!_hasRange && pdfPage == 1) await RegenThumb();
+        StateHasChanged();
+    }
+
+    private async Task ResetCrop()
+    {
+        if (_isText) return;
+        int pdfPage = _isImage ? 1 : currentPage + _pageOffset;
+        try
+        {
+            await JS.InvokeVoidAsync("clearCrop");
+            await JS.InvokeVoidAsync("refit");
+        }
+        catch { }
+        if (currentSheet != null) { CropService.RemoveCrop(currentSheet.Id, pdfPage); _crops.Remove(pdfPage); }
+        if (!_hasRange && pdfPage == 1) await RegenThumb();
+        StateHasChanged();
+    }
+
+    // ── Reset all crops + crop-aware thumbnail ─────────────────────────────
+    private async Task ResetAllCrops()
+    {
+        if (_isText) return;
+        if (currentSheet != null) { CropService.RemoveAll(currentSheet.Id); _crops.Clear(); }
+        try { await JS.InvokeVoidAsync("clearCrop"); await JS.InvokeVoidAsync("refit"); } catch { }
+        if (!_hasRange) await RegenThumb();
+        StateHasChanged();
+    }
+
+    private async Task<string?> RenderThumbAsync()
+    {
+        var c1 = (!_hasRange) ? _crops.GetValueOrDefault(1) : null;
+        return c1 != null
+            ? await JS.InvokeAsync<string?>("renderThumbnail", 180, c1.L, c1.T, c1.R, c1.B)
+            : await JS.InvokeAsync<string?>("renderThumbnail", 180);
+    }
+
+    private async Task RegenThumb()
+    {
+        if (string.IsNullOrEmpty(file) || _isText) return;
+        try
+        {
+            var thumb = await RenderThumbAsync();
+            if (!string.IsNullOrEmpty(thumb)) ThumbnailService.Set(file, thumb);
+        }
+        catch { }
+    }
+
+    // ── Rotation (per song, display only) ──────────────────────────────────
+    private int _rotation;
+
+    private async Task RotatePage()
+    {
+        if (_isText) return;
+        _rotation = (_rotation + 90) % 360;
+        if (currentSheet != null)
+        {
+            currentSheet.Rotation = _rotation;
+            try { SheetService.UpdateSheet(currentSheet); } catch { }
+        }
+        try { await JS.InvokeVoidAsync("setRotation", _rotation); } catch { }
+        await RenderCurrent();
+        if (!_hasRange) _ = RegenThumb();
+        StateHasChanged();
+    }
+
+    // ── Batch auto-crop (all pages) ────────────────────────────────────────
+    private bool _batchBusy;
+    private string? _batchNotice;
+
+    private async Task BatchAutoCrop()
+    {
+        if (_isText || _isImage || _batchBusy) return;
+        _batchBusy = true; StateHasChanged();
+        try
+        {
+            var all = await JS.InvokeAsync<double[][]?>("autoDetectCropAll");
+            if (all != null)
+            {
+                var list = new List<(int, double, double, double, double)>();
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var r = all[i];
+                    if (r != null && r.Length >= 4)
+                    {
+                        int page = i + 1;
+                        list.Add((page, r[0], r[1], r[2], r[3]));
+                        _crops[page] = new Crop { SheetId = currentSheet?.Id ?? 0, Page = page, L = r[0], T = r[1], R = r[2], B = r[3] };
+                    }
+                }
+                if (currentSheet != null && list.Count > 0)
+                    CropService.SetMany(currentSheet.Id, list);
+                _batchNotice = $"{list.Count} von {all.Length} Seiten zugeschnitten";
+                await RenderCurrent();
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"[SheetView] Batch-Crop fehlgeschlagen: {ex.Message}"); }
+
+        if (!_hasRange) await RegenThumb();
+        _batchBusy = false;
+        showQuickPanel = false;
+        StateHasChanged();
+
+        if (_batchNotice != null)
+        {
+            var token = _batchNotice;
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2200);
+                await InvokeAsync(() => { if (_batchNotice == token) { _batchNotice = null; StateHasChanged(); } });
+            });
+        }
+    }
+
+    // ── Manual crop editor ─────────────────────────────────────────────────
+    private bool   _cropEditMode;
+    private double _pageX, _pageY, _pageW, _pageH;     // page's on-screen rect while editing
+    private double _edL, _edT, _edR = 1, _edB = 1;     // crop being edited (fractions)
+    private string? _edDrag;                           // active handle, or null
+    private double _edStartFx, _edStartFy;
+    private (double L, double T, double R, double B) _edStartRect;
+    private int _edPage = 1;
+
+    private double RxVal => _pageX + _edL * _pageW;
+    private double RyVal => _pageY + _edT * _pageH;
+    private double RwVal => (_edR - _edL) * _pageW;
+    private double RhVal => (_edB - _edT) * _pageH;
+    private static string Px(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "px";
+
+    private async Task EnterCropEdit()
+    {
+        if (_isText || effectiveMode != "single") return;
+        _edPage = _isImage ? 1 : currentPage + _pageOffset;
+        showQuickPanel = false;
+        try
+        {
+            var r = await JS.InvokeAsync<double[]>("beginCropEdit");
+            if (r == null || r.Length < 4) return;
+            _pageX = r[0]; _pageY = r[1]; _pageW = r[2]; _pageH = r[3];
+        }
+        catch (Exception ex) { Console.WriteLine($"[SheetView] Crop-Editor konnte nicht gestartet werden: {ex.Message}"); return; }
+
+        var existing = _crops.GetValueOrDefault(_edPage);
+        if (existing != null) { _edL = existing.L; _edT = existing.T; _edR = existing.R; _edB = existing.B; }
+        else { _edL = 0.06; _edT = 0.06; _edR = 0.94; _edB = 0.94; }
+
+        _cropEditMode = true;
+        StateHasChanged();
+    }
+
+    private double PointerFx(double clientX) => _pageW <= 0 ? 0 : Math.Clamp((clientX - _pageX) / _pageW, 0, 1);
+    private double PointerFy(double clientY) => _pageH <= 0 ? 0 : Math.Clamp((clientY - _pageY) / _pageH, 0, 1);
+
+    private void StartCropDrag(PointerEventArgs e, string handle)
+    {
+        _edDrag      = handle;
+        _edStartRect = (_edL, _edT, _edR, _edB);
+        _edStartFx   = PointerFx(e.ClientX);
+        _edStartFy   = PointerFy(e.ClientY);
+    }
+
+    private void CropDragMove(PointerEventArgs e)
+    {
+        if (_edDrag == null) return;
+        var (l, t, r, b) = CropEditMath.Apply(_edDrag, _edStartRect, _edStartFx, _edStartFy,
+                                              PointerFx(e.ClientX), PointerFy(e.ClientY));
+        _edL = l; _edT = t; _edR = r; _edB = b;
+        StateHasChanged();
+    }
+
+    private void CropDragEnd(PointerEventArgs e) => _edDrag = null;
+
+    private async Task CropEditAuto()
+    {
+        try
+        {
+            var rect = await JS.InvokeAsync<double[]?>("autoDetectCrop");
+            if (rect != null && rect.Length >= 4)
+            {
+                _edL = rect[0]; _edT = rect[1]; _edR = rect[2]; _edB = rect[3];
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task SaveCropEdit()
+    {
+        double l = Math.Min(_edL, _edR), r = Math.Max(_edL, _edR);
+        double t = Math.Min(_edT, _edB), b = Math.Max(_edT, _edB);
+        bool full = l <= 0.002 && t <= 0.002 && r >= 0.998 && b >= 0.998;
+
+        _cropEditMode = false; _edDrag = null;
+        try { await JS.InvokeVoidAsync("endCropEdit"); } catch { }
+
+        if (currentSheet != null)
+        {
+            if (full) { CropService.RemoveCrop(currentSheet.Id, _edPage); _crops.Remove(_edPage); }
+            else
+            {
+                CropService.SetCrop(currentSheet.Id, _edPage, l, t, r, b);
+                _crops[_edPage] = new Crop { SheetId = currentSheet.Id, Page = _edPage, L = l, T = t, R = r, B = b };
+            }
+        }
+
+        try
+        {
+            if (full) await JS.InvokeVoidAsync("clearCrop");
+            else      await JS.InvokeVoidAsync("setCrop", l, t, r, b);
+            await JS.InvokeVoidAsync("refit");
+        }
+        catch { }
+        if (!_hasRange && _edPage == 1) await RegenThumb();
+        StateHasChanged();
+    }
+
+    private async Task CancelCropEdit()
+    {
+        _cropEditMode = false; _edDrag = null;
+        try { await JS.InvokeVoidAsync("endCropEdit"); } catch { }
+        var prev = _crops.GetValueOrDefault(_edPage);
+        try
+        {
+            if (prev != null) await JS.InvokeVoidAsync("setCrop", prev.L, prev.T, prev.R, prev.B);
+            else              await JS.InvokeVoidAsync("clearCrop");
+            await JS.InvokeVoidAsync("refit");
+        }
+        catch { }
+        StateHasChanged();
+    }
+
     private int? ParseQueryInt(string key)
     {
         try
@@ -912,6 +1561,7 @@
 
         _ref = DotNetObjectReference.Create(this);
         viewerBg = SettingsService.GetViewerBackground();
+        _invert  = SettingsService.InvertColors();
 
         await LoadColorsAsync();
         await LoadToolStatesAsync();
@@ -922,13 +1572,17 @@
                             ?? SheetService.GetSheets().FirstOrDefault(s => Path.GetFileName(s.FilePath) == file);
         _hasRange         = currentSheet?.HasRange ?? false;
         sheetModeOverride = currentSheet?.PageMode;
-        if (sheetModeOverride is "half" or "auto" or "scroll-h")
+        if (sheetModeOverride is "half" or "auto")
             sheetModeOverride = null;
         effectiveMode     = sheetModeOverride ?? SettingsService.GetPageMode();
         if (_hasRange) effectiveMode = "single";
 
         if (currentSheet != null)
             _songFiles = SheetFileService.GetSongFiles(currentSheet);
+
+        try { await JS.InvokeVoidAsync("setPdfDotNetRef", _ref); } catch { }   // audio callbacks reach us (text path too)
+        try { await JS.InvokeVoidAsync("initKeyNav"); } catch { }              // keyboard / pedal nav (all song types)
+        await LoadAudioAsync();
 
         // ChordPro / text songs render as HTML (no canvas) — skip the whole pdf.js path.
         _isText = ChordPro.IsTextFile(file);
@@ -941,6 +1595,7 @@
         try
         {
             await JS.InvokeVoidAsync("setPdfDotNetRef", _ref);
+            try { _autoScrollSpeed = (int)Math.Round(await JS.InvokeAsync<double>("getAutoScrollSpeed")); } catch { }
             await JS.InvokeVoidAsync("initCanvas", "pdfCanvas", "markerCanvas", "noteCanvas");
         }
         catch (Exception ex)
@@ -975,6 +1630,7 @@
             panelLeft      = (int)Math.Round(await JS.InvokeAsync<double>("loadPanelLeft"));
             panelCollapsed = await JS.InvokeAsync<bool>("loadPanelCollapsed");
             await JS.InvokeVoidAsync("initPanelDrag", _ref);
+            await JS.InvokeVoidAsync("initFabDrag", _ref);
         }
         catch (Exception ex)
         {
@@ -1008,14 +1664,27 @@
                 return;
             }
 
+            if (currentSheet != null) _rotation = ((currentSheet.Rotation % 360) + 360) % 360;
+            if (currentSheet != null)
+            {
+                if (currentSheet.Bpm   > 0) _metroBpm   = Math.Clamp(currentSheet.Bpm, 20, 300);
+                if (currentSheet.Beats > 0) _metroBeats = Math.Clamp(currentSheet.Beats, 1, 16);
+            }
+            try { await JS.InvokeVoidAsync("setRotation", _rotation); } catch { }
+
+            if (currentSheet != null && !_isImage && !_hasRange)
+                _pageOrder = PageOrderUtil.Parse(currentSheet.PageOrder, totalPages);
+
             RecalcPageCount();
+
+            if (currentSheet != null) _crops = CropService.GetCrops(currentSheet.Id);
 
             // Generate a first-page thumbnail once (cached), reusing the loaded pdfDoc.
             try
             {
                 if (!ThumbnailService.Has(file))
                 {
-                    var thumb = await JS.InvokeAsync<string?>("renderThumbnail", 180);
+                    var thumb = await RenderThumbAsync();
                     if (!string.IsNullOrEmpty(thumb))
                         ThumbnailService.Set(file, thumb);
                 }
@@ -1114,12 +1783,31 @@
             pageCount = end - start + 1;
             return;
         }
+        if (HasPageOrder && effectiveMode == "single")
+        {
+            _pageOffset = 0;
+            pageCount = _pageOrder.Count;
+            return;
+        }
+        if (HasPageOrder && effectiveMode == "half-turn")
+        {
+            _pageOffset = 0;
+            pageCount = _pageOrder.Count * 2;   // two halves per display slot
+            return;
+        }
+        if (HasPageOrder && effectiveMode == "two")
+        {
+            _pageOffset = 0;
+            pageCount = Math.Max(1, _pageOrder.Count - 1);   // overlapping pairs across the sequence
+            return;
+        }
         _pageOffset = 0;
         pageCount = effectiveMode switch
         {
             "two"       => Math.Max(1, totalPages - 1),
             "half-turn" => totalPages * 2,
             "scroll-v"  => 1,
+            "scroll-h"  => 1,
             _           => totalPages
         };
     }
@@ -1163,6 +1851,167 @@
     {
         try { _autoTurnCts?.Cancel(); } catch { }
         _autoTurnCts = null;
+    }
+
+    // ── Auto-scroll (smooth continuous scroll) ─────────────────────────────
+    private async Task ToggleAutoScroll()
+    {
+        if (_autoScrolling)
+        {
+            await HaltAutoScroll();
+        }
+        else
+        {
+            if (!CanAutoScroll) return;
+            StopAutoPageTurn();                 // the two auto-advance modes don't run together
+            _autoScrolling = true;
+            try { await JS.InvokeVoidAsync("startAutoScroll", _autoScrollSpeed); }
+            catch { _autoScrolling = false; }
+        }
+        StateHasChanged();
+    }
+
+    private async Task SetAutoScrollSpeed(int px)
+    {
+        _autoScrollSpeed = Math.Clamp(px, 4, 300);
+        try { await JS.InvokeVoidAsync("setAutoScrollSpeed", _autoScrollSpeed); } catch { }
+        StateHasChanged();
+    }
+
+    // Timed auto-scroll: pick a duration, scroll from top to bottom over that time (scroll-v).
+    private int _autoScrollMinutes = 3;
+    private async Task StartTimedAutoScroll()
+    {
+        if (effectiveMode != "scroll-v") return;
+        double range = 0;
+        try { range = await JS.InvokeAsync<double>("getScrollRange"); } catch { }
+        if (range <= 1) return;                                   // nothing to scroll
+        int secs = Math.Max(5, _autoScrollMinutes * 60);
+        _autoScrollSpeed = (int)Math.Clamp(Math.Round(range / secs), 4, 300);
+        try { await JS.InvokeVoidAsync("setAutoScrollSpeed", _autoScrollSpeed); } catch { }
+        StopAutoPageTurn();
+        _autoScrolling = true;
+        try { if (!await JS.InvokeAsync<bool>("startAutoScroll", _autoScrollSpeed)) _autoScrolling = false; }
+        catch { _autoScrolling = false; }
+        StateHasChanged();
+    }
+
+    private async Task HaltAutoScroll()
+    {
+        _autoScrolling = false;
+        try { await JS.InvokeVoidAsync("stopAutoScroll"); } catch { }
+    }
+
+    // ── Audio backing track ────────────────────────────────────────────────
+    private bool   _hasAudio, _audioPlaying, _audioSeeking;
+    private double _audioPos, _audioDur, _audioRate = 1.0;
+    private static readonly double[] AudioRates = { 0.5, 0.75, 1.0, 1.25, 1.5 };
+    private string PosStr   => _audioPos.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+    private string MaxStr   => (_audioDur > 0 ? _audioDur : 0).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+    private string RateLabel => _audioRate == 1.0 ? "1×" : $"{_audioRate.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}×";
+    private int    _loopState;           // 0 = off, 1 = A marked, 2 = looping A–B
+    private double _loopA, _loopB;
+    private string LoopLabel => _loopState switch { 1 => "A → B?", 2 => "A–B ✓", _ => "A–B" };
+
+    private async Task LoadAudioAsync()
+    {
+        _hasAudio = false; _audioPlaying = false; _audioSeeking = false; _audioPos = 0; _audioDur = 0; _audioRate = 1.0;
+        _loopState = 0; _loopA = _loopB = 0;
+        try { await JS.InvokeVoidAsync("clearAudioLoop"); } catch { }
+        if (currentSheet == null || string.IsNullOrWhiteSpace(currentSheet.AudioPath)) return;
+        try
+        {
+            var ap = Path.Combine(SheetService.UploadFolder, currentSheet.AudioPath);
+            if (!File.Exists(ap)) return;
+            var bytes = await File.ReadAllBytesAsync(ap);
+            if (bytes.Length == 0) return;
+            _hasAudio = await JS.InvokeAsync<bool>("loadAudioData", bytes, AudioMime(currentSheet.AudioPath));
+        }
+        catch { _hasAudio = false; }
+    }
+    private static string AudioMime(string name) => Path.GetExtension(name).ToLowerInvariant() switch
+    {
+        ".mp3"                      => "audio/mpeg",
+        ".m4a" or ".aac" or ".mp4"  => "audio/mp4",
+        ".ogg" or ".oga" or ".opus" => "audio/ogg",
+        ".wav"                      => "audio/wav",
+        ".flac"                     => "audio/flac",
+        _                           => "audio/mpeg"
+    };
+    private async Task ToggleAudioPlay()
+    {
+        if (!_hasAudio) return;
+        _audioPlaying = !_audioPlaying;
+        try { await JS.InvokeVoidAsync(_audioPlaying ? "playAudio" : "pauseAudio"); } catch { _audioPlaying = false; }
+        StateHasChanged();
+    }
+    private async Task AudioSkip(double delta)
+    {
+        double t = _audioPos + delta;
+        if (t < 0) t = 0;
+        if (_audioDur > 0 && t > _audioDur) t = _audioDur;
+        _audioPos = t;
+        try { await JS.InvokeVoidAsync("seekAudio", t); } catch { }
+        StateHasChanged();
+    }
+    private static string FmtTime(double sec)
+    {
+        if (double.IsNaN(sec) || sec < 0) sec = 0;
+        int s = (int)Math.Round(sec);
+        return $"{s / 60}:{s % 60:00}";
+    }
+
+    [JSInvokable]
+    public Task OnAudioTime(double pos, double dur) => InvokeAsync(() =>
+    {
+        if (dur > 0) _audioDur = dur;
+        if (!_audioSeeking) _audioPos = pos;        // don't fight an in-progress scrub
+        StateHasChanged();
+    });
+    [JSInvokable]
+    public Task OnAudioEnded() => InvokeAsync(() =>
+    {
+        _audioPlaying = false; _audioPos = 0; StateHasChanged();
+    });
+
+    private void OnSeekInput(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v))
+        { _audioSeeking = true; _audioPos = v; }
+    }
+    private async Task OnSeekChange(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v))
+        {
+            _audioPos = v;
+            try { await JS.InvokeVoidAsync("seekAudio", v); } catch { }
+        }
+        _audioSeeking = false;
+    }
+    private async Task CycleRate()
+    {
+        int i = Array.IndexOf(AudioRates, _audioRate);
+        _audioRate = AudioRates[(i + 1) % AudioRates.Length];
+        try { await JS.InvokeVoidAsync("setAudioRate", _audioRate); } catch { }
+        StateHasChanged();
+    }
+    // A–B practice loop: tap to mark A at the current position, tap to mark B (→ loop), tap to clear.
+    private async Task CycleLoop()
+    {
+        switch (_loopState)
+        {
+            case 0: _loopA = _audioPos; _loopState = 1; break;                 // mark A
+            case 1:
+                if (_audioPos > _loopA + 0.3)
+                { _loopB = _audioPos; _loopState = 2; try { await JS.InvokeVoidAsync("setAudioLoop", _loopA, _loopB); } catch { } }
+                else _loopA = _audioPos;                                       // B too close → re-mark A
+                break;
+            default:
+                _loopState = 0; _loopA = _loopB = 0;
+                try { await JS.InvokeVoidAsync("clearAudioLoop"); } catch { }
+                break;
+        }
+        StateHasChanged();
     }
 
     // ── Auto-hide toolbar ─────────────────────────────────────────────────
@@ -1266,21 +2115,41 @@
         {
             if (_isImage)
             {
+                var icrop = _crops.GetValueOrDefault(1);
+                if (icrop != null) await JS.InvokeVoidAsync("setCrop", icrop.L, icrop.T, icrop.R, icrop.B);
+                else await JS.InvokeVoidAsync("clearCrop");
                 await JS.InvokeVoidAsync("renderImage");
                 return;
             }
             if (effectiveMode == "scroll-v")
+            {
+                await JS.InvokeVoidAsync("setPageSequence", _pageOrder.ToArray());
                 await JS.InvokeVoidAsync("renderAllV");
+            }
+            else if (effectiveMode == "scroll-h")
+            {
+                await JS.InvokeVoidAsync("setPageSequence", _pageOrder.ToArray());
+                await JS.InvokeVoidAsync("renderAllH");
+            }
             else if (IsHalfTurnMode)
             {
-                int  pdfPage = (currentPage + 1) / 2;
+                int  pdfPage = PdfPageFor((currentPage + 1) / 2);   // maps the display slot → PDF page (honors a custom order)
                 bool topHalf = currentPage % 2 == 1;
                 await JS.InvokeVoidAsync("renderHalfTurn", pdfPage, topHalf);
             }
             else if (effectiveMode == "two")
+            {
+                await JS.InvokeVoidAsync("setPageSequence", _pageOrder.ToArray());
                 await JS.InvokeVoidAsync("renderTwoPage", currentPage);
+            }
             else
-                await JS.InvokeVoidAsync("renderPage", currentPage + _pageOffset);
+            {
+                int pdfPage = PdfPageFor(currentPage);
+                var crop = _crops.GetValueOrDefault(pdfPage);
+                if (crop != null) await JS.InvokeVoidAsync("setCrop", crop.L, crop.T, crop.R, crop.B);
+                else await JS.InvokeVoidAsync("clearCrop");
+                await JS.InvokeVoidAsync("renderPage", pdfPage);
+            }
         }
         catch (Exception ex)
         {
@@ -1358,6 +2227,7 @@
     {
         showModeDropdown  = false;
         sheetModeOverride = mode;
+        await HaltAutoScroll();              // the new mode re-renders; restart manually if wanted
 
         if (currentSheet != null)
         {
@@ -1416,6 +2286,7 @@
         if (isEditMode)
         {
             StopAutoPageTurn();
+            await HaltAutoScroll();
             StopAutoHide();
             showUi = true;
             await SetTool(SettingsService.GetDefaultTool());
@@ -1648,6 +2519,37 @@
     }
 
     // ── Gesture handler ───────────────────────────────────────────────────
+    // ── Remappable keyboard / pedal keys ──────────────────────────────────
+    private string? _capturing;
+    private string? _keyCapMsg;
+    private async Task CaptureKey(string action)
+    {
+        _capturing = action;
+        _keyCapMsg = "Jetzt die Pedal-/Tastentaste drücken… (Esc = abbrechen)";
+        try { await JS.InvokeVoidAsync("setKeyCapture", action); } catch { }
+        StateHasChanged();
+    }
+    private async Task ResetKeys()
+    {
+        _capturing = null;
+        _keyCapMsg = "Tastenbelegung auf Standard zurückgesetzt.";
+        try { await JS.InvokeVoidAsync("resetKeyMap"); } catch { }
+        StateHasChanged();
+    }
+    [JSInvokable]
+    public Task OnKeyCaptured(string key, string action) => InvokeAsync(() =>
+    {
+        _capturing = null;
+        _keyCapMsg = string.IsNullOrEmpty(action) ? "Abgebrochen." : $"«{KeyName(key)}» → {ActionName(action)}";
+        StateHasChanged();
+    });
+    private static string KeyName(string k) => k switch
+    {
+        " " or "Spacebar" => "Leertaste", "ArrowRight" => "→", "ArrowLeft" => "←", "ArrowUp" => "↑", "ArrowDown" => "↓",
+        "PageUp" => "Bild↑", "PageDown" => "Bild↓", "" => "?", _ => k
+    };
+    private static string ActionName(string a) => a switch { "next_page" => "Weiter", "prev_page" => "Zurück", _ => a };
+
     [JSInvokable]
     public async Task OnGesture(string action)
     {
@@ -1701,6 +2603,12 @@
                 case "zoom_reset":
                     await JS.InvokeVoidAsync("fitToWidthPublic");
                     break;
+                case "toggle_metronome":
+                    await InvokeAsync(async () => { await ToggleMetronome(); });
+                    break;
+                case "toggle_audio":
+                    if (_hasAudio) await InvokeAsync(async () => { await ToggleAudioPlay(); });
+                    break;
             }
         }
         catch (Exception ex)
@@ -1735,6 +2643,40 @@
         StateHasChanged();
     });
 
+    // ── Auto-scroll callbacks (driven by the JS rAF loop) ─────────────────
+    [JSInvokable]
+    public Task OnAutoScrollState(bool running) => InvokeAsync(() =>
+    {
+        _autoScrolling = running;
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public async Task OnAutoScrollEnd(bool moved)
+    {
+        // Reached the bottom of the current view. In single mode, if we actually
+        // scrolled and there's another page, turn it and resume; otherwise stop.
+        if (moved && effectiveMode == "single" && currentPage < pageCount)
+        {
+            await InvokeAsync(async () =>
+            {
+                currentPage++;
+                RefreshPageBookmark();
+                await RenderCurrent();
+                if (SettingsService.RememberLastPage())
+                    _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
+                StateHasChanged();
+            });
+            await Task.Delay(500);               // brief breath at the page turn
+            if (_autoScrolling)
+                try { await JS.InvokeVoidAsync("startAutoScroll", _autoScrollSpeed); } catch { }
+        }
+        else
+        {
+            await InvokeAsync(() => { _autoScrolling = false; StateHasChanged(); });
+        }
+    }
+
     // ── Quick panel helpers ───────────────────────────────────────────────
     private void ToggleQuickPanel(int tab)
     {
@@ -1756,12 +2698,251 @@
         if (s != null) { s.Value = bg; SettingsService.SaveSettings(); }
     }
 
+    private void ToggleInvert()
+    {
+        _invert = !_invert;
+        var s = SettingsService.GetSettings().FirstOrDefault(x => x.Name == "Noten invertieren");
+        if (s != null) { s.Value = _invert ? "true" : "false"; SettingsService.SaveSettings(); }
+    }
+
+    // ── Metronome ─────────────────────────────────────────────────────────
+    private int  _metroBpm = 100;
+    private int  _metroBeats = 4;
+    private bool _metroRunning;
+    private bool _metroMuted;
+    private bool _metroAccent = true;
+
+    private async Task ToggleMetronome()
+    {
+        if (_metroRunning)
+        {
+            _metroRunning = false;
+            try { await JS.InvokeVoidAsync("stopMetronome"); } catch { }
+        }
+        else
+        {
+            _metroRunning = true;
+            try { if (!await JS.InvokeAsync<bool>("startMetronome", _metroBpm, _metroBeats)) _metroRunning = false; }
+            catch { _metroRunning = false; }
+        }
+        StateHasChanged();
+    }
+    private async Task SetMetroBpm(int delta)
+    {
+        _metroBpm = Math.Clamp(_metroBpm + delta, 20, 300);
+        PersistMetro();
+        try { await JS.InvokeVoidAsync("setMetronomeBpm", _metroBpm); } catch { }
+        StateHasChanged();
+    }
+    private async Task SetMetroBeats(int b)
+    {
+        _metroBeats = Math.Clamp(b, 1, 16);
+        PersistMetro();
+        try { await JS.InvokeVoidAsync("setMetronomeBeats", _metroBeats); } catch { }
+        StateHasChanged();
+    }
+    private async Task ToggleMetroMute()
+    {
+        _metroMuted = !_metroMuted;
+        try { await JS.InvokeVoidAsync("setMetronomeMuted", _metroMuted); } catch { }
+        StateHasChanged();
+    }
+    private async Task ToggleMetroAccent()
+    {
+        _metroAccent = !_metroAccent;
+        try { await JS.InvokeVoidAsync("setMetronomeAccent", _metroAccent); } catch { }
+        StateHasChanged();
+    }
+    private void PersistMetro()
+    {
+        if (currentSheet != null)
+        {
+            currentSheet.Bpm   = _metroBpm;
+            currentSheet.Beats = _metroBeats;
+            SheetService.UpdateSheet(currentSheet);
+        }
+    }
+
+    // Tap-tempo: BPM from the average interval of recent taps (resets after a 2s gap).
+    private readonly List<DateTime> _tapTimes = new();
+    private async Task TapTempo()
+    {
+        var now = DateTime.UtcNow;
+        if (_tapTimes.Count > 0 && (now - _tapTimes[^1]).TotalSeconds > 2) _tapTimes.Clear();
+        _tapTimes.Add(now);
+        if (_tapTimes.Count > 6) _tapTimes.RemoveAt(0);
+        if (_tapTimes.Count >= 2)
+        {
+            double avgMs = (_tapTimes[^1] - _tapTimes[0]).TotalMilliseconds / (_tapTimes.Count - 1);
+            if (avgMs > 0)
+            {
+                _metroBpm = Math.Clamp((int)Math.Round(60000.0 / avgMs), 20, 300);
+                PersistMetro();
+                try { await JS.InvokeVoidAsync("setMetronomeBpm", _metroBpm); } catch { }
+            }
+        }
+        StateHasChanged();
+    }
+
     private async Task JumpToBookmark(Bookmark bm)
     {
+        showQuickPanel = false;
+        if (IsScrollMode)
+        {
+            try { await JS.InvokeVoidAsync("scrollToPdfPage", PdfPageFor(bm.Page)); } catch { }
+            StateHasChanged();
+            return;
+        }
+        if (IsHalfTurnMode)
+        {
+            currentPage = Math.Clamp(2 * bm.Page - 1, 1, pageCount);   // top half of the bookmarked page
+            RefreshPageBookmark();
+            await RenderCurrent();
+            StateHasChanged();
+            return;
+        }
         currentPage = Math.Clamp(bm.Page, 1, pageCount);
         RefreshPageBookmark();
         await RenderCurrent();
-        showQuickPanel = false;
+        StateHasChanged();
+    }
+
+    // ── Corner action box (quick access) ───────────────────────────────────
+    private bool showActionBox;
+    private int  _gotoPage = 1;
+
+    // Direct numeric navigation — works in every mode (the only numeric nav in scroll modes).
+    private async Task GoToPage()
+    {
+        int max = IsScrollMode ? totalPages : pageCount;
+        int p = Math.Clamp(_gotoPage, 1, max);
+        _gotoPage = p;
+        showActionBox = false;
+        if (IsScrollMode)
+        {
+            try { await JS.InvokeVoidAsync("scrollToPdfPage", p); } catch { }
+            StateHasChanged();
+        }
+        else await JumpPage(p);
+    }
+    private async Task OnGotoKey(KeyboardEventArgs e) { if (e.Key == "Enter") await GoToPage(); }
+
+    // ── Scroll-mode page stepping (prev/next/first/last + indicator) ───────
+    private int _scrollSlot;
+    private int ScrollSlotCount => HasPageOrder ? _pageOrder.Count : totalPages;
+    private async Task ScrollStep(int delta)
+    {
+        int s;
+        try { s = await JS.InvokeAsync<int>("getScrollSlot"); } catch { s = _scrollSlot; }
+        if (s < 0) s = _scrollSlot;
+        await ScrollToSlotUi(s + delta);
+    }
+    private async Task ScrollToSlotUi(int idx)
+    {
+        idx = Math.Clamp(idx, 0, Math.Max(0, ScrollSlotCount - 1));
+        try { await JS.InvokeVoidAsync("scrollToSlot", idx); } catch { }
+        _scrollSlot = idx;
+        StateHasChanged();
+    }
+    // Driven by the FAB's JS pointer handler (tap = toggle; drag = reposition, no toggle).
+    [JSInvokable]
+    public Task ToggleActionBoxFromJs() => InvokeAsync(async () =>
+    {
+        showActionBox = !showActionBox;
+        if (showActionBox)
+        {
+            if (CanShowOutline) await LoadOutlineAsync();
+            if (IsScrollMode)
+            {
+                try { _scrollSlot = await JS.InvokeAsync<int>("getScrollSlot"); } catch { }
+                if (_scrollSlot < 0) _scrollSlot = 0;
+            }
+        }
+        StateHasChanged();
+    });
+
+    // ── PDF embedded outline (table of contents) ───────────────────────────
+    private class OutlineEntry { public string Title { get; set; } = ""; public int Page { get; set; } public int Level { get; set; } }
+    private List<OutlineEntry> _outline = new();
+    private bool _outlineLoaded;
+    // Outline works in every display mode (JumpOutline maps the PDF page per mode).
+    private bool CanShowOutline => !_isText && !_isImage && !_hasRange;
+    private static string OlPad(int level) =>
+        (0.6 + level * 0.9).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task LoadOutlineAsync()
+    {
+        if (_outlineLoaded) return;
+        _outlineLoaded = true;
+        try
+        {
+            var entries = await JS.InvokeAsync<OutlineEntry[]>("getPdfOutline");
+            // Outline pages are absolute PDF pages → bound by totalPages (pageCount is 1 in scroll modes).
+            _outline = entries?.Where(e => e.Page >= 1 && e.Page <= totalPages).ToList() ?? new();
+        }
+        catch { _outline = new(); }
+        StateHasChanged();
+    }
+
+    private async Task JumpOutline(OutlineEntry e)
+    {
+        showActionBox = false;
+        if (IsScrollMode)
+        {
+            try { await JS.InvokeVoidAsync("scrollToPdfPage", e.Page); } catch { }
+            StateHasChanged();
+            return;
+        }
+        if (IsHalfTurnMode)
+        {
+            int d = HasPageOrder ? _pageOrder.IndexOf(e.Page) + 1 : e.Page;   // display slot showing PDF page e.Page
+            if (d < 1) d = 1;
+            currentPage = Math.Clamp(2 * d - 1, 1, pageCount);               // top half of that slot
+            RefreshPageBookmark();
+            await RenderCurrent();
+            StateHasChanged();
+            return;
+        }
+        if (HasPageOrder && (effectiveMode == "single" || effectiveMode == "two"))
+        {
+            int d = _pageOrder.IndexOf(e.Page) + 1;                   // display slot showing this PDF page
+            await JumpPage(d >= 1 ? d : 1);
+            return;
+        }
+        await JumpPage(e.Page);                                       // single/two-page (natural): PDF page directly
+    }
+
+    private async Task JumpPage(int p)
+    {
+        p = Math.Clamp(p, 1, pageCount);
+        if (p == currentPage) return;
+        currentPage = p;
+        RefreshPageBookmark();
+        await RenderCurrent();
+        if (SettingsService.RememberLastPage()) _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
+        StateHasChanged();
+    }
+
+    private async Task JumpToBookmarkAb(Bookmark bm)
+    {
+        showActionBox = false;
+        if (IsScrollMode)
+        {
+            try { await JS.InvokeVoidAsync("scrollToPdfPage", PdfPageFor(bm.Page)); } catch { }
+            StateHasChanged();
+            return;
+        }
+        if (IsHalfTurnMode)
+        {
+            currentPage = Math.Clamp(2 * bm.Page - 1, 1, pageCount);   // top half of the bookmarked page
+            RefreshPageBookmark();
+            await RenderCurrent();
+            StateHasChanged();
+            return;
+        }
+        currentPage = Math.Clamp(bm.Page, 1, pageCount);
+        RefreshPageBookmark();
+        await RenderCurrent();
         StateHasChanged();
     }
 
@@ -1769,6 +2950,12 @@
     {
         StopAutoPageTurn();
         StopAutoHide();
+        _autoScrolling = false;
+        try { _ = JS.InvokeVoidAsync("stopAutoScroll"); } catch { }
+        _metroRunning = false;
+        try { _ = JS.InvokeVoidAsync("stopMetronome"); } catch { }
+        try { _ = JS.InvokeVoidAsync("unloadAudio"); } catch { }
+        try { _ = JS.InvokeVoidAsync("disposeKeyNav"); } catch { }
         try { _ = JS.InvokeVoidAsync("setWakeLock", false); } catch { }
         _ref?.Dispose();
     }
