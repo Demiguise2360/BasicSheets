@@ -2370,11 +2370,14 @@ async function applyUndoState(s) {
 let gestureConfig = {};
 let longPressTimer = null;
 let longPressTriggered = false;
+let _gesturesBound = false;
 let threeFingSwipeStartX = 0, threeFingSwipeStartY = 0;
 let swipeFromBottomY = 0;
 
 window.initGestures = function(config) {
     gestureConfig = config || {};
+    if (_gesturesBound) return;   // bind the document listeners ONCE — re-binding leaked duplicate
+    _gesturesBound = true;        // long-press timers that fired add_bookmark in a loop
     setupGestureListeners();
 };
 
