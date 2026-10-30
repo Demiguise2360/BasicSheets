@@ -1394,8 +1394,9 @@
     private int  _gridCurrentPdfPage = 1;
     private readonly Dictionary<int, string> _pageThumbs = new();   // PDF page → thumbnail data URL ("" = tried & failed)
     private bool CanShowPageGrid => !_isText && !_isImage && !_hasRange && totalPages > 1;
-    // Pages to show in the grid, in display order; falls back to natural 1..N when no custom
-    // order is loaded (e.g. currentSheet unresolved), so the grid is never spuriously empty.
+    // Pages to show in the grid, in display order. _pageOrder is empty unless a custom page
+    // order is set (PageOrderUtil.Parse("") returns empty — the normal case), so fall back to
+    // natural 1..N, matching how single mode (PdfPageFor) and scroll mode (_renderSeq) do it.
     private List<int> GridOrder => _pageOrder.Count > 0 ? _pageOrder : Enumerable.Range(1, Math.Max(1, totalPages)).ToList();
 
     private async Task AutoCrop()
