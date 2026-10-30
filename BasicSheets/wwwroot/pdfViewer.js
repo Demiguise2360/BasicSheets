@@ -2751,6 +2751,35 @@ window.renderThumbnail = async function (maxW, cl, ct, cr, cb) {
     }
 };
 
+// Render a single page (1-based) to a thumbnail data URL, for the page-overview grid.
+// Reuses the loaded pdfDoc / image and honours the current rotation.
+window.renderPageThumb = async function (pageNum, maxW) {
+    try {
+        const w = maxW || 160;
+        if (isImageDoc && imgEl) {
+            const iw = imgEl.naturalWidth || w, ih = imgEl.naturalHeight || iw;
+            const isc = w / iw;
+            const fw = Math.max(1, Math.round(iw * isc)), fh = Math.max(1, Math.round(ih * isc));
+            const c = document.createElement('canvas'); c.width = fw; c.height = fh;
+            const cx = c.getContext('2d'); cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, fw, fh);
+            cx.drawImage(imgEl, 0, 0, fw, fh);
+            return c.toDataURL('image/jpeg', 0.7);
+        }
+        if (!pdfDoc) return null;
+        const n = Math.max(1, Math.min(pdfDoc.numPages, pageNum || 1));
+        const page = await pdfDoc.getPage(n);
+        const base = page.getViewport({ scale: 1 });
+        const vp = page.getViewport({ scale: w / base.width, rotation: pageRotation });
+        const c = document.createElement('canvas');
+        c.width  = Math.max(1, Math.round(vp.width));
+        c.height = Math.max(1, Math.round(vp.height));
+        const cx = c.getContext('2d');
+        cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, c.width, c.height);
+        await page.render({ canvasContext: cx, viewport: vp }).promise;
+        return c.toDataURL('image/jpeg', 0.7);
+    } catch (e) { return null; }
+};
+
 // Return the full canvas as JPEG, or just its [cl,ct,cr,cb] sub-rectangle when a crop is given.
 function _thumbOut(full, cl, ct, cr, cb) {
     const hasCrop = (typeof cl === 'number' && typeof cr === 'number' &&

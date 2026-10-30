@@ -138,6 +138,22 @@
                     title="Seitenansicht (@GetModeName())">
                 <span class="vhdr-mode-sym">@GetModeSym()</span>
             </button>
+
+            @* Page overview (thumbnail grid) *@
+            @if (CanShowPageGrid)
+            {
+                <button class="vhdr-btn @(_showPageGrid ? "vhdr-btn-active" : "")"
+                        @onclick="OpenPageGrid" title="Seitenübersicht">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                         class="vhdr-icon">
+                        <rect x="3" y="3" width="7" height="7" rx="1"/>
+                        <rect x="14" y="3" width="7" height="7" rx="1"/>
+                        <rect x="3" y="14" width="7" height="7" rx="1"/>
+                        <rect x="14" y="14" width="7" height="7" rx="1"/>
+                    </svg>
+                </button>
+            }
         }
     }
 
@@ -508,6 +524,40 @@
                 <button class="submit-btn" style="flex:1" @onclick="SaveLink">Speichern</button>
                 <button class="seg-btn" @onclick="CancelLink">Abbrechen</button>
             </div>
+        </div>
+    </div>
+}
+
+@* ── Page overview grid (Seitenübersicht) ────────────────────────── *@
+@if (_showPageGrid)
+{
+    <div style="position:fixed;inset:0;z-index:460;background:var(--c-bg);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.9rem;border-bottom:1px solid var(--c-border);flex:none">
+            <span style="font-weight:600;flex:1">Seitenübersicht · @GridOrder.Count Seiten</span>
+            <button class="seg-btn" @onclick="ClosePageGrid">Schließen</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0.75rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:0.7rem;align-content:start">
+            @{ var gridOrder = GridOrder; }
+            @for (int i = 0; i < gridOrder.Count; i++)
+            {
+                var slot = i;
+                var pdfPage = gridOrder[slot];
+                var isCurrent = pdfPage == _gridCurrentPdfPage;
+                <button @onclick="() => OnGridJump(pdfPage)"
+                        style="display:flex;flex-direction:column;align-items:center;gap:0.3rem;padding:0.25rem;background:none;border:2px solid @(isCurrent ? "var(--c-primary)" : "transparent");border-radius:0.5rem;cursor:pointer">
+                    <div style="width:100%;aspect-ratio:3/4;background:#fff;border:1px solid var(--c-border);border-radius:0.3rem;overflow:hidden;display:flex;align-items:center;justify-content:center">
+                        @if (_pageThumbs.TryGetValue(pdfPage, out var src) && !string.IsNullOrEmpty(src))
+                        {
+                            <img src="@src" style="width:100%;height:100%;object-fit:contain" alt="Seite @(slot + 1)" />
+                        }
+                        else
+                        {
+                            <span style="opacity:.4;font-size:0.8rem">…</span>
+                        }
+                    </div>
+                    <span style="font-size:0.78rem;opacity:@(isCurrent ? "1" : ".7");font-weight:@(isCurrent ? "600" : "400")">@(slot + 1)</span>
+                </button>
+            }
         </div>
     </div>
 }
@@ -1339,6 +1389,15 @@
     private bool LinksActive => !_isText && !_isImage && !isEditMode && !_cropEditMode && effectiveMode == "single";
     private sealed class NormPt { public double x { get; set; } public double y { get; set; } }
 
+    // ── Page overview grid (tap a thumbnail to jump) ──
+    private bool _showPageGrid = false;
+    private int  _gridCurrentPdfPage = 1;
+    private readonly Dictionary<int, string> _pageThumbs = new();   // PDF page → thumbnail data URL ("" = tried & failed)
+    private bool CanShowPageGrid => !_isText && !_isImage && !_hasRange && totalPages > 1;
+    // Pages to show in the grid, in display order; falls back to natural 1..N when no custom
+    // order is loaded (e.g. currentSheet unresolved), so the grid is never spuriously empty.
+    private List<int> GridOrder => _pageOrder.Count > 0 ? _pageOrder : Enumerable.Range(1, Math.Max(1, totalPages)).ToList();
+
     private async Task AutoCrop()
     {
         if (_isText || effectiveMode != "single") return;
@@ -1760,6 +1819,7 @@
 
             if (currentSheet != null) _crops = CropService.GetCrops(currentSheet.Id);
             _linkPoints = ViewerButtonService.GetForFile(file ?? "");
+            _pageThumbs.Clear();   // thumbnails are keyed by PDF page; a new song is a different PDF
 
             // Generate a first-page thumbnail once (cached), reusing the loaded pdfDoc.
             try
@@ -3130,17 +3190,24 @@
     private async Task JumpOutline(OutlineEntry e)
     {
         showActionBox = false;
+        await JumpToPdfPage(e.Page);
+    }
+
+    // Jump to an absolute PDF page, mapping it to the right display slot for the current
+    // mode (scroll / half-turn / custom-order / natural). Shared by the outline and grid.
+    private async Task JumpToPdfPage(int pdfPage)
+    {
         if (IsScrollMode)
         {
-            try { await JS.InvokeVoidAsync("scrollToPdfPage", e.Page); } catch { }
+            try { await JS.InvokeVoidAsync("scrollToPdfPage", pdfPage); } catch { }
             StateHasChanged();
             return;
         }
         if (IsHalfTurnMode)
         {
-            int d = HasPageOrder ? _pageOrder.IndexOf(e.Page) + 1 : e.Page;   // display slot showing PDF page e.Page
+            int d = HasPageOrder ? _pageOrder.IndexOf(pdfPage) + 1 : pdfPage;   // display slot showing this PDF page
             if (d < 1) d = 1;
-            currentPage = Math.Clamp(2 * d - 1, 1, pageCount);               // top half of that slot
+            currentPage = Math.Clamp(2 * d - 1, 1, pageCount);                 // top half of that slot
             RefreshPageBookmark();
             await RenderCurrent();
             StateHasChanged();
@@ -3148,11 +3215,61 @@
         }
         if (HasPageOrder && (effectiveMode == "single" || effectiveMode == "two"))
         {
-            int d = _pageOrder.IndexOf(e.Page) + 1;                   // display slot showing this PDF page
+            int d = _pageOrder.IndexOf(pdfPage) + 1;                   // display slot showing this PDF page
             await JumpPage(d >= 1 ? d : 1);
             return;
         }
-        await JumpPage(e.Page);                                       // single/two-page (natural): PDF page directly
+        await JumpPage(pdfPage);                                       // single/two-page (natural): PDF page directly
+    }
+
+    // ── Page overview grid ─────────────────────────────────────────────────
+    private int CurrentPdfPage()
+    {
+        var order = GridOrder;
+        if (order.Count == 0) return 1;
+        if (IsScrollMode)   { int idx = Math.Clamp(_scrollSlot, 0, order.Count - 1); return order[idx]; }
+        if (IsHalfTurnMode) return PdfPageFor((currentPage + 1) / 2);
+        return PdfPageFor(currentPage);                               // single / two
+    }
+
+    private async Task OpenPageGrid()
+    {
+        if (!CanShowPageGrid) return;
+        showQuickPanel = false;
+        showActionBox  = false;
+        showModeDropdown = false;
+        if (IsScrollMode)
+        {
+            try { _scrollSlot = await JS.InvokeAsync<int>("getScrollSlot"); } catch { }
+            if (_scrollSlot < 0) _scrollSlot = 0;
+        }
+        _gridCurrentPdfPage = CurrentPdfPage();
+        _showPageGrid = true;
+        StateHasChanged();
+        await RenderGridThumbs();
+    }
+
+    private void ClosePageGrid() { _showPageGrid = false; StateHasChanged(); }
+
+    private async Task RenderGridThumbs()
+    {
+        int since = 0;
+        foreach (var p in GridOrder)
+        {
+            if (!_showPageGrid) return;                               // user closed it mid-render
+            if (_pageThumbs.ContainsKey(p)) continue;
+            string? t = null;
+            try { t = await JS.InvokeAsync<string?>("renderPageThumb", p, 170); } catch { }
+            _pageThumbs[p] = t ?? "";
+            if (++since >= 4) { since = 0; StateHasChanged(); }       // reveal thumbnails as they arrive
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnGridJump(int pdfPage)
+    {
+        _showPageGrid = false;
+        await JumpToPdfPage(pdfPage);
     }
 
     private async Task JumpPage(int p)
