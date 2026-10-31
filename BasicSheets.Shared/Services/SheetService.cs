@@ -82,6 +82,21 @@ public class SheetService
         });
     }
 
+    /// <summary>Set only a song's 0–5 star rating, without touching other fields.</summary>
+    public void SetRating(string filePath, int rating)
+    {
+        if (string.IsNullOrEmpty(filePath)) return;
+        rating = Math.Clamp(rating, 0, 5);
+        _db.Locked(() =>
+        {
+            var existing = _db.Conn.Table<Sheet>().FirstOrDefault(s => s.FilePath == filePath);
+            if (existing == null) return;
+            existing.Rating  = rating;
+            existing.Updated = DateTime.Now;
+            _db.Conn.Update(existing);
+        });
+    }
+
     public void UpdateSheet(Sheet updated)
     {
         if (updated == null) return;

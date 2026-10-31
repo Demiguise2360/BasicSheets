@@ -88,6 +88,19 @@
             <div class="empty-state"><p class="empty-title">Noch keine Noten</p><p class="empty-sub">Tippe auf + um eine PDF hinzuzufügen</p></div>
         }
     }
+    else if (tab == "favorites")
+    {
+        var favs = SheetService.GetSheets().Where(s => s.Rating > 0)
+                               .OrderByDescending(s => s.Rating).ThenBy(s => s.Name ?? "").ToList();
+        @if (favs.Count > 0)
+        {
+            @foreach (var sheet in favs) { @SheetCard(sheet) }
+        }
+        else
+        {
+            <div class="empty-state"><p class="empty-title">Keine Favoriten</p><p class="empty-sub">Tippe auf die Sterne einer Note, um sie zu bewerten</p></div>
+        }
+    }
     else if (tab == "composer" || tab == "genre")
     {
         var groups = GroupSheets(tab);
@@ -202,6 +215,7 @@
     private static readonly Pivot[] Pivots =
     [
         new("songs", "Titel"),
+        new("favorites", "Favoriten"),
         new("composer", "Komponisten"),
         new("genre", "Genres"),
         new("collections", "Sammlungen"),
@@ -245,6 +259,17 @@
                         }
                     </div>
                 }
+                <div style="display:flex;gap:1px;margin-top:0.3rem">
+                    @for (int si = 1; si <= 5; si++)
+                    {
+                        var n = si;
+                        <button @onclick="() => SetRating(sheet, n)" @onclick:stopPropagation="true"
+                                title="@n von 5 Sternen"
+                                style="background:none;border:none;padding:0 2px;cursor:pointer;font-size:1.05rem;line-height:1;color:@(sheet.Rating >= n ? "#F5A623" : "var(--c-border)")">
+                            @(sheet.Rating >= n ? "★" : "☆")
+                        </button>
+                    }
+                </div>
             </div>
             <div class="sheet-actions">
                 <button class="act-btn" @onclick="() => OpenEdit(sheet)" @onclick:stopPropagation="true" title="Bearbeiten">
@@ -367,6 +392,14 @@
         {
             statusMessage = $"Fehler beim Löschen: {ex.Message}";
         }
+    }
+
+    private void SetRating(Sheet sheet, int n)
+    {
+        var nr = sheet.Rating == n ? 0 : n;   // tapping the current rating clears it
+        SheetService.SetRating(sheet.FilePath, nr);
+        sheet.Rating = nr;
+        StateHasChanged();
     }
 
     private void OpenSheet(Sheet sheet)
