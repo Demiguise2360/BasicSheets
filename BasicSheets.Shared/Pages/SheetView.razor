@@ -1718,6 +1718,9 @@
         if (currentSheet != null)
             _songFiles = SheetFileService.GetSongFiles(currentSheet);
 
+        if (!string.IsNullOrEmpty(file))
+            _ = JS.InvokeVoidAsync("pushRecent", file);   // track for the "Zuletzt" library tab
+
         try { await JS.InvokeVoidAsync("setPdfDotNetRef", _ref); } catch { }   // audio callbacks reach us (text path too)
         try { await JS.InvokeVoidAsync("initKeyNav"); } catch { }              // keyboard / pedal nav (all song types)
         await LoadAudioAsync();

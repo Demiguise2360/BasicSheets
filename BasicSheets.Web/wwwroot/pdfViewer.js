@@ -1721,6 +1721,25 @@ window.loadLastPage = function(pdfKey) {
     catch { return 1; }
 };
 
+// ── Recently opened (most-recent-first list of file names, per device) ──
+window.pushRecent = function(file) {
+    if (!file) return;
+    try {
+        let list = JSON.parse(localStorage.getItem("bs_recent") || "[]");
+        if (!Array.isArray(list)) list = [];
+        list = list.filter(f => f !== file);   // drop any earlier entry for this song
+        list.unshift(file);                     // newest first
+        if (list.length > 30) list = list.slice(0, 30);
+        localStorage.setItem("bs_recent", JSON.stringify(list));
+    } catch {}
+};
+window.getRecent = function() {
+    try {
+        const list = JSON.parse(localStorage.getItem("bs_recent") || "[]");
+        return Array.isArray(list) ? list : [];
+    } catch { return []; }
+};
+
 
 // ── Screen wake lock ───────────────────────────────────────────────
 window.setWakeLock = async function(on) {

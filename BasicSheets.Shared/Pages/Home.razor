@@ -88,6 +88,21 @@
             <div class="empty-state"><p class="empty-title">Noch keine Noten</p><p class="empty-sub">Tippe auf + um eine PDF hinzuzufügen</p></div>
         }
     }
+    else if (tab == "recent")
+    {
+        var all = SheetService.GetSheets();
+        var recentSheets = _recent
+            .Select(f => all.FirstOrDefault(s => Path.GetFileName(s.FilePath) == f))
+            .Where(s => s != null).Cast<Sheet>().ToList();
+        @if (recentSheets.Count > 0)
+        {
+            @foreach (var sheet in recentSheets) { @SheetCard(sheet) }
+        }
+        else
+        {
+            <div class="empty-state"><p class="empty-title">Noch nichts geöffnet</p><p class="empty-sub">Zuletzt geöffnete Noten erscheinen hier</p></div>
+        }
+    }
     else if (tab == "favorites")
     {
         var favs = SheetService.GetSheets().Where(s => s.Rating > 0)
@@ -195,6 +210,7 @@
     private IUpdateService? UpdateService;
 
     private Dictionary<string, string> _thumbs = new();
+    private List<string> _recent = new();   // recently-opened file names (newest first), from localStorage
 
     protected override void OnInitialized()
     {
@@ -215,6 +231,7 @@
     private static readonly Pivot[] Pivots =
     [
         new("songs", "Titel"),
+        new("recent", "Zuletzt"),
         new("favorites", "Favoriten"),
         new("composer", "Komponisten"),
         new("genre", "Genres"),
@@ -288,7 +305,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && UpdateService != null)
+        if (!firstRender) return;
+
+        try { _recent = (await JsRuntime.InvokeAsync<string[]>("getRecent")).ToList(); StateHasChanged(); }
+        catch { /* localStorage unavailable (e.g. during prerender) — leave recent empty */ }
+
+        if (UpdateService != null)
         {
             if (UpdateService is BasicSheets.Shared.Services.IUpdateServiceNotify notifier)
                 notifier.StateChanged += OnUpdateStateChanged;
