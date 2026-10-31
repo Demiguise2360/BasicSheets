@@ -20,6 +20,7 @@
     @if (showStart) { <div class="vnotice"><p>Anfang des Stücks</p></div> }
     @if (showEnd)   { <div class="vnotice"><p>Ende des Stücks</p></div>   }
     @if (_batchNotice != null) { <div class="vnotice"><p>@_batchNotice</p></div> }
+    @if (_lockMsg != null)     { <div class="vnotice"><p>@_lockMsg</p></div>     }
     @if (showError) { <div class="verror"><p>@errorMessage</p></div>       }
     <div id="page-spinner" class="page-spinner" style="display:none">
         <div class="spinner-ring"></div>
@@ -164,6 +165,27 @@
                          stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
                          class="vhdr-icon">
                         <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </button>
+            }
+
+            @* Touch lock (block accidental page turns) *@
+            @if (totalPages > 1)
+            {
+                <button class="vhdr-btn @(_touchLocked ? "vhdr-btn-active" : "")"
+                        @onclick="ToggleLock" title="@(_touchLocked ? "Tippen entsperren" : "Tippen sperren")">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                         class="vhdr-icon">
+                        <rect x="4" y="11" width="16" height="10" rx="2"/>
+                        @if (_touchLocked)
+                        {
+                            <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                        }
+                        else
+                        {
+                            <path d="M8 11V7a4 4 0 0 1 7-1"/>
+                        }
                     </svg>
                 </button>
             }
@@ -1461,6 +1483,10 @@
     private bool CanSearch => !_isText && !_isImage;
     private sealed class SearchHit { public int page { get; set; } public string snippet { get; set; } = ""; }
 
+    // ── Touch lock (block accidental page turns while reading) ──
+    private bool _touchLocked = false;
+    private string? _lockMsg = null;   // brief on-toggle notice
+
     private async Task AutoCrop()
     {
         if (_isText || effectiveMode != "single") return;
@@ -2423,6 +2449,16 @@
             return;
         }
 
+        // Touch lock: ignore page-turn and link taps (stops accidental turns while reading);
+        // a tap still reveals the toolbar so the lock can be switched off.
+        if (_touchLocked)
+        {
+            if (SettingsService.AutoHideToolbar()) { showUi = true; ResetAutoHide(); }
+            else { showUi = !showUi; }
+            StateHasChanged();
+            return;
+        }
+
         // Link points: while armed, a tap drops a new point; otherwise a tap on an
         // existing point jumps to its target page. Checked before the page-turn zones.
         if (LinksActive)
@@ -3369,6 +3405,16 @@
     {
         _showSearch = false;
         await JumpToPdfPage(h.page);
+    }
+
+    private async Task ToggleLock()
+    {
+        _touchLocked = !_touchLocked;
+        _lockMsg = _touchLocked ? "Tippen gesperrt" : "Tippen entsperrt";
+        StateHasChanged();
+        var shown = _lockMsg;
+        await Task.Delay(1400);
+        if (_lockMsg == shown) { _lockMsg = null; StateHasChanged(); }
     }
 
     private async Task JumpPage(int p)
