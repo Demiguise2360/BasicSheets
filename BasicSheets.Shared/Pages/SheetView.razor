@@ -154,6 +154,19 @@
                     </svg>
                 </button>
             }
+
+            @* In-document text search *@
+            @if (CanSearch)
+            {
+                <button class="vhdr-btn @(_showSearch ? "vhdr-btn-active" : "")"
+                        @onclick="OpenSearch" title="Im Dokument suchen">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                         class="vhdr-icon">
+                        <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                </button>
+            }
         }
     }
 
@@ -557,6 +570,46 @@
                     </div>
                     <span style="font-size:0.78rem;opacity:@(isCurrent ? "1" : ".7");font-weight:@(isCurrent ? "600" : "400")">@(slot + 1)</span>
                 </button>
+            }
+        </div>
+    </div>
+}
+
+@* ── In-document text search ──────────────────────────────────────── *@
+@if (_showSearch)
+{
+    <div style="position:fixed;inset:0;z-index:460;background:var(--c-bg);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.9rem;border-bottom:1px solid var(--c-border);flex:none">
+            <input @bind="_searchQuery" @bind:event="oninput" @onkeydown="OnSearchKey" placeholder="Im Dokument suchen …" autofocus
+                   style="flex:1;min-width:0;padding:0.5rem 0.7rem;border:1px solid var(--c-border);border-radius:0.5rem;background:var(--c-surface);color:var(--c-text);font-size:0.95rem" />
+            <button class="seg-btn" @onclick="DoSearch">Suchen</button>
+            <button class="seg-btn" @onclick="CloseSearch">✕</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0.4rem 0.3rem">
+            @if (_searching)
+            {
+                <div style="padding:1.2rem;text-align:center;opacity:.6">Suchen…</div>
+            }
+            else if (_searchResults.Count > 0)
+            {
+                <div style="padding:0.3rem 0.7rem;font-size:0.8rem;opacity:.6">@_searchResults.Count Treffer</div>
+                @foreach (var hit in _searchResults)
+                {
+                    var h = hit;
+                    <button @onclick="() => OnSearchJump(h)"
+                            style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--c-border);padding:0.6rem 0.7rem;cursor:pointer;color:var(--c-text)">
+                        <div style="font-weight:600;font-size:0.85rem">Seite @h.page</div>
+                        <div style="font-size:0.8rem;opacity:.7;margin-top:0.2rem;line-height:1.3">@h.snippet</div>
+                    </button>
+                }
+            }
+            else if (_searched)
+            {
+                <div style="padding:1.2rem;text-align:center;opacity:.6">Keine Treffer für «@_searchQuery»</div>
+            }
+            else
+            {
+                <div style="padding:1.2rem;text-align:center;opacity:.5">Suchbegriff eingeben und «Suchen» tippen</div>
             }
         </div>
     </div>
@@ -1398,6 +1451,15 @@
     // order is set (PageOrderUtil.Parse("") returns empty — the normal case), so fall back to
     // natural 1..N, matching how single mode (PdfPageFor) and scroll mode (_renderSeq) do it.
     private List<int> GridOrder => _pageOrder.Count > 0 ? _pageOrder : Enumerable.Range(1, Math.Max(1, totalPages)).ToList();
+
+    // ── In-document text search (PDF text layer) ──
+    private bool _showSearch = false;
+    private string _searchQuery = "";
+    private bool _searching = false;
+    private bool _searched = false;   // a search has run (tells "no results" apart from the initial prompt)
+    private List<SearchHit> _searchResults = new();
+    private bool CanSearch => !_isText && !_isImage;
+    private sealed class SearchHit { public int page { get; set; } public string snippet { get; set; } = ""; }
 
     private async Task AutoCrop()
     {
@@ -3274,6 +3336,39 @@
     {
         _showPageGrid = false;
         await JumpToPdfPage(pdfPage);
+    }
+
+    // ── In-document text search ────────────────────────────────────────────
+    private void OpenSearch()
+    {
+        showQuickPanel   = false;
+        showActionBox    = false;
+        showModeDropdown = false;
+        _showSearch = true;
+        StateHasChanged();
+    }
+
+    private void CloseSearch() { _showSearch = false; StateHasChanged(); }
+
+    private async Task OnSearchKey(KeyboardEventArgs e) { if (e.Key == "Enter") await DoSearch(); }
+
+    private async Task DoSearch()
+    {
+        var q = (_searchQuery ?? "").Trim();
+        _searched = true;
+        if (q.Length < 2) { _searchResults = new(); StateHasChanged(); return; }   // need at least 2 chars
+        _searching = true;
+        StateHasChanged();
+        try { var hits = await JS.InvokeAsync<SearchHit[]>("searchPdf", q); _searchResults = hits?.ToList() ?? new(); }
+        catch { _searchResults = new(); }
+        _searching = false;
+        StateHasChanged();
+    }
+
+    private async Task OnSearchJump(SearchHit h)
+    {
+        _showSearch = false;
+        await JumpToPdfPage(h.page);
     }
 
     private async Task JumpPage(int p)
