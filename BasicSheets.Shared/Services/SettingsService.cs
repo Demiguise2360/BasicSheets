@@ -342,6 +342,14 @@ public class SettingsService
         return s?.Value ?? "name";
     }
 
+    public void SetSortOrder(string value)
+    {
+        var s = _settings.FirstOrDefault(x => x.Name == "Sortierung");
+        if (s == null) _settings.Add(new Setting { Name = "Sortierung", Value = value });
+        else s.Value = value;
+        SaveSettings();
+    }
+
     public string GetGestureAction(string gestureName)
     {
         var s = _settings.FirstOrDefault(x => x.Name == gestureName);

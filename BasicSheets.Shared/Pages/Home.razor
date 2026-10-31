@@ -64,6 +64,16 @@
             <option value="Tags">Tags</option>
         </select>
     </div>
+    <div class="search-container">
+        <span style="flex:1;align-self:center;padding:0 1rem;font-size:0.9rem;color:var(--c-text-2)">Sortieren nach</span>
+        <select @bind="SortOrder" style="max-width:10rem">
+            <option value="name">Name</option>
+            <option value="date">Neueste</option>
+            <option value="composer">Komponist</option>
+            <option value="rating">Bewertung</option>
+            <option value="difficulty">Schwierigkeit</option>
+        </select>
+    </div>
 }
 
 @if (!string.IsNullOrEmpty(statusMessage))
@@ -348,6 +358,12 @@
         "beginner" => 0, "intermediate" => 1, "advanced" => 2, "expert" => 3, _ => 4
     };
 
+    private string SortOrder
+    {
+        get => SettingsService.GetSortOrder();
+        set => SettingsService.SetSortOrder(value);
+    }
+
     private List<Sheet> FilteredSheets
     {
         get
@@ -383,6 +399,7 @@
                 "composer"   => sheets.OrderBy(s => s.Composer ?? "").ThenBy(s => s.Name ?? "").ToList(),
                 "date"       => sheets.OrderByDescending(s => s.Updated).ToList(),
                 "difficulty" => sheets.OrderBy(s => DiffOrder(s.Difficulty ?? "")).ThenBy(s => s.Name ?? "").ToList(),
+                "rating"     => sheets.OrderByDescending(s => s.Rating).ThenBy(s => s.Name ?? "").ToList(),
                 _            => sheets.OrderBy(s => s.Name ?? "").ToList()
             };
         }
