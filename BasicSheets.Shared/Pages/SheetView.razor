@@ -42,8 +42,22 @@
     </div>
 }
 
+@* ── Search match navigator (step through results) ────────────────── *@
+@if (_showMatchNav && _searchResults.Count > 0 && !_showSearch && !isEditMode && !_cropEditMode)
+{
+    <div style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 3.6rem);left:50%;transform:translateX(-50%);z-index:191;display:flex;align-items:center;gap:0.1rem;background:var(--c-primary,#345e58);color:#fff;border-radius:1.3rem;padding:0.2rem 0.3rem;box-shadow:0 3px 14px rgba(0,0,0,0.35)">
+        <button @onclick="() => MatchNav(-1)" disabled="@(_searchIdx <= 0)"
+                style="background:none;border:none;color:#fff;font-size:1.2rem;line-height:1;padding:0.2rem 0.55rem;cursor:pointer;opacity:@(_searchIdx <= 0 ? ".4" : "1")">‹</button>
+        <span style="font-size:0.8rem;font-weight:600;white-space:nowrap;min-width:4.4rem;text-align:center">Treffer @(_searchIdx + 1)/@_searchResults.Count</span>
+        <button @onclick="() => MatchNav(1)" disabled="@(_searchIdx >= _searchResults.Count - 1)"
+                style="background:none;border:none;color:#fff;font-size:1.2rem;line-height:1;padding:0.2rem 0.55rem;cursor:pointer;opacity:@(_searchIdx >= _searchResults.Count - 1 ? ".4" : "1")">›</button>
+        <button @onclick="CloseMatchNav" title="Trefferleiste schließen"
+                style="background:rgba(255,255,255,0.18);border:none;color:#fff;font-size:0.72rem;line-height:1;padding:0.28rem 0.45rem;border-radius:1rem;cursor:pointer;margin-left:0.15rem">✕</button>
+    </div>
+}
+
 @* ── Jump-back pill (return to the page a jump came from) ──────────── *@
-@if (_backStack.Count > 0 && !isEditMode && !_cropEditMode)
+@if (_backStack.Count > 0 && !isEditMode && !_cropEditMode && !_showMatchNav)
 {
     <button @onclick="GoBackJump" title="Zurück zu Seite @(_backStack[^1])"
             style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 3.6rem);left:50%;transform:translateX(-50%);z-index:190;display:flex;align-items:center;gap:0.35rem;background:var(--c-primary,#345e58);color:#fff;border:none;border-radius:1.2rem;padding:0.4rem 0.95rem;font-size:0.85rem;font-weight:600;box-shadow:0 3px 14px rgba(0,0,0,0.35);cursor:pointer">
@@ -1492,6 +1506,11 @@
     private bool CanSearch => !_isText && !_isImage;
     private sealed class SearchHit { public int page { get; set; } public string snippet { get; set; } = ""; public int count { get; set; } }
 
+    // ── Match navigator (step through search results after a jump) ──
+    private int _searchIdx = -1;            // current result index
+    private string _searchActiveQuery = ""; // query that produced _searchResults (for re-highlighting)
+    private bool _showMatchNav = false;
+
     // ── Touch lock (block accidental page turns while reading) ──
     private bool _touchLocked = false;
     private string? _lockMsg = null;   // brief on-toggle notice
@@ -1926,6 +1945,7 @@
             _linkPoints = ViewerButtonService.GetForFile(file ?? "");
             _pageThumbs.Clear();   // thumbnails are keyed by PDF page; a new song is a different PDF
             _backStack.Clear();
+            _showMatchNav = false; _searchIdx = -1; _searchResults = new();
 
             // Generate a first-page thumbnail once (cached), reusing the loaded pdfDoc.
             try
@@ -3422,6 +3442,7 @@
     {
         var q = (_searchQuery ?? "").Trim();
         _searched = true;
+        _showMatchNav = false; _searchIdx = -1;   // a new search supersedes the old match navigator
         if (q.Length < 2) { _searchResults = new(); StateHasChanged(); return; }   // need at least 2 chars
         _searching = true;
         StateHasChanged();
@@ -3434,12 +3455,29 @@
     private async Task OnSearchJump(SearchHit h)
     {
         var q = _searchQuery;
+        _searchActiveQuery = q ?? "";
+        _searchIdx = _searchResults.IndexOf(h);
+        _showMatchNav = true;
         _showSearch = false;
         await JumpToPdfPage(h.page);
         // Flash the match on the page (single, unrotated pages — the canvas holds the full page).
         if (effectiveMode == "single" && _rotation == 0 && !string.IsNullOrWhiteSpace(q))
             try { await JS.InvokeAsync<bool>("highlightMatch", q); } catch { }
     }
+
+    // Step through the search results (prev/next page with matches), re-highlighting each.
+    private async Task MatchNav(int delta)
+    {
+        if (_searchResults.Count == 0) return;
+        _searchIdx = Math.Clamp(_searchIdx + delta, 0, _searchResults.Count - 1);
+        var h = _searchResults[_searchIdx];
+        await JumpToPdfPage(h.page);
+        if (effectiveMode == "single" && _rotation == 0 && !string.IsNullOrWhiteSpace(_searchActiveQuery))
+            try { await JS.InvokeAsync<bool>("highlightMatch", _searchActiveQuery); } catch { }
+        StateHasChanged();
+    }
+
+    private void CloseMatchNav() { _showMatchNav = false; StateHasChanged(); }
 
     private async Task ToggleLock()
     {
