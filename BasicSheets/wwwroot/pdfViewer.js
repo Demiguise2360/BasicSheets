@@ -257,12 +257,20 @@ window.highlightMatch = async function(query, pdfPage) {
             const xOff = _displayMode === 'scroll-v' ? Math.round((baseWidth - pageW) / 2) : (_scrollLefts[idx] || 0);
             const yOff = _displayMode === 'scroll-v' ? (_scrollTops[idx] || 0) : Math.round((baseHeight - pageH) / 2);
             found = drawHits(vp, await page.getTextContent(), xOff, yOff, pageW, pageH);
-        } else if (_displayMode === 'single' && (pageRotation % 360) === 0) {
+        } else if (_displayMode === 'two') {
+            // Two-page: left page at x=0, right page at x=_twoLeftW+gap; offset to whichever holds the target.
+            const p = parseInt(pdfPage, 10);
+            const xOff = p === _twoLeftPdf ? 0 : (p === _twoRightPdf ? _twoLeftW + _twoGap : -1);
+            if (xOff < 0) return false;
+            const page = await pdfDoc.getPage(p);
+            const vp = page.getViewport({ scale: 2, rotation: pageRotation });
+            found = drawHits(vp, await page.getTextContent(), xOff, 0, Math.ceil(vp.width), Math.ceil(vp.height));
+        } else if ((_displayMode === 'single' || _displayMode === 'half-turn') && (pageRotation % 360) === 0) {
             const page = await pdfDoc.getPage(pageNum);
             const vp = page.getViewport({ scale: 2, rotation: 0 });
             found = drawHits(vp, await page.getTextContent(), 0, 0, baseWidth, baseHeight);
         } else {
-            return false;   // two-page / half-turn / rotated single: no highlight (graceful)
+            return false;   // rotated single/half-turn, or unknown mode: no highlight (graceful)
         }
 
         if (!found) return false;
@@ -386,6 +394,8 @@ window.renderImage = async function() {
     hideSpinner();
 };
 
+// Two-page layout, captured for search highlight: which PDF pages are shown + left page width.
+let _twoLeftPdf = 0, _twoRightPdf = 0, _twoLeftW = 0, _twoGap = 24;
 window.renderTwoPage = async function(num) {
     scrollMode = null; halfSide = null; _displayMode = 'two';
     cancelActiveRender();
@@ -432,6 +442,7 @@ window.renderTwoPage = async function(num) {
     ctx.drawImage(t1, 0, 0);
     if (t2) ctx.drawImage(t2, t1.width + gap, 0);
 
+    _twoLeftPdf = _leftPdf; _twoRightPdf = _rightPdf; _twoLeftW = t1.width; _twoGap = gap;
     baseWidth = tw; baseHeight = th;
     loadNotes();
     if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
