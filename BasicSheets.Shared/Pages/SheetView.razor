@@ -623,13 +623,13 @@
             }
             else if (_searchResults.Count > 0)
             {
-                <div style="padding:0.3rem 0.7rem;font-size:0.8rem;opacity:.6">@_searchResults.Count Treffer</div>
+                <div style="padding:0.3rem 0.7rem;font-size:0.8rem;opacity:.6">@_searchResults.Sum(r => r.count) Treffer auf @_searchResults.Count Seiten</div>
                 @foreach (var hit in _searchResults)
                 {
                     var h = hit;
                     <button @onclick="() => OnSearchJump(h)"
                             style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--c-border);padding:0.6rem 0.7rem;cursor:pointer;color:var(--c-text)">
-                        <div style="font-weight:600;font-size:0.85rem">Seite @h.page</div>
+                        <div style="font-weight:600;font-size:0.85rem">Seite @h.page@(h.count > 1 ? $" · {h.count}×" : "")</div>
                         <div style="font-size:0.8rem;opacity:.7;margin-top:0.2rem;line-height:1.3">@h.snippet</div>
                     </button>
                 }
@@ -1490,7 +1490,7 @@
     private bool _searched = false;   // a search has run (tells "no results" apart from the initial prompt)
     private List<SearchHit> _searchResults = new();
     private bool CanSearch => !_isText && !_isImage;
-    private sealed class SearchHit { public int page { get; set; } public string snippet { get; set; } = ""; }
+    private sealed class SearchHit { public int page { get; set; } public string snippet { get; set; } = ""; public int count { get; set; } }
 
     // ── Touch lock (block accidental page turns while reading) ──
     private bool _touchLocked = false;

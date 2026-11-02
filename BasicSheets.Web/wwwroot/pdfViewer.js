@@ -199,11 +199,14 @@ window.searchPdf = async function(query) {
         const text = _pdfTextCache[p - 1] || '';
         const idx = text.toLowerCase().indexOf(q);
         if (idx >= 0) {
+            const lower = text.toLowerCase();
+            let count = 0, from = 0, k;
+            while ((k = lower.indexOf(q, from)) >= 0) { count++; from = k + q.length; }   // occurrences on this page
             const start = Math.max(0, idx - 30);
             let snippet = text.substring(start, idx + q.length + 45).trim();
             if (start > 0) snippet = '…' + snippet;
             if (idx + q.length + 45 < text.length) snippet += '…';
-            results.push({ page: p, snippet });
+            results.push({ page: p, snippet, count });
         }
     }
     return results;
@@ -221,22 +224,23 @@ window.highlightMatch = async function(query) {
         const vp = page.getViewport({ scale: 2, rotation: 0 });
         const tc = await page.getTextContent();
         const lib = window["pdfjs-dist/build/pdf"];
-        let rect = null;
-        for (const item of tc.items) {
+        let found = 0;
+        btnCtx.save();
+        btnCtx.fillStyle = 'rgba(255, 210, 0, 0.40)';
+        for (const item of tc.items) {                                    // highlight every occurrence on the page
             if (!item.str || !item.str.toLowerCase().includes(q)) continue;
             const m = lib.Util.transform(vp.transform, item.transform);   // item box in viewport (canvas) px
             const hgt = Math.hypot(m[2], m[3]) || 14;
             let wdt = (item.width || 0) * vp.scale;
             if (wdt < 2) wdt = item.str.length * hgt * 0.5;
-            rect = { x: m[4], y: m[5] - hgt, w: wdt, h: hgt };
-            break;
+            const x = m[4], y = m[5] - hgt;
+            if (x < -30 || y < -30 || x > baseWidth + 30 || y > baseHeight + 30) continue;
+            const pad = Math.max(3, hgt * 0.18);
+            btnCtx.fillRect(x - pad, y - pad, wdt + pad * 2, hgt + pad * 2);
+            if (++found >= 60) break;                                      // cap, just in case
         }
-        if (!rect || rect.x < -30 || rect.y < -30 || rect.x > baseWidth + 30 || rect.y > baseHeight + 30) return false;
-        const pad = Math.max(3, rect.h * 0.18);
-        btnCtx.save();
-        btnCtx.fillStyle = 'rgba(255, 210, 0, 0.40)';
-        btnCtx.fillRect(rect.x - pad, rect.y - pad, rect.w + pad * 2, rect.h + pad * 2);
         btnCtx.restore();
+        if (!found) return false;
         clearTimeout(_hlTimer);
         _hlTimer = setTimeout(() => { try { _drawButtons(); } catch {} }, 2600);   // fade: redraw markers, clearing the highlight
         return true;
