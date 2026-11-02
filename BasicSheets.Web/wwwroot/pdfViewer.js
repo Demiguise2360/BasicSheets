@@ -215,31 +215,56 @@ window.searchPdf = async function(query) {
 // Briefly flash a highlight over the first occurrence of `query` on the current page.
 // Single-page, unrotated pages only (the canvas holds the full page, so crop is fine);
 // draws on btnCanvas and fades by redrawing the link-point markers. Best-effort.
-window.highlightMatch = async function(query) {
+window.highlightMatch = async function(query, pdfPage) {
     try {
-        if (!pdfDoc || !btnCanvas || !btnCtx || !baseWidth || (pageRotation % 360) !== 0) return false;
+        if (!pdfDoc || !btnCanvas || !btnCtx || !baseWidth) return false;
         const q = String(query || '').toLowerCase();
         if (q.length < 2) return false;
-        const page = await pdfDoc.getPage(pageNum);
-        const vp = page.getViewport({ scale: 2, rotation: 0 });
-        const tc = await page.getTextContent();
         const lib = window["pdfjs-dist/build/pdf"];
+
+        // Paint every occurrence of q from a page's text onto btnCanvas, offset by
+        // (xOff,yOff) into the composite canvas and clipped to the page box.
+        const drawHits = (vp, tc, xOff, yOff, clipW, clipH) => {
+            let n = 0;
+            btnCtx.save();
+            btnCtx.fillStyle = 'rgba(255, 210, 0, 0.40)';
+            for (const item of tc.items) {
+                if (!item.str || !item.str.toLowerCase().includes(q)) continue;
+                const m = lib.Util.transform(vp.transform, item.transform);   // item box in viewport (canvas) px
+                const hgt = Math.hypot(m[2], m[3]) || 14;
+                let wdt = (item.width || 0) * vp.scale;
+                if (wdt < 2) wdt = item.str.length * hgt * 0.5;
+                const x = m[4], y = m[5] - hgt;
+                if (x < -30 || y < -30 || x > clipW + 30 || y > clipH + 30) continue;
+                const pad = Math.max(3, hgt * 0.18);
+                btnCtx.fillRect(xOff + x - pad, yOff + y - pad, wdt + pad * 2, hgt + pad * 2);
+                if (++n >= 60) break;                                         // cap, just in case
+            }
+            btnCtx.restore();
+            return n;
+        };
+
         let found = 0;
-        btnCtx.save();
-        btnCtx.fillStyle = 'rgba(255, 210, 0, 0.40)';
-        for (const item of tc.items) {                                    // highlight every occurrence on the page
-            if (!item.str || !item.str.toLowerCase().includes(q)) continue;
-            const m = lib.Util.transform(vp.transform, item.transform);   // item box in viewport (canvas) px
-            const hgt = Math.hypot(m[2], m[3]) || 14;
-            let wdt = (item.width || 0) * vp.scale;
-            if (wdt < 2) wdt = item.str.length * hgt * 0.5;
-            const x = m[4], y = m[5] - hgt;
-            if (x < -30 || y < -30 || x > baseWidth + 30 || y > baseHeight + 30) continue;
-            const pad = Math.max(3, hgt * 0.18);
-            btnCtx.fillRect(x - pad, y - pad, wdt + pad * 2, hgt + pad * 2);
-            if (++found >= 60) break;                                      // cap, just in case
+        if ((_displayMode === 'scroll-v' || _displayMode === 'scroll-h') && _scrollOrder) {
+            // Scroll modes: btnCanvas spans the whole composite, so offset the target
+            // page's hits to its slot. Works at any rotation (matches the render vp).
+            const p = parseInt(pdfPage, 10);
+            const idx = Number.isInteger(p) ? _scrollOrder.indexOf(p) : -1;
+            if (idx < 0) return false;
+            const page = await pdfDoc.getPage(p);
+            const vp = page.getViewport({ scale: 2, rotation: pageRotation });
+            const pageW = Math.ceil(vp.width), pageH = Math.ceil(vp.height);
+            const xOff = _displayMode === 'scroll-v' ? Math.round((baseWidth - pageW) / 2) : (_scrollLefts[idx] || 0);
+            const yOff = _displayMode === 'scroll-v' ? (_scrollTops[idx] || 0) : Math.round((baseHeight - pageH) / 2);
+            found = drawHits(vp, await page.getTextContent(), xOff, yOff, pageW, pageH);
+        } else if (_displayMode === 'single' && (pageRotation % 360) === 0) {
+            const page = await pdfDoc.getPage(pageNum);
+            const vp = page.getViewport({ scale: 2, rotation: 0 });
+            found = drawHits(vp, await page.getTextContent(), 0, 0, baseWidth, baseHeight);
+        } else {
+            return false;   // two-page / half-turn / rotated single: no highlight (graceful)
         }
-        btnCtx.restore();
+
         if (!found) return false;
         clearTimeout(_hlTimer);
         _hlTimer = setTimeout(() => { try { _drawButtons(); } catch {} }, 2600);   // fade: redraw markers, clearing the highlight
