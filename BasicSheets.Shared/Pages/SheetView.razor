@@ -42,6 +42,15 @@
     </div>
 }
 
+@* ── Jump-back pill (return to the page a jump came from) ──────────── *@
+@if (_backStack.Count > 0 && !isEditMode && !_cropEditMode)
+{
+    <button @onclick="GoBackJump" title="Zurück zu Seite @(_backStack[^1])"
+            style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 3.6rem);left:50%;transform:translateX(-50%);z-index:190;display:flex;align-items:center;gap:0.35rem;background:var(--c-primary,#345e58);color:#fff;border:none;border-radius:1.2rem;padding:0.4rem 0.95rem;font-size:0.85rem;font-weight:600;box-shadow:0 3px 14px rgba(0,0,0,0.35);cursor:pointer">
+        ↩ Seite @(_backStack[^1])
+    </button>
+}
+
 @* ── ChordPro / text song (HTML, no canvas) ─────────────────────────── *@
 @if (_isText && _song != null)
 {
@@ -1487,6 +1496,10 @@
     private bool _touchLocked = false;
     private string? _lockMsg = null;   // brief on-toggle notice
 
+    // ── Jump-back stack (return after a jump via search / link point / outline / go-to-page) ──
+    private readonly List<int> _backStack = new();
+    private bool _suppressBackPush = false;
+
     private async Task AutoCrop()
     {
         if (_isText || effectiveMode != "single") return;
@@ -1912,6 +1925,7 @@
             if (currentSheet != null) _crops = CropService.GetCrops(currentSheet.Id);
             _linkPoints = ViewerButtonService.GetForFile(file ?? "");
             _pageThumbs.Clear();   // thumbnails are keyed by PDF page; a new song is a different PDF
+            _backStack.Clear();
 
             // Generate a first-page thumbnail once (cached), reusing the loaded pdfDoc.
             try
@@ -3421,11 +3435,27 @@
     {
         p = Math.Clamp(p, 1, pageCount);
         if (p == currentPage) return;
+        if (!_suppressBackPush && Math.Abs(p - currentPage) > 1)   // a deliberate jump, not a sequential turn → remember where we were
+        {
+            _backStack.Add(currentPage);
+            if (_backStack.Count > 30) _backStack.RemoveAt(0);
+        }
         currentPage = p;
         RefreshPageBookmark();
         await RenderCurrent();
         if (SettingsService.RememberLastPage()) _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
         StateHasChanged();
+    }
+
+    // Return to the page we jumped from (multi-level); suppress the push so returning doesn't re-stack.
+    private async Task GoBackJump()
+    {
+        if (_backStack.Count == 0) return;
+        var target = _backStack[^1];
+        _backStack.RemoveAt(_backStack.Count - 1);
+        _suppressBackPush = true;
+        try { await JumpPage(target); }
+        finally { _suppressBackPush = false; }
     }
 
     private async Task JumpToBookmarkAb(Bookmark bm)
