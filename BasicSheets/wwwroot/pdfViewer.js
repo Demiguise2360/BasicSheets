@@ -252,7 +252,7 @@ window.highlightMatch = async function(query, pdfPage) {
             const idx = Number.isInteger(p) ? _scrollOrder.indexOf(p) : -1;
             if (idx < 0) return false;
             const page = await pdfDoc.getPage(p);
-            const vp = page.getViewport({ scale: 2, rotation: pageRotation });
+            const vp = page.getViewport({ scale: _scrollScale, rotation: pageRotation });
             const pageW = Math.ceil(vp.width), pageH = Math.ceil(vp.height);
             const xOff = _displayMode === 'scroll-v' ? Math.round((baseWidth - pageW) / 2) : (_scrollLefts[idx] || 0);
             const yOff = _displayMode === 'scroll-v' ? (_scrollTops[idx] || 0) : Math.round((baseHeight - pageH) / 2);
@@ -568,6 +568,24 @@ window.getScrollSlot = function() {
     return -1;
 };
 
+// Scroll composites are one canvas as tall/wide as every page stacked; keep it under
+// the browser's max canvas size (Chromium ~65535, Firefox 32767) or it renders blank.
+// Measure the stack at scale 2 and, only when it would overflow, shrink everything
+// uniformly so long documents render (a little softer) instead of going blank.
+const _MAX_SCROLL_DIM = 32000;
+let _scrollScale = 2;
+async function _scrollFitScale(order, gen, axis) {
+    let span = 0;                                   // summed page heights (v) / widths (h) at scale 2
+    for (const i of order) {
+        const page = await pdfDoc.getPage(i);
+        if (gen !== _renderGen) return null;        // superseded
+        const vp = page.getViewport({ scale: 2, rotation: pageRotation });
+        span += Math.ceil(axis === 'v' ? vp.height : vp.width);
+    }
+    const total = span + 24 * (order.length - 1);   // include the inter-page gaps
+    return total > _MAX_SCROLL_DIM ? 2 * _MAX_SCROLL_DIM / total : 2;
+}
+
 window.renderAllV = async function() {
     _displayMode = 'scroll-v';
     scrollMode = "scroll-v"; halfSide = null;
@@ -576,14 +594,16 @@ window.renderAllV = async function() {
     showSpinner();
     beginPageTransition(null);
     pageNum = -1;
-    const gap = 24;
-    const pages = [];
-
     const _order = _renderSeq() || Array.from({ length: pdfDoc.numPages }, (_, k) => k + 1);
+    const scale = await _scrollFitScale(_order, gen, 'v');
+    if (scale == null) return;                       // render superseded during measurement
+    _scrollScale = scale;
+    const gap = Math.round(24 * scale / 2);          // gap shrinks with the pages
+    const pages = [];
     for (const i of _order) {
         const page = await pdfDoc.getPage(i);
         if (gen !== _renderGen) return;
-        const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
+        const vp   = page.getViewport({ scale, rotation: pageRotation });
         const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
         const tmp = makeCanvas(w, h);
         const tc  = tmp.getContext("2d");
@@ -630,14 +650,16 @@ window.renderAllH = async function() {
     showSpinner();
     beginPageTransition(null);
     pageNum = -1;
-    const gap = 24;
-    const pages = [];
-
     const _order = _renderSeq() || Array.from({ length: pdfDoc.numPages }, (_, k) => k + 1);
+    const scale = await _scrollFitScale(_order, gen, 'h');
+    if (scale == null) return;                       // render superseded during measurement
+    _scrollScale = scale;
+    const gap = Math.round(24 * scale / 2);          // gap shrinks with the pages
+    const pages = [];
     for (const i of _order) {
         const page = await pdfDoc.getPage(i);
         if (gen !== _renderGen) return;
-        const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
+        const vp   = page.getViewport({ scale, rotation: pageRotation });
         const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
         const tmp = makeCanvas(w, h);
         const tc  = tmp.getContext("2d");
