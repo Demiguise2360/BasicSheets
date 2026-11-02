@@ -611,7 +611,7 @@
 {
     <div style="position:fixed;inset:0;z-index:460;background:var(--c-bg);display:flex;flex-direction:column">
         <div style="display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.9rem;border-bottom:1px solid var(--c-border);flex:none">
-            <input @bind="_searchQuery" @bind:event="oninput" @onkeydown="OnSearchKey" placeholder="Im Dokument suchen …" autofocus
+            <input @bind="_searchQuery" @bind:event="oninput" @bind:after="OnSearchInput" @onkeydown="OnSearchKey" placeholder="Im Dokument suchen …" autofocus
                    style="flex:1;min-width:0;padding:0.5rem 0.7rem;border:1px solid var(--c-border);border-radius:0.5rem;background:var(--c-surface);color:var(--c-text);font-size:0.95rem" />
             <button class="seg-btn" @onclick="DoSearch">Suchen</button>
             <button class="seg-btn" @onclick="CloseSearch">✕</button>
@@ -3395,10 +3395,26 @@
         showActionBox    = false;
         showModeDropdown = false;
         _showSearch = true;
+        _ = JS.InvokeVoidAsync("prewarmSearchCache");   // warm the text cache while the user types
         StateHasChanged();
     }
 
     private void CloseSearch() { _showSearch = false; StateHasChanged(); }
+
+    // Live search: debounce keystrokes, then search once typing settles.
+    private System.Threading.CancellationTokenSource? _searchCts;
+    private async Task OnSearchInput()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        var cts = new System.Threading.CancellationTokenSource();
+        _searchCts = cts;
+        var q = (_searchQuery ?? "").Trim();
+        if (q.Length < 2) { _searchResults = new(); _searched = false; _searching = false; StateHasChanged(); return; }
+        try { await Task.Delay(300, cts.Token); }
+        catch (OperationCanceledException) { return; }
+        if (!cts.IsCancellationRequested && _showSearch) await DoSearch();
+    }
 
     private async Task OnSearchKey(KeyboardEventArgs e) { if (e.Key == "Enter") await DoSearch(); }
 

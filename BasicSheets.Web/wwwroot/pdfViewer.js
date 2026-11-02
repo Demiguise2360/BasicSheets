@@ -173,19 +173,27 @@ window.disposePdfViewer = async function() {
 // ── In-document text search ────────────────────────────────────────
 // Extract each page's text once (cached for the loaded doc), then return every page whose
 // text contains the query, with a short snippet. Empty for scanned PDFs (no text layer).
+// Build the per-page text cache once (shared by search + prewarm).
+async function _ensurePdfTextCache() {
+    if (_pdfTextCache || !pdfDoc) return;
+    const cache = [];
+    for (let p = 1; p <= pdfDoc.numPages; p++) {
+        try {
+            const page = await pdfDoc.getPage(p);
+            const tc = await page.getTextContent();
+            cache[p - 1] = tc.items.map(i => i.str).join(' ').replace(/\s+/g, ' ');
+        } catch { cache[p - 1] = ''; }
+    }
+    if (!_pdfTextCache) _pdfTextCache = cache;   // first builder wins; a concurrent build is harmless
+}
+
+// Warm the text cache when the search box opens, so live search stays instant.
+window.prewarmSearchCache = async function() { try { await _ensurePdfTextCache(); } catch {} };
+
 window.searchPdf = async function(query) {
     if (!pdfDoc || !query) return [];
     const q = String(query).toLowerCase();
-    if (!_pdfTextCache) {
-        _pdfTextCache = [];
-        for (let p = 1; p <= pdfDoc.numPages; p++) {
-            try {
-                const page = await pdfDoc.getPage(p);
-                const tc = await page.getTextContent();
-                _pdfTextCache[p - 1] = tc.items.map(i => i.str).join(' ').replace(/\s+/g, ' ');
-            } catch { _pdfTextCache[p - 1] = ''; }
-        }
-    }
+    await _ensurePdfTextCache();
     const results = [];
     for (let p = 1; p <= pdfDoc.numPages; p++) {
         const text = _pdfTextCache[p - 1] || '';
