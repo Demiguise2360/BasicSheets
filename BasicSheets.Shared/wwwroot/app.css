@@ -6,6 +6,7 @@
     --c-primary:      #4d8a80;
     --c-primary-dk:   #345e58;
     --c-primary-lt:   #93bfb7;
+    --c-fill:         #4d8a80;   /* solid teal for white-text fills — constant across themes so contrast holds */
     --c-accent:       #6ba89e;
     --c-text:         #2a3d3a;
     --c-text-2:       #6b8a85;
@@ -29,6 +30,7 @@ html.dark {
     --c-primary:      #6ba89e;
     --c-primary-dk:   #4d8a80;
     --c-primary-lt:   #3d6b64;
+    --c-fill:         #4d8a80;   /* same as light: white text on fills stays legible (dark --c-primary is too light) */
     --c-accent:       #5a9e94;
     --c-text:         #e0e8e6;
     --c-text-2:       #99b0ab;
@@ -141,7 +143,7 @@ html, body {
 .tab-add-btn {
     width: 2.8rem; height: 2.8rem;
     border-radius: 50%;
-    background: var(--c-primary);
+    background: var(--c-fill);
     color: white;
     border: none;
     cursor: pointer;
@@ -328,7 +330,7 @@ html, body {
 .switch input { opacity: 0; width: 0; height: 0; }
 .slider { position: absolute; cursor: pointer; inset: 0; background-color: rgba(52,94,88,0.2); transition: background 0.28s; border-radius: 2rem; }
 .slider:before { position: absolute; content: ""; height: 1.15rem; width: 1.15rem; left: 0.17rem; top: 0.17rem; background: white; transition: transform 0.28s; border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,0.22); }
-input:checked + .slider { background-color: var(--c-primary); }
+input:checked + .slider { background-color: var(--c-fill); }
 input:checked + .slider:before { transform: translateX(1.1rem); }
 
 /* ── Segment selector ────────────────────────────────────────────── */
@@ -344,7 +346,7 @@ input:checked + .slider:before { transform: translateX(1.1rem); }
     transition: background 0.12s, color 0.12s; white-space: nowrap;
 }
 .seg-btn + .seg-btn { border-left: 1px solid var(--c-border); }
-.seg-btn-on { background: var(--c-primary); color: white; font-weight: 600; }
+.seg-btn-on { background: var(--c-fill); color: white; font-weight: 600; }
 
 /* ── Form elements ───────────────────────────────────────────────── */
 .upload-card {
@@ -373,7 +375,7 @@ input:checked + .slider:before { transform: translateX(1.1rem); }
 .field-error { font-size: 0.82rem; color: var(--c-danger); }
 
 .submit-btn {
-    border: none; border-radius: var(--r-btn); background: var(--c-primary); color: white;
+    border: none; border-radius: var(--r-btn); background: var(--c-fill); color: white;
     padding: 0.75rem; font-size: 0.95rem; font-weight: 600; cursor: pointer; width: 100%;
     transition: opacity 0.15s, transform 0.1s; font-family: inherit;
 }
@@ -521,7 +523,7 @@ input:checked + .slider:before { transform: translateX(1.1rem); }
 }
 .chip-btn:active { background: rgba(77,138,128,0.2); }
 .chip-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.chip-btn-primary { background: var(--c-primary); color: white; border-color: var(--c-primary); }
+.chip-btn-primary { background: var(--c-fill); color: white; border-color: var(--c-fill); }
 
 /* ── Add-songs panel ────────────────────────────────────────────── */
 .add-panel {
@@ -572,12 +574,12 @@ input:checked + .slider:before { transform: translateX(1.1rem); }
     padding: 0.3rem 0.7rem; font-size: 0.82rem; font-weight: 600;
     cursor: pointer; font-family: inherit; transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.coll-chip-on { background: var(--c-primary); color: white; border-color: var(--c-primary); }
+.coll-chip-on { background: var(--c-fill); color: white; border-color: var(--c-fill); }
 .coll-add { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
 .coll-add .field-input { flex: 1; }
 .coll-add-btn {
     flex-shrink: 0; width: 2.4rem; border: none; border-radius: var(--r-btn);
-    background: var(--c-primary); color: white; font-size: 1.25rem; font-weight: 600;
+    background: var(--c-fill); color: white; font-size: 1.25rem; font-weight: 600;
     cursor: pointer; line-height: 1;
 }
 .coll-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
