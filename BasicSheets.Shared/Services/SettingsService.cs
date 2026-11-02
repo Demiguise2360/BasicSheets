@@ -324,6 +324,12 @@ public class SettingsService
         return s?.Value == "true";
     }
 
+    public bool WarmReading()
+    {
+        var s = _settings.FirstOrDefault(x => x.Name == "Warmer Lesemodus");
+        return s?.Value == "true";
+    }
+
     public string GetDefaultTool()
     {
         var s = _settings.FirstOrDefault(x => x.Name == "Standard-Notizwerkzeug");

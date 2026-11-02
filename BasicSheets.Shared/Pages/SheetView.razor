@@ -33,6 +33,12 @@
     </div>
 </div>
 
+@* ── Warm reading tint (soft amber wash over the page) ────────────── *@
+@if (_warm)
+{
+    <div style="position:fixed;inset:0;z-index:3;background:rgba(255,176,0,0.12);pointer-events:none"></div>
+}
+
 @* ── Link-point placement hint (sibling of .vbg so its taps don't page-turn) ── *@
 @if (_placingLink)
 {
@@ -714,6 +720,13 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
+                        <div class="qp-row">
+                            <span class="qp-label">Warmton</span>
+                            <label class="switch">
+                                <input type="checkbox" checked="@_warm" @onclick="ToggleWarm" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
                     }
 
                     <div class="qp-row">
@@ -1167,6 +1180,7 @@
     private bool isEditMode, enableHandleClick = true;
     private string viewerBg = "dark";
     private bool   _invert;
+    private bool   _warm;      // warm reading tint (mutually exclusive with night-mode invert)
 
     // ── Quick panel ─────────────────────────────────────────────────────
     private bool showQuickPanel = false;
@@ -1820,6 +1834,7 @@
         _ref = DotNetObjectReference.Create(this);
         viewerBg = SettingsService.GetViewerBackground();
         _invert  = SettingsService.InvertColors();
+        _warm    = SettingsService.WarmReading();
 
         await LoadColorsAsync();
         await LoadToolStatesAsync();
@@ -3133,8 +3148,24 @@
     private void ToggleInvert()
     {
         _invert = !_invert;
-        var s = SettingsService.GetSettings().FirstOrDefault(x => x.Name == "Noten invertieren");
-        if (s != null) { s.Value = _invert ? "true" : "false"; SettingsService.SaveSettings(); }
+        if (_invert && _warm) { _warm = false; PersistSetting("Warmer Lesemodus", "false"); }   // the two tints are exclusive
+        PersistSetting("Noten invertieren", _invert ? "true" : "false");
+    }
+
+    private void ToggleWarm()
+    {
+        _warm = !_warm;
+        if (_warm && _invert) { _invert = false; PersistSetting("Noten invertieren", "false"); }
+        PersistSetting("Warmer Lesemodus", _warm ? "true" : "false");
+    }
+
+    private void PersistSetting(string name, string value)
+    {
+        var list = SettingsService.GetSettings();
+        var s = list.FirstOrDefault(x => x.Name == name);
+        if (s != null) s.Value = value;
+        else list.Add(new Setting { Name = name, Value = value });
+        SettingsService.SaveSettings();
     }
 
     // ── Metronome ─────────────────────────────────────────────────────────
