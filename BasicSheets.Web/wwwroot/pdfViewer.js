@@ -980,11 +980,12 @@ const DEFAULT_KEYMAP = {
     'ArrowRight': 'next_page', 'ArrowDown': 'next_page', 'PageDown': 'next_page', ' ': 'next_page', 'Spacebar': 'next_page',
     'ArrowLeft': 'prev_page', 'ArrowUp': 'prev_page', 'PageUp': 'prev_page',
     'Home': 'first_page', 'End': 'last_page',
-    'b': 'add_bookmark', 'B': 'add_bookmark', 'm': 'toggle_metronome', 'M': 'toggle_metronome', 'p': 'toggle_audio', 'P': 'toggle_audio'
+    'b': 'add_bookmark', 'B': 'add_bookmark', 'm': 'toggle_metronome', 'M': 'toggle_metronome', 'p': 'toggle_audio', 'P': 'toggle_audio',
+    '/': 'open_search', 'f': 'open_search', 'F': 'open_search'
 };
 let _keyMap = null, _captureAction = null;
 function _loadKeyMap() {
-    try { const raw = localStorage.getItem('bs_keymap'); if (raw) { const m = JSON.parse(raw); if (m && typeof m === 'object') return m; } } catch {}
+    try { const raw = localStorage.getItem('bs_keymap'); if (raw) { const m = JSON.parse(raw); if (m && typeof m === 'object') return Object.assign({}, DEFAULT_KEYMAP, m); } } catch {}   // merge so new default keys reach existing users
     return Object.assign({}, DEFAULT_KEYMAP);
 }
 function _saveKeyMap() { try { localStorage.setItem('bs_keymap', JSON.stringify(_keyMap)); } catch {} }

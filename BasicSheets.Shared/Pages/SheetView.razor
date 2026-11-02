@@ -3100,6 +3100,9 @@
                 case "toggle_audio":
                     if (_hasAudio) await InvokeAsync(async () => { await ToggleAudioPlay(); });
                     break;
+                case "open_search":
+                    if (CanSearch) await InvokeAsync(() => { OpenSearch(); });
+                    break;
             }
         }
         catch (Exception ex)
