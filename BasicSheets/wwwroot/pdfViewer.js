@@ -1879,6 +1879,29 @@ window.getRecent = function() {
     } catch { return []; }
 };
 
+// ── Recent search terms (most-recent-first, per device) ──
+window.pushRecentSearch = function(term) {
+    term = (term || '').trim();
+    if (term.length < 2) return;
+    try {
+        let list = JSON.parse(localStorage.getItem("bs_recent_search") || "[]");
+        if (!Array.isArray(list)) list = [];
+        list = list.filter(t => t.toLowerCase() !== term.toLowerCase());   // drop earlier duplicate (case-insensitive)
+        list.unshift(term);                                                 // newest first
+        if (list.length > 8) list = list.slice(0, 8);
+        localStorage.setItem("bs_recent_search", JSON.stringify(list));
+    } catch {}
+};
+window.getRecentSearches = function() {
+    try {
+        const list = JSON.parse(localStorage.getItem("bs_recent_search") || "[]");
+        return Array.isArray(list) ? list : [];
+    } catch { return []; }
+};
+window.clearRecentSearches = function() {
+    try { localStorage.removeItem("bs_recent_search"); } catch {}
+};
+
 
 // ── Screen wake lock ───────────────────────────────────────────────
 window.setWakeLock = async function(on) {
