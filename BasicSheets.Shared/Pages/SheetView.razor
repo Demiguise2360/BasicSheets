@@ -71,6 +71,19 @@
     </button>
 }
 
+@* ── Smart buttons (on-screen quick-jump stack, right edge) ────────── *@
+@if (CanSmart && _smartButtons.Count > 0 && !isEditMode && !_cropEditMode && !_showSearch && !_showPageGrid)
+{
+    <div style="position:fixed;right:0.5rem;top:50%;transform:translateY(-50%);z-index:150;display:flex;flex-direction:column;gap:0.4rem;max-height:66vh;overflow-y:auto">
+        @foreach (var sb in _smartButtons)
+        {
+            var b = sb;
+            <button @onclick="() => SmartAction(b)" title="Zu Seite @b.Param"
+                    style="background:var(--c-primary,#345e58);color:#fff;border:none;border-radius:0.7rem;padding:0.4rem 0.6rem;font-size:0.76rem;font-weight:600;box-shadow:0 2px 10px rgba(0,0,0,0.35);cursor:pointer;max-width:7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@b.Label</button>
+        }
+    </div>
+}
+
 @* ── ChordPro / text song (HTML, no canvas) ─────────────────────────── *@
 @if (_isText && _song != null)
 {
@@ -857,6 +870,30 @@
                         }
                     }
 
+                    @if (CanSmart && pageCount > 1)
+                    {
+                        <div class="qp-row">
+                            <span class="qp-label">Schaltflächen</span>
+                            <div class="seg-group" style="flex:1;flex-wrap:wrap;gap:0.3rem;justify-content:flex-end">
+                                <input @bind="_sbLabel" placeholder="Name" maxlength="16"
+                                       style="width:5.2rem;padding:0.3rem 0.45rem;border:1px solid var(--c-border);border-radius:0.5rem;background:var(--c-surface);color:var(--c-text);font-size:0.82rem" />
+                                <input type="number" @bind="_sbPage" min="1" max="@pageCount"
+                                       style="width:3.4rem;padding:0.3rem 0.35rem;border:1px solid var(--c-border);border-radius:0.5rem;background:var(--c-surface);color:var(--c-text);font-size:0.82rem" />
+                                <button class="seg-btn" @onclick="AddSmartButton" title="Schaltfläche hinzufügen">＋</button>
+                            </div>
+                        </div>
+                        @foreach (var sb in _smartButtons)
+                        {
+                            var b = sb;
+                            <div class="qp-row">
+                                <span class="qp-label" style="opacity:.75">@b.Label → S.@b.Param</span>
+                                <div class="seg-group">
+                                    <button class="seg-btn" @onclick="() => RemoveSmartButton(b.Id)" title="Schaltfläche löschen">✕</button>
+                                </div>
+                            </div>
+                        }
+                    }
+
                     @{
                         var autoTurnSetting = SettingsService.GetSettings().FirstOrDefault(s => s.Name == "Seiten automatisch umblättern");
                     }
@@ -1501,6 +1538,12 @@
     private bool LinksActive => !_isText && !_isImage && !isEditMode && !_cropEditMode && effectiveMode == "single";
     private sealed class NormPt { public double x { get; set; } public double y { get; set; } }
 
+    // ── Smart buttons (user-defined on-screen quick-jump buttons; global "floating" ViewerButtons) ──
+    private List<ViewerButton> _smartButtons = new();
+    private string _sbLabel = "";
+    private int    _sbPage  = 1;
+    private bool CanSmart => !_isText && !_isImage;
+
     // ── Page overview grid (tap a thumbnail to jump) ──
     private bool _showPageGrid = false;
     private int  _gridCurrentPdfPage = 1;
@@ -1958,6 +2001,7 @@
 
             if (currentSheet != null) _crops = CropService.GetCrops(currentSheet.Id);
             _linkPoints = ViewerButtonService.GetForFile(file ?? "");
+            _smartButtons = ViewerButtonService.GetFloating();   // global quick-jump buttons
             _pageThumbs.Clear();   // thumbnails are keyed by PDF page; a new song is a different PDF
             _backStack.Clear();
             _showMatchNav = false; _searchIdx = -1; _searchResults = new();
@@ -3545,6 +3589,33 @@
         _suppressBackPush = true;
         try { await JumpPage(target); }
         finally { _suppressBackPush = false; }
+    }
+
+    // ── Smart buttons (on-screen quick-jump buttons) ────────────────────────
+    private async Task SmartAction(ViewerButton b)
+    {
+        if (b.Action == "first") await JumpPage(1);
+        else if (b.Action == "last") await JumpPage(pageCount);
+        else if (int.TryParse(b.Param, out var p)) await JumpPage(Math.Clamp(p, 1, pageCount));
+    }
+
+    private void AddSmartButton()
+    {
+        var p = Math.Clamp(_sbPage, 1, Math.Max(1, pageCount));
+        var label = (_sbLabel ?? "").Trim();
+        if (label.Length == 0) label = $"S. {p}";
+        if (label.Length > 16) label = label[..16];
+        ViewerButtonService.Add(new ViewerButton { PdfFile = null, SourceNX = -1, Action = "jump", Param = p.ToString(), Label = label, Color = "#387373" });
+        _smartButtons = ViewerButtonService.GetFloating();
+        _sbLabel = "";
+        StateHasChanged();
+    }
+
+    private void RemoveSmartButton(string id)
+    {
+        ViewerButtonService.Remove(id);
+        _smartButtons = ViewerButtonService.GetFloating();
+        StateHasChanged();
     }
 
     private async Task JumpToBookmarkAb(Bookmark bm)
