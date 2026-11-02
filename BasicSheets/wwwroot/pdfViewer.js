@@ -5,6 +5,7 @@
 // ── Canvas / PDF state ──────────────────────────────────────────────
 let pdfDoc = null, pageNum = 1, currentPdfKey = "";
 let _pdfTextCache = null;   // [page-1] = extracted page text, for in-document search; reset on doc load
+let _hlTimer = null;        // search-highlight fade timer
 let canvas = null, ctx = null;
 let markerCanvas = null, markerCtx = null;
 let noteCanvas = null, noteCtx = null;
@@ -198,6 +199,40 @@ window.searchPdf = async function(query) {
         }
     }
     return results;
+};
+
+// Briefly flash a highlight over the first occurrence of `query` on the current page.
+// Single-page, unrotated pages only (the canvas holds the full page, so crop is fine);
+// draws on btnCanvas and fades by redrawing the link-point markers. Best-effort.
+window.highlightMatch = async function(query) {
+    try {
+        if (!pdfDoc || !btnCanvas || !btnCtx || !baseWidth || (pageRotation % 360) !== 0) return false;
+        const q = String(query || '').toLowerCase();
+        if (q.length < 2) return false;
+        const page = await pdfDoc.getPage(pageNum);
+        const vp = page.getViewport({ scale: 2, rotation: 0 });
+        const tc = await page.getTextContent();
+        const lib = window["pdfjs-dist/build/pdf"];
+        let rect = null;
+        for (const item of tc.items) {
+            if (!item.str || !item.str.toLowerCase().includes(q)) continue;
+            const m = lib.Util.transform(vp.transform, item.transform);   // item box in viewport (canvas) px
+            const hgt = Math.hypot(m[2], m[3]) || 14;
+            let wdt = (item.width || 0) * vp.scale;
+            if (wdt < 2) wdt = item.str.length * hgt * 0.5;
+            rect = { x: m[4], y: m[5] - hgt, w: wdt, h: hgt };
+            break;
+        }
+        if (!rect || rect.x < -30 || rect.y < -30 || rect.x > baseWidth + 30 || rect.y > baseHeight + 30) return false;
+        const pad = Math.max(3, rect.h * 0.18);
+        btnCtx.save();
+        btnCtx.fillStyle = 'rgba(255, 210, 0, 0.40)';
+        btnCtx.fillRect(rect.x - pad, rect.y - pad, rect.w + pad * 2, rect.h + pad * 2);
+        btnCtx.restore();
+        clearTimeout(_hlTimer);
+        _hlTimer = setTimeout(() => { try { _drawButtons(); } catch {} }, 2600);   // fade: redraw markers, clearing the highlight
+        return true;
+    } catch { return false; }
 };
 
 

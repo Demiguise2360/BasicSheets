@@ -3417,8 +3417,12 @@
 
     private async Task OnSearchJump(SearchHit h)
     {
+        var q = _searchQuery;
         _showSearch = false;
         await JumpToPdfPage(h.page);
+        // Flash the match on the page (single, unrotated pages — the canvas holds the full page).
+        if (effectiveMode == "single" && _rotation == 0 && !string.IsNullOrWhiteSpace(q))
+            try { await JS.InvokeAsync<bool>("highlightMatch", q); } catch { }
     }
 
     private async Task ToggleLock()
