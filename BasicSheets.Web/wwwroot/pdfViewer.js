@@ -677,17 +677,70 @@ async function _renderTileV(t, gen) {           // blit every page overlapping t
     t.busy = false;
 }
 
+function _buildScrollTilesH(clampScale) {
+    const v = document.getElementById('viewer');
+    if (!v) return;
+    _scrollSuper = Math.max(1, 2 / clampScale);
+    const maxBand = Math.floor((_MAX_SCROLL_DIM - 1000) / _scrollSuper);
+    const TILE_W  = Math.max(1000, Math.min(maxBand, 8000));
+    for (let x0 = 0; x0 < baseWidth; x0 += TILE_W) {
+        const x1 = Math.min(baseWidth, x0 + TILE_W);
+        const el = document.createElement('canvas');
+        el.style.cssText = `position:absolute;top:0;left:${x0}px;width:${x1 - x0}px;height:${baseHeight}px;pointer-events:none`;
+        el.width = 1; el.height = 1;
+        v.insertBefore(el, v.firstChild);
+        _scrollTiles.push({ el, ctx: el.getContext('2d'), x0, x1, rendered: false, busy: false });
+    }
+    canvas.style.display = 'none';
+}
+
+async function _renderTileH(t, gen) {           // blit every page overlapping this X band, supersampled
+    if (t.rendered || t.busy) return;
+    t.busy = true;
+    try {
+        if (t.el.width < 2) { t.el.width = Math.round((t.x1 - t.x0) * _scrollSuper); t.el.height = Math.round(baseHeight * _scrollSuper); }
+        const cx = t.ctx;
+        cx.setTransform(1, 0, 0, 1, 0, 0);
+        cx.fillStyle = '#2a2a2a'; cx.fillRect(0, 0, t.el.width, t.el.height);
+        for (let i = 0; i < _scrollOrder.length; i++) {
+            const pLeft = _scrollLefts[i], pW = _scrollPageW[i], pH = _scrollPageH[i];
+            if (pLeft + pW <= t.x0 || pLeft >= t.x1) continue;       // no overlap with this band
+            const img = await _tilePage(_scrollOrder[i], gen);
+            if (gen !== _renderGen) { t.busy = false; return; }
+            if (!img) continue;
+            const dx = Math.round(pLeft - t.x0) * _scrollSuper;
+            const dy = Math.round((baseHeight - pH) / 2) * _scrollSuper;
+            cx.drawImage(img, dx, dy, pW * _scrollSuper, pH * _scrollSuper);
+        }
+        t.rendered = true;
+    } catch {}
+    t.busy = false;
+}
+
 function _refreshScrollTiles() {                // render tiles near the viewport; free far ones
-    if (_displayMode !== 'scroll-v' || !_scrollTiles.length) return;
+    if (!_scrollTiles.length) return;
     const gen = _renderGen;
-    const viewTop = (getHeaderHeight() - panY) / zoom;               // clamped-virtual Y at the top of the view
-    const viewBot = viewTop + availViewH() / zoom;
-    const buf = Math.max(400, viewBot - viewTop);                    // ~one screenful of buffer each way
-    for (const t of _scrollTiles) {
-        const near = t.y1 >= viewTop - buf && t.y0 <= viewBot + buf;
-        if (near) { _renderTileV(t, gen); }
-        else if (t.rendered && (t.y1 < viewTop - buf * 2 || t.y0 > viewBot + buf * 2)) {
-            t.rendered = false; t.el.width = 1; t.el.height = 1;      // free a far tile's backing store
+    if (_displayMode === 'scroll-v') {
+        const viewTop = (getHeaderHeight() - panY) / zoom;           // clamped-virtual Y at the top of the view
+        const viewBot = viewTop + availViewH() / zoom;
+        const buf = Math.max(400, viewBot - viewTop);                // ~one screenful of buffer each way
+        for (const t of _scrollTiles) {
+            const near = t.y1 >= viewTop - buf && t.y0 <= viewBot + buf;
+            if (near) { _renderTileV(t, gen); }
+            else if (t.rendered && (t.y1 < viewTop - buf * 2 || t.y0 > viewBot + buf * 2)) {
+                t.rendered = false; t.el.width = 1; t.el.height = 1; // free a far tile's backing store
+            }
+        }
+    } else if (_displayMode === 'scroll-h') {
+        const viewLeft  = -panX / zoom;                              // clamped-virtual X at the left of the view
+        const viewRight = viewLeft + window.innerWidth / zoom;
+        const buf = Math.max(400, viewRight - viewLeft);
+        for (const t of _scrollTiles) {
+            const near = t.x1 >= viewLeft - buf && t.x0 <= viewRight + buf;
+            if (near) { _renderTileH(t, gen); }
+            else if (t.rendered && (t.x1 < viewLeft - buf * 2 || t.x0 > viewRight + buf * 2)) {
+                t.rendered = false; t.el.width = 1; t.el.height = 1;
+            }
         }
     }
 }
@@ -777,41 +830,51 @@ window.renderAllH = async function() {
     if (scale == null) return;                       // render superseded during measurement
     _scrollScale = scale;
     const gap = Math.round(24 * scale / 2);          // gap shrinks with the pages
-    const pages = [];
+
+    // Layout pass: page sizes at the (clamped) coordinate scale — positions only, no pixels yet.
+    _scrollOrder = _order.slice(); _scrollTops = []; _scrollLefts = []; _scrollPageW = []; _scrollPageH = [];
+    let maxH = 0;
     for (const i of _order) {
         const page = await pdfDoc.getPage(i);
         if (gen !== _renderGen) return;
-        const vp   = page.getViewport({ scale, rotation: pageRotation });
+        const vp = page.getViewport({ scale, rotation: pageRotation });
         const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
-        const tmp = makeCanvas(w, h);
-        const tc  = tmp.getContext("2d");
-        tc.fillStyle = "white"; tc.fillRect(0, 0, w, h);
-        await page.render({ canvasContext: tc, viewport: vp }).promise;
-        if (gen !== _renderGen) return;
-        pages.push(tmp);
+        _scrollPageW.push(w); _scrollPageH.push(h); if (h > maxH) maxH = h;
     }
+    let x = 0;
+    for (let i = 0; i < _scrollPageW.length; i++) { _scrollLefts.push(x); x += _scrollPageW[i] + gap; }
+    const totalW = x - gap;
+    baseWidth = totalW; baseHeight = maxH;
 
-    const maxH   = Math.max(...pages.map(p => p.height));
-    const totalW = pages.reduce((a, p) => a + p.width, 0) + gap * (pages.length - 1);
-
-    canvas.width = markerCanvas.width = noteCanvas.width  = totalW;
-    canvas.height = markerCanvas.height = noteCanvas.height = maxH;
+    // Overlays (notes/highlight) are single canvases at the clamped size in BOTH paths.
+    markerCanvas.width = noteCanvas.width = totalW; markerCanvas.height = noteCanvas.height = maxH;
     penCanvas.width = totalW; penCanvas.height = maxH;
 
-    _scrollOrder = _order.slice(); _scrollLefts = []; _scrollTops = [];
-    ctx.fillStyle = "#2a2a2a"; ctx.fillRect(0, 0, totalW, maxH);
-    let x = 0;
-    for (const pg of pages) {
-        _scrollLefts.push(x);
-        ctx.drawImage(pg, x, Math.round((maxH - pg.height) / 2));
-        x += pg.width + gap;
+    if (scale >= 2) {
+        // Fits whole — one composite PDF canvas at full scale (the proven path).
+        canvas.style.display = '';
+        canvas.width = totalW; canvas.height = maxH;
+        ctx.fillStyle = "#2a2a2a"; ctx.fillRect(0, 0, totalW, maxH);
+        for (let i = 0; i < _order.length; i++) {
+            const page = await pdfDoc.getPage(_order[i]);
+            if (gen !== _renderGen) return;
+            const vp = page.getViewport({ scale, rotation: pageRotation });
+            const tmp = makeCanvas(Math.ceil(vp.width), Math.ceil(vp.height));
+            const tc = tmp.getContext("2d"); tc.fillStyle = "white"; tc.fillRect(0, 0, tmp.width, tmp.height);
+            await page.render({ canvasContext: tc, viewport: vp }).promise;
+            if (gen !== _renderGen) return;
+            ctx.drawImage(tmp, _scrollLefts[i], Math.round((maxH - tmp.height) / 2));
+        }
+    } else {
+        // Long doc — virtualized PDF tiles (supersampled, lazy); overlays stay clamped.
+        canvas.width = 1; canvas.height = 1;         // free the unused single PDF canvas
+        _buildScrollTilesH(scale);
     }
 
-    baseWidth = totalW; baseHeight = maxH;
     loadNotes();
     if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
-    // Scroll mode: always fit to height, user scrolls horizontally
-    fitToHeight();
+    fitToHeight();                                   // sets zoom/pan
+    if (scale < 2) _refreshScrollTiles();            // render the initially-visible tiles
     endPageTransition();
     hideSpinner();
 };
