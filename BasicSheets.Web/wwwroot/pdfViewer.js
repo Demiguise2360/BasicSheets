@@ -322,6 +322,7 @@ window.initCanvas = function(pdfId, markerId, noteId) {
 
 window.renderPage = async function(num) {
     scrollMode = null; halfSide = null; _displayMode = 'single';
+    _clearScrollTiles();
     cancelActiveRender();
     const gen = _renderGen;
     showSpinner();
@@ -369,6 +370,7 @@ window.renderImage = async function() {
     if (!imgEl) return;
     cancelActiveRender();
     scrollMode = null; halfSide = null; _displayMode = 'single';
+    _clearScrollTiles();
     pageNum = 1;
     showSpinner();
     let iw = imgEl.naturalWidth || 1, ih = imgEl.naturalHeight || 1;
@@ -398,6 +400,7 @@ window.renderImage = async function() {
 let _twoLeftPdf = 0, _twoRightPdf = 0, _twoLeftW = 0, _twoGap = 24;
 window.renderTwoPage = async function(num) {
     scrollMode = null; halfSide = null; _displayMode = 'two';
+    _clearScrollTiles();
     cancelActiveRender();
     const gen = _renderGen;
     showSpinner();
@@ -460,6 +463,7 @@ window.renderTwoPage = async function(num) {
 window.renderHalfTurn = async function(num, topHalf) {
     scrollMode = null; halfSide = null;
     _displayMode = 'half-turn';
+    _clearScrollTiles();
     _halfTurnTop = topHalf;
     cancelActiveRender();
     const gen = _renderGen;
@@ -597,10 +601,106 @@ async function _scrollFitScale(order, gen, axis) {
     return total > _MAX_SCROLL_DIM ? 2 * _MAX_SCROLL_DIM / total : 2;
 }
 
+// ── Virtualized PDF tiles (long vertical-scroll docs) ───────────────
+// The overlay canvases (notes/highlight) stay single canvases, so the virtual coordinate
+// space stays clamped to _MAX_SCROLL_DIM and everything that uses it (pan/zoom, _scrollTops,
+// scroll-to, annotations, highlight, getPos) is UNCHANGED. Only the PDF layer is split into
+// bounded, SUPERSAMPLED tiles rendered lazily near the viewport, so long docs read sharp.
+let _scrollTiles = [];              // [{ el, ctx, y0, y1, rendered, busy }] — clamped-virtual Y bands
+let _scrollPageW = [], _scrollPageH = [];   // clamped-virtual page sizes, parallel to _scrollOrder
+let _scrollSuper = 1;              // tile supersample factor (renders pages above the clamped scale)
+const _tilePageCache = new Map();  // pdfPage → full-scale rendered canvas (small LRU)
+let _tileRefreshRaf = 0;
+
+function _clearScrollTiles() {
+    for (const t of _scrollTiles) { try { t.el.remove(); } catch {} }
+    _scrollTiles = [];
+    _tilePageCache.clear();
+    if (canvas) canvas.style.display = '';     // restore the single PDF canvas for non-scroll modes
+    if (_tileRefreshRaf) { cancelAnimationFrame(_tileRefreshRaf); _tileRefreshRaf = 0; }
+}
+
+async function _tilePage(pdfPage, gen) {       // full-scale render of a page, cached (small LRU)
+    let c = _tilePageCache.get(pdfPage);
+    if (c) return c;
+    const page = await pdfDoc.getPage(pdfPage);
+    if (gen !== _renderGen) return null;
+    const vp = page.getViewport({ scale: 2, rotation: pageRotation });
+    const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
+    c = makeCanvas(w, h);
+    const cx = c.getContext('2d');
+    cx.fillStyle = 'white'; cx.fillRect(0, 0, w, h);
+    await page.render({ canvasContext: cx, viewport: vp }).promise;
+    if (gen !== _renderGen) return null;
+    _tilePageCache.set(pdfPage, c);
+    if (_tilePageCache.size > 8) { const k = _tilePageCache.keys().next().value; _tilePageCache.delete(k); }
+    return c;
+}
+
+function _buildScrollTilesV(clampScale) {
+    const v = document.getElementById('viewer');
+    if (!v) return;
+    _scrollSuper = Math.max(1, 2 / clampScale);                       // render pages up to full scale 2
+    const maxBand = Math.floor((_MAX_SCROLL_DIM - 1000) / _scrollSuper);  // keep tile internal px under the limit
+    const TILE_H  = Math.max(1000, Math.min(maxBand, 8000));
+    for (let y0 = 0; y0 < baseHeight; y0 += TILE_H) {
+        const y1 = Math.min(baseHeight, y0 + TILE_H);
+        const el = document.createElement('canvas');
+        el.style.cssText = `position:absolute;left:0;top:${y0}px;width:${baseWidth}px;height:${y1 - y0}px;pointer-events:none`;
+        el.width = 1; el.height = 1;                                  // empty until rendered (frees memory)
+        v.insertBefore(el, v.firstChild);                            // behind the overlay canvases
+        _scrollTiles.push({ el, ctx: el.getContext('2d'), y0, y1, rendered: false, busy: false });
+    }
+    canvas.style.display = 'none';                                   // the single PDF canvas is unused in tiled scroll
+}
+
+async function _renderTileV(t, gen) {           // blit every page overlapping this band, supersampled
+    if (t.rendered || t.busy) return;
+    t.busy = true;
+    try {
+        if (t.el.width < 2) { t.el.width = Math.round(baseWidth * _scrollSuper); t.el.height = Math.round((t.y1 - t.y0) * _scrollSuper); }
+        const cx = t.ctx;
+        cx.setTransform(1, 0, 0, 1, 0, 0);
+        cx.fillStyle = '#2a2a2a'; cx.fillRect(0, 0, t.el.width, t.el.height);
+        for (let i = 0; i < _scrollOrder.length; i++) {
+            const pTop = _scrollTops[i], pH = _scrollPageH[i], pW = _scrollPageW[i];
+            if (pTop + pH <= t.y0 || pTop >= t.y1) continue;          // no overlap with this band
+            const img = await _tilePage(_scrollOrder[i], gen);
+            if (gen !== _renderGen) { t.busy = false; return; }
+            if (!img) continue;
+            const dx = Math.round((baseWidth - pW) / 2) * _scrollSuper;
+            const dy = Math.round(pTop - t.y0) * _scrollSuper;
+            cx.drawImage(img, dx, dy, pW * _scrollSuper, pH * _scrollSuper);   // canvas clips pages that straddle the band
+        }
+        t.rendered = true;
+    } catch {}
+    t.busy = false;
+}
+
+function _refreshScrollTiles() {                // render tiles near the viewport; free far ones
+    if (_displayMode !== 'scroll-v' || !_scrollTiles.length) return;
+    const gen = _renderGen;
+    const viewTop = (getHeaderHeight() - panY) / zoom;               // clamped-virtual Y at the top of the view
+    const viewBot = viewTop + availViewH() / zoom;
+    const buf = Math.max(400, viewBot - viewTop);                    // ~one screenful of buffer each way
+    for (const t of _scrollTiles) {
+        const near = t.y1 >= viewTop - buf && t.y0 <= viewBot + buf;
+        if (near) { _renderTileV(t, gen); }
+        else if (t.rendered && (t.y1 < viewTop - buf * 2 || t.y0 > viewBot + buf * 2)) {
+            t.rendered = false; t.el.width = 1; t.el.height = 1;      // free a far tile's backing store
+        }
+    }
+}
+function _scheduleTileRefresh() {
+    if (_tileRefreshRaf) return;
+    _tileRefreshRaf = requestAnimationFrame(() => { _tileRefreshRaf = 0; try { _refreshScrollTiles(); } catch {} });
+}
+
 window.renderAllV = async function() {
     _displayMode = 'scroll-v';
     scrollMode = "scroll-v"; halfSide = null;
     cancelActiveRender();
+    _clearScrollTiles();
     const gen = _renderGen;
     showSpinner();
     beginPageTransition(null);
@@ -610,41 +710,51 @@ window.renderAllV = async function() {
     if (scale == null) return;                       // render superseded during measurement
     _scrollScale = scale;
     const gap = Math.round(24 * scale / 2);          // gap shrinks with the pages
-    const pages = [];
+
+    // Layout pass: page sizes at the (clamped) coordinate scale — positions only, no pixels yet.
+    _scrollOrder = _order.slice(); _scrollTops = []; _scrollLefts = []; _scrollPageW = []; _scrollPageH = [];
+    let maxW = 0;
     for (const i of _order) {
         const page = await pdfDoc.getPage(i);
         if (gen !== _renderGen) return;
-        const vp   = page.getViewport({ scale, rotation: pageRotation });
+        const vp = page.getViewport({ scale, rotation: pageRotation });
         const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
-        const tmp = makeCanvas(w, h);
-        const tc  = tmp.getContext("2d");
-        tc.fillStyle = "white"; tc.fillRect(0, 0, w, h);
-        await page.render({ canvasContext: tc, viewport: vp }).promise;
-        if (gen !== _renderGen) return;
-        pages.push(tmp);
+        _scrollPageW.push(w); _scrollPageH.push(h); if (w > maxW) maxW = w;
     }
+    let y = 0;
+    for (let i = 0; i < _scrollPageH.length; i++) { _scrollTops.push(y); y += _scrollPageH[i] + gap; }
+    const totalH = y - gap;
+    baseWidth = maxW; baseHeight = totalH;
 
-    const maxW   = Math.max(...pages.map(p => p.width));
-    const totalH = pages.reduce((a, p) => a + p.height, 0) + gap * (pages.length - 1);
-
-    canvas.width = markerCanvas.width = noteCanvas.width  = maxW;
-    canvas.height = markerCanvas.height = noteCanvas.height = totalH;
+    // Overlays (notes/highlight) are single canvases at the clamped size in BOTH paths.
+    markerCanvas.width = noteCanvas.width = maxW; markerCanvas.height = noteCanvas.height = totalH;
     penCanvas.width = maxW; penCanvas.height = totalH;
 
-    _scrollOrder = _order.slice(); _scrollTops = []; _scrollLefts = [];
-    ctx.fillStyle = "#2a2a2a"; ctx.fillRect(0, 0, maxW, totalH);
-    let y = 0;
-    for (const pg of pages) {
-        _scrollTops.push(y);
-        ctx.drawImage(pg, Math.round((maxW - pg.width) / 2), y);
-        y += pg.height + gap;
+    if (scale >= 2) {
+        // Fits whole — one composite PDF canvas at full scale (the proven path).
+        canvas.style.display = '';
+        canvas.width = maxW; canvas.height = totalH;
+        ctx.fillStyle = "#2a2a2a"; ctx.fillRect(0, 0, maxW, totalH);
+        for (let i = 0; i < _order.length; i++) {
+            const page = await pdfDoc.getPage(_order[i]);
+            if (gen !== _renderGen) return;
+            const vp = page.getViewport({ scale, rotation: pageRotation });
+            const tmp = makeCanvas(Math.ceil(vp.width), Math.ceil(vp.height));
+            const tc = tmp.getContext("2d"); tc.fillStyle = "white"; tc.fillRect(0, 0, tmp.width, tmp.height);
+            await page.render({ canvasContext: tc, viewport: vp }).promise;
+            if (gen !== _renderGen) return;
+            ctx.drawImage(tmp, Math.round((maxW - tmp.width) / 2), _scrollTops[i]);
+        }
+    } else {
+        // Long doc — virtualized PDF tiles (supersampled, lazy); overlays stay clamped.
+        canvas.width = 1; canvas.height = 1;         // free the unused single PDF canvas
+        _buildScrollTilesV(scale);
     }
 
-    baseWidth = maxW; baseHeight = totalH;
     loadNotes();
     if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
-    // Scroll mode: always fit to width, user scrolls vertically
-    fitToWidth();
+    fitToWidth();                                    // sets zoom/pan
+    if (scale < 2) _refreshScrollTiles();            // render the initially-visible tiles
     endPageTransition();
     hideSpinner();
 };
@@ -657,6 +767,7 @@ window.renderAllH = async function() {
     _displayMode = 'scroll-h';
     scrollMode = "scroll-h"; halfSide = null;
     cancelActiveRender();
+    _clearScrollTiles();                             // horizontal scroll keeps the single-composite path; drop any vertical tiles
     const gen = _renderGen;
     showSpinner();
     beginPageTransition(null);
@@ -772,6 +883,7 @@ function applyView() {
         _viewerH = baseHeight;
     }
     v.style.transform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${zoom})`;
+    if (_scrollTiles.length) _scheduleTileRefresh();   // lazily (re)render PDF tiles near the viewport
 }
 
 function fitToWidth() {
