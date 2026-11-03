@@ -1039,7 +1039,8 @@ const DEFAULT_KEYMAP = {
     'ArrowLeft': 'prev_page', 'ArrowUp': 'prev_page', 'PageUp': 'prev_page',
     'Home': 'first_page', 'End': 'last_page',
     'b': 'add_bookmark', 'B': 'add_bookmark', 'm': 'toggle_metronome', 'M': 'toggle_metronome', 'p': 'toggle_audio', 'P': 'toggle_audio',
-    '/': 'open_search', 'f': 'open_search', 'F': 'open_search'
+    '/': 'open_search', 'f': 'open_search', 'F': 'open_search',
+    'g': 'open_grid', 'G': 'open_grid'
 };
 let _keyMap = null, _captureAction = null;
 function _loadKeyMap() {

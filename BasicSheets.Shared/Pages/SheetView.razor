@@ -3128,6 +3128,9 @@
                 case "open_search":
                     if (CanSearch) await InvokeAsync(() => { OpenSearch(); });
                     break;
+                case "open_grid":
+                    if (CanShowPageGrid) await InvokeAsync(async () => { await OpenPageGrid(); });
+                    break;
             }
         }
         catch (Exception ex)
