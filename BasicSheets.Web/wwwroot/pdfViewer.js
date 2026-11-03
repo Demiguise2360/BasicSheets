@@ -2364,6 +2364,35 @@ function getFullState() {
     };
 }
 
+// Which PDF pages of the current doc have saved annotations (the single/two/half
+// keys bsv2_<key>_p<N>). Used for the page-grid "annotated" markers. Scroll composites
+// (one key, not per page) are skipped.
+function _rawHasAnnotations(raw) {
+    if (raw.startsWith("data:image")) return true;                        // legacy pen image
+    try {
+        const d = JSON.parse(raw);
+        if (!d || typeof d !== 'object') return false;
+        return !!((d.penStrokes && d.penStrokes.length) || (d.markerData && d.markerData.length) ||
+                  (d.stampData && d.stampData.length) || (d.textData && d.textData.length) ||
+                  (d.hairpinData && d.hairpinData.length));
+    } catch { return false; }
+}
+window.getAnnotatedPages = function() {
+    const prefix = "bsv2_" + currentPdfKey + "_p";
+    const set = new Set();
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith(prefix)) continue;
+            const m = key.slice(prefix.length).match(/^(\d+)/);           // page number (plain _pN or legacy _pN_hH)
+            if (!m) continue;
+            const raw = localStorage.getItem(key);
+            if (raw && _rawHasAnnotations(raw)) set.add(parseInt(m[1], 10));
+        }
+    } catch {}
+    return [...set];
+};
+
 // ── Rotation-canonical note storage ─────────────────────────────────
 // Annotations are persisted in rotation-0 ("canonical") page coordinates so they
 // stay anchored to the page content across rotations. Active only in single-page
