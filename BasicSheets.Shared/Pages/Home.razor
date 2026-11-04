@@ -372,23 +372,20 @@
 
             if (!string.IsNullOrWhiteSpace(searchText))
             {
-                var term = searchText;
+                var normTerm = NormDia(searchText);
+                bool M(string? f) => NormDia(f).Contains(normTerm);   // diacritic- + case-insensitive substring
                 sheets = sheets.Where(s =>
                 {
                     if (selectedField == "all")
-                        return (s.Name     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
-                            || (s.Composer ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
-                            || (s.Part     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
-                            || (s.Genre    ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)
-                            || (s.Tags     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase);
+                        return M(s.Name) || M(s.Composer) || M(s.Part) || M(s.Genre) || M(s.Tags);
 
                     return selectedField switch
                     {
-                        "Name"     => (s.Name     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
-                        "Composer" => (s.Composer ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
-                        "Part"     => (s.Part     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
-                        "Genre"    => (s.Genre    ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
-                        "Tags"     => (s.Tags     ?? "").Contains(term, StringComparison.OrdinalIgnoreCase),
+                        "Name"     => M(s.Name),
+                        "Composer" => M(s.Composer),
+                        "Part"     => M(s.Part),
+                        "Genre"    => M(s.Genre),
+                        "Tags"     => M(s.Tags),
                         _          => true
                     };
                 });
@@ -404,6 +401,13 @@
             };
         }
     }
+
+    // Diacritic- and case-insensitive normalize (ä→a, ř→r, é→e …) for library search,
+    // so "Dvorak" finds "Dvořák" and "Fur Elise" finds "Für Elise".
+    private static string NormDia(string? s) =>
+        new string((s ?? "").Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray()).ToLowerInvariant();
 
     private IEnumerable<IGrouping<string, Sheet>> GroupSheets(string field)
     {
