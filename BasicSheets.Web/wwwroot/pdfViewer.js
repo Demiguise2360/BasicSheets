@@ -1223,7 +1223,8 @@ const DEFAULT_KEYMAP = {
     'Home': 'first_page', 'End': 'last_page',
     'b': 'add_bookmark', 'B': 'add_bookmark', 'm': 'toggle_metronome', 'M': 'toggle_metronome', 'p': 'toggle_audio', 'P': 'toggle_audio',
     '/': 'open_search', 'f': 'open_search', 'F': 'open_search',
-    'g': 'open_grid', 'G': 'open_grid'
+    'g': 'open_grid', 'G': 'open_grid',
+    '.': 'next_match', ',': 'prev_match'
 };
 let _keyMap = null, _captureAction = null;
 function _loadKeyMap() {

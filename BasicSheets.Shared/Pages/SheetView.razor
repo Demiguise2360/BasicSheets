@@ -3131,6 +3131,12 @@
                 case "open_grid":
                     if (CanShowPageGrid) await InvokeAsync(async () => { await OpenPageGrid(); });
                     break;
+                case "next_match":
+                    if (_showMatchNav && _searchResults.Count > 0) await InvokeAsync(async () => { await MatchNav(1); });
+                    break;
+                case "prev_match":
+                    if (_showMatchNav && _searchResults.Count > 0) await InvokeAsync(async () => { await MatchNav(-1); });
+                    break;
             }
         }
         catch (Exception ex)
