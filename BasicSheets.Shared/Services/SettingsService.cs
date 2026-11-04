@@ -187,7 +187,11 @@ public class SettingsService
             "prev_page|Vorherige Seite",
             "first_page|Erste Seite",
             "last_page|Letzte Seite",
-            "toggle_edit|Bearbeitungsmodus"
+            "toggle_edit|Bearbeitungsmodus",
+            "open_search|Suche öffnen",
+            "open_grid|Seitenübersicht",
+            "toggle_metronome|Metronom",
+            "toggle_audio|Audio abspielen"
         };
         AddIfMissing(new Setting
         {
