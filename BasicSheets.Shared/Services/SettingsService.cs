@@ -191,7 +191,8 @@ public class SettingsService
             "open_search|Suche öffnen",
             "open_grid|Seitenübersicht",
             "toggle_metronome|Metronom",
-            "toggle_audio|Audio abspielen"
+            "toggle_audio|Audio abspielen",
+            "toggle_lock|Tippen sperren"
         };
         AddIfMissing(new Setting
         {

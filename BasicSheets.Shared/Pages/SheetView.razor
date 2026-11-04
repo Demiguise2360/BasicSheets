@@ -3137,6 +3137,9 @@
                 case "prev_match":
                     if (_showMatchNav && _searchResults.Count > 0) await InvokeAsync(async () => { await MatchNav(-1); });
                     break;
+                case "toggle_lock":
+                    await InvokeAsync(ToggleLock);
+                    break;
             }
         }
         catch (Exception ex)

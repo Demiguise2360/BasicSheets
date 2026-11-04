@@ -1224,7 +1224,8 @@ const DEFAULT_KEYMAP = {
     'b': 'add_bookmark', 'B': 'add_bookmark', 'm': 'toggle_metronome', 'M': 'toggle_metronome', 'p': 'toggle_audio', 'P': 'toggle_audio',
     '/': 'open_search', 'f': 'open_search', 'F': 'open_search',
     'g': 'open_grid', 'G': 'open_grid',
-    '.': 'next_match', ',': 'prev_match'
+    '.': 'next_match', ',': 'prev_match',
+    'l': 'toggle_lock', 'L': 'toggle_lock'
 };
 let _keyMap = null, _captureAction = null;
 function _loadKeyMap() {
