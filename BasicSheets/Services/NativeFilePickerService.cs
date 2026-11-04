@@ -11,7 +11,11 @@ public class NativeFilePickerService : IFilePickerService
             PickerTitle = "PDF, Bild oder Text auswählen",
             FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
             {
-                { DevicePlatform.Android, new[] { "application/pdf", "image/*", "text/*" } },
+                // Android's Storage Access Framework filters by MIME type, and many file
+                // sources don't tag PDFs cleanly as "application/pdf" (empty / octet-stream),
+                // so a PDF-MIME filter greys them out. Show everything and validate by
+                // extension after picking (IsSupportedFile) — the robust pattern on Android.
+                { DevicePlatform.Android, new[] { "*/*" } },
                 { DevicePlatform.WinUI, new[] { ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
                                                 ".cho", ".chopro", ".chordpro", ".crd", ".pro", ".txt" } },
                 { DevicePlatform.iOS, new[] { "com.adobe.pdf", "public.image", "public.text", "public.plain-text" } },

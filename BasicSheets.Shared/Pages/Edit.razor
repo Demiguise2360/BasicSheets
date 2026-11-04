@@ -24,7 +24,7 @@
         <div class="upload-card">
 
             <div class="file-zone @(selectedFile != null ? "file-zone-ok" : "")">
-                <InputFile OnChange="OnFileSelected" accept=".pdf" id="pdf-edit-input" />
+                <InputFile OnChange="OnFileSelected" accept="application/pdf,.pdf" id="pdf-edit-input" />
                 <label for="pdf-edit-input" class="file-zone-label">
                     @if (selectedFile != null)
                     {
@@ -145,7 +145,7 @@
 
             <div class="part-add">
                 <div class="file-zone @(partFile != null ? "file-zone-ok" : "")" style="padding:0.9rem">
-                    <InputFile OnChange="OnPartFileSelected" accept=".pdf" id="part-input" />
+                    <InputFile OnChange="OnPartFileSelected" accept="application/pdf,.pdf" id="part-input" />
                     <label for="part-input" class="file-zone-label">
                         <span class="@(partFile != null ? "file-chosen" : "file-hint")">@(partFile?.Name ?? "Zusätzliche PDF (Stimme / Part)")</span>
                     </label>
