@@ -190,20 +190,28 @@ async function _ensurePdfTextCache() {
 // Warm the text cache when the search box opens, so live search stays instant.
 window.prewarmSearchCache = async function() { try { await _ensurePdfTextCache(); } catch {} };
 
+// Diacritic-insensitive, LENGTH-PRESERVING normalize (ä→a, ö→o, ü→u …) so a query typed
+// without umlauts still matches, and so match indices still line up with the original text
+// (for snippets + highlight). Decomposing then stripping combining marks keeps each char 1:1.
+function _normDia(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
 window.searchPdf = async function(query) {
     if (!pdfDoc || !query) return [];
-    const q = String(query).toLowerCase();
+    const q = _normDia(query);
+    if (!q) return [];
     await _ensurePdfTextCache();
     const results = [];
     for (let p = 1; p <= pdfDoc.numPages; p++) {
         const text = _pdfTextCache[p - 1] || '';
-        const idx = text.toLowerCase().indexOf(q);
+        const norm = _normDia(text);                     // diacritic-insensitive; same length as text, so indices align
+        const idx = norm.indexOf(q);
         if (idx >= 0) {
-            const lower = text.toLowerCase();
             let count = 0, from = 0, k;
-            while ((k = lower.indexOf(q, from)) >= 0) { count++; from = k + q.length; }   // occurrences on this page
+            while ((k = norm.indexOf(q, from)) >= 0) { count++; from = k + q.length; }   // occurrences on this page
             const start = Math.max(0, idx - 30);
-            let snippet = text.substring(start, idx + q.length + 45).trim();
+            let snippet = text.substring(start, idx + q.length + 45).trim();             // snippet from the original text
             if (start > 0) snippet = '…' + snippet;
             if (idx + q.length + 45 < text.length) snippet += '…';
             results.push({ page: p, snippet, count });
@@ -218,7 +226,7 @@ window.searchPdf = async function(query) {
 window.highlightMatch = async function(query, pdfPage) {
     try {
         if (!pdfDoc || !btnCanvas || !btnCtx || !baseWidth) return false;
-        const q = String(query || '').toLowerCase();
+        const q = _normDia(query || '');
         if (q.length < 2) return false;
         const lib = window["pdfjs-dist/build/pdf"];
 
@@ -229,7 +237,7 @@ window.highlightMatch = async function(query, pdfPage) {
             btnCtx.save();
             btnCtx.fillStyle = 'rgba(255, 210, 0, 0.40)';
             for (const item of tc.items) {
-                if (!item.str || !item.str.toLowerCase().includes(q)) continue;
+                if (!item.str || !_normDia(item.str).includes(q)) continue;
                 const m = lib.Util.transform(vp.transform, item.transform);   // item box in viewport (canvas) px
                 const hgt = Math.hypot(m[2], m[3]) || 14;
                 let wdt = (item.width || 0) * vp.scale;
