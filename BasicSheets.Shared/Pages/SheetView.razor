@@ -387,6 +387,25 @@
                 <img src="/_content/BasicSheets.Shared/icons/decrescendo.svg"
                      class="eticon @(activeTool=="decrescendo"?"eticon-on":"")" />
             </button>
+
+            <span class="et-sep"></span>
+
+            <button class="@ET("line")" @onclick='()=>SetTool("line")' title="Linie">
+                <img src="/_content/BasicSheets.Shared/icons/shape-line.svg"
+                     class="eticon @(activeTool=="line"?"eticon-on":"")" />
+            </button>
+            <button class="@ET("arrow")" @onclick='()=>SetTool("arrow")' title="Pfeil">
+                <img src="/_content/BasicSheets.Shared/icons/shape-arrow.svg"
+                     class="eticon @(activeTool=="arrow"?"eticon-on":"")" />
+            </button>
+            <button class="@ET("rect")" @onclick='()=>SetTool("rect")' title="Rechteck">
+                <img src="/_content/BasicSheets.Shared/icons/shape-rect.svg"
+                     class="eticon @(activeTool=="rect"?"eticon-on":"")" />
+            </button>
+            <button class="@ET("ellipse")" @onclick='()=>SetTool("ellipse")' title="Ellipse">
+                <img src="/_content/BasicSheets.Shared/icons/shape-ellipse.svg"
+                     class="eticon @(activeTool=="ellipse"?"eticon-on":"")" />
+            </button>
         </div>
 
         @* Options row *@
@@ -1261,6 +1280,10 @@
         ["text"]        = 5,
         ["crescendo"]   = 4,
         ["decrescendo"] = 4,
+        ["line"]        = 4,
+        ["arrow"]       = 4,
+        ["rect"]        = 4,
+        ["ellipse"]     = 4,
     };
     private int ActiveSize => toolSizes.TryGetValue(activeTool, out var s) ? s : ToolDefaultSizes.GetValueOrDefault(activeTool, 5);
 
@@ -2859,6 +2882,10 @@
         ["coda"]         = "#000000",
         ["crescendo"]    = "#000000",
         ["decrescendo"]  = "#000000",
+        ["line"]         = "#E53935",
+        ["arrow"]        = "#E53935",
+        ["rect"]         = "#E53935",
+        ["ellipse"]      = "#E53935",
     };
 
     // ── Tool state loader ─────────────────────────────────────────────────

@@ -49,6 +49,8 @@ let markerAnnotations  = [];
 let stampAnnotations   = [];
 let textAnnotations    = [];
 let hairpinAnnotations = [];
+let shapeAnnotations   = [];        // line / arrow / rect / ellipse: {kind,x1,y1,x2,y2,color,size}
+let shapeStart = null, liveShape = null;
 
 // ── Move tool ───────────────────────────────────────────────────────
 let moveTgt    = null;
@@ -91,6 +93,7 @@ const CACHE_AHEAD = 2, CACHE_BEHIND = 1;
 // ── Symbol maps ─────────────────────────────────────────────────────
 const STAMP_TOOLS = ["flat","sharp","natural","double-flat","double-sharp","fermata","trill","segno","coda",
     "dyn-ppp","dyn-pp","dyn-p","dyn-mp","dyn-mf","dyn-f","dyn-ff","dyn-fff","dyn-sf","dyn-sfz","dyn-fp"];
+const SHAPE_TOOLS = ["line","arrow","rect","ellipse"];   // 2-point drag-to-draw vector shapes
 const STAMP_SYM   = {
     flat:"♭", sharp:"♯", natural:"♮",
     "double-flat":"𝄫", "double-sharp":"𝄪",
@@ -165,7 +168,7 @@ window.loadPdf = async function(url) {
 window.disposePdfViewer = async function() {
     await destroyCurrentPdf();
     penStrokes = []; markerAnnotations = []; stampAnnotations = [];
-    textAnnotations = []; hairpinAnnotations = [];
+    textAnnotations = []; hairpinAnnotations = []; shapeAnnotations = [];
     undoStack = []; redoStack = [];
     baseWidth = 0; baseHeight = 0;
 };
@@ -2174,6 +2177,13 @@ function startDraw(e) {
         return;
     }
 
+    if (SHAPE_TOOLS.includes(tool)) {
+        drawing = true;
+        shapeStart = { x: p.x, y: p.y };
+        liveShape  = null;
+        return;
+    }
+
     if (tool === "marker") {
         drawing = true;
         markerPoints = [p];
@@ -2216,6 +2226,12 @@ function onDrawMove(e) {
             hairpinAnnotations[moveTgt.index].y1 = o.y1 + dy;
             hairpinAnnotations[moveTgt.index].x2 = o.x2 + dx;
             hairpinAnnotations[moveTgt.index].y2 = o.y2 + dy;
+        } else if (moveTgt.type === "shape") {
+            const o = moveTgt.orig;
+            shapeAnnotations[moveTgt.index].x1 = o.x1 + dx;
+            shapeAnnotations[moveTgt.index].y1 = o.y1 + dy;
+            shapeAnnotations[moveTgt.index].x2 = o.x2 + dx;
+            shapeAnnotations[moveTgt.index].y2 = o.y2 + dy;
         }
         redrawVectorLayer();
         lastX = p.x; lastY = p.y; return;
@@ -2225,6 +2241,13 @@ function onDrawMove(e) {
         // Hairpins are always horizontal: keep the end on the start baseline (ignore vertical drag).
         liveHairpin = { x1: hairpinStart.x, y1: hairpinStart.y, x2: p.x, y2: hairpinStart.y,
                         color: penColor, size: penSize, isCrsc: tool === "crescendo" };
+        redrawVectorLayer();
+        lastX = p.x; lastY = p.y; return;
+    }
+
+    if (SHAPE_TOOLS.includes(tool) && shapeStart) {
+        liveShape = { kind: tool, x1: shapeStart.x, y1: shapeStart.y, x2: p.x, y2: p.y,
+                      color: penColor, size: penSize };
         redrawVectorLayer();
         lastX = p.x; lastY = p.y; return;
     }
@@ -2279,6 +2302,15 @@ function endDraw(e) {
         redrawVectorLayer(); saveNotes(); return;
     }
     hairpinStart = null; liveHairpin = null;
+
+    if (SHAPE_TOOLS.includes(tool) && liveShape) {
+        // ignore an accidental zero-size tap
+        if (Math.hypot(liveShape.x2 - liveShape.x1, liveShape.y2 - liveShape.y1) > 3)
+            shapeAnnotations.push({ ...liveShape });
+        liveShape = null; shapeStart = null;
+        redrawVectorLayer(); saveNotes(); return;
+    }
+    shapeStart = null; liveShape = null;
 
     if (tool === "marker" && markerPoints.length > 1) {
         markerAnnotations.push({ color: penColor, size: penSize * 3, points: [...markerPoints] });
@@ -2390,6 +2422,9 @@ function redrawVectorLayer() {
 
     for (const h of hairpinAnnotations) drawHairpinShape(h);
     if (liveHairpin) drawHairpinShape(liveHairpin);
+
+    for (const s of shapeAnnotations) drawShapeShape(s, 1);
+    if (liveShape) drawShapeShape(liveShape, 0.75);
 }
 
 function drawStampShape(ctx2d, s, alpha) {
@@ -2419,6 +2454,41 @@ function drawHairpinShape(h) {
         noteCtx.moveTo(h.x1, h.y1 + sp); noteCtx.lineTo(h.x2, h.y2);
     }
     noteCtx.stroke(); noteCtx.restore();
+}
+
+// Line / arrow / rectangle / ellipse — a 2-point drag shape (x1,y1)→(x2,y2).
+function drawShapeShape(s, alpha) {
+    noteCtx.save();
+    noteCtx.globalAlpha = alpha == null ? 1 : alpha;
+    noteCtx.strokeStyle = s.color;
+    noteCtx.lineWidth   = Math.max(1.5, s.size * 0.9);
+    noteCtx.lineCap     = "round";
+    noteCtx.lineJoin    = "round";
+    noteCtx.globalCompositeOperation = "source-over";
+    const x1 = s.x1, y1 = s.y1, x2 = s.x2, y2 = s.y2;
+    if (s.kind === "rect") {
+        noteCtx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+    } else if (s.kind === "ellipse") {
+        noteCtx.beginPath();
+        noteCtx.ellipse((x1 + x2) / 2, (y1 + y2) / 2,
+                        Math.max(1, Math.abs(x2 - x1) / 2), Math.max(1, Math.abs(y2 - y1) / 2),
+                        0, 0, Math.PI * 2);
+        noteCtx.stroke();
+    } else {   // line or arrow
+        noteCtx.beginPath();
+        noteCtx.moveTo(x1, y1); noteCtx.lineTo(x2, y2); noteCtx.stroke();
+        if (s.kind === "arrow") {
+            const ang = Math.atan2(y2 - y1, x2 - x1);
+            const head = Math.max(10, s.size * 3.2);
+            noteCtx.beginPath();
+            noteCtx.moveTo(x2, y2);
+            noteCtx.lineTo(x2 - head * Math.cos(ang - Math.PI / 7), y2 - head * Math.sin(ang - Math.PI / 7));
+            noteCtx.moveTo(x2, y2);
+            noteCtx.lineTo(x2 - head * Math.cos(ang + Math.PI / 7), y2 - head * Math.sin(ang + Math.PI / 7));
+            noteCtx.stroke();
+        }
+    }
+    noteCtx.restore();
 }
 
 function redrawAll() {
@@ -2475,7 +2545,26 @@ function eraseNearby(ex, ey, radius) {
         }
     }
 
+    // Remove shape annotations whose outline passes near the eraser
+    for (let i = shapeAnnotations.length - 1; i >= 0; i--) {
+        if (_shapeNearEraser(shapeAnnotations[i], ex, ey, r2)) {
+            shapeAnnotations.splice(i, 1);
+            changed = true;
+        }
+    }
+
     if (changed) redrawMarkers(null);
+}
+
+// Is (ex,ey) within √r2 of a shape's drawn outline? Line/arrow: the segment.
+// Rect/ellipse: any of the 4 bounding-box edges (close enough for erasing).
+function _shapeNearEraser(s, ex, ey, r2) {
+    if (s.kind === "line" || s.kind === "arrow")
+        return distToSegment2(ex, ey, s.x1, s.y1, s.x2, s.y2) < r2;
+    const xa = Math.min(s.x1, s.x2), xb = Math.max(s.x1, s.x2);
+    const ya = Math.min(s.y1, s.y2), yb = Math.max(s.y1, s.y2);
+    return distToSegment2(ex, ey, xa, ya, xb, ya) < r2 || distToSegment2(ex, ey, xb, ya, xb, yb) < r2 ||
+           distToSegment2(ex, ey, xb, yb, xa, yb) < r2 || distToSegment2(ex, ey, xa, yb, xa, ya) < r2;
 }
 
 function distToSegment2(px, py, x1, y1, x2, y2) {
@@ -2516,6 +2605,15 @@ function findMoveTarget(cx, cy) {
             best = { type: "hairpin", index: i, orig: { x1: h.x1, y1: h.y1, x2: h.x2, y2: h.y2 } };
         }
     }
+    for (let i = shapeAnnotations.length - 1; i >= 0; i--) {
+        const s  = shapeAnnotations[i];
+        const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
+        const d  = Math.hypot(mx - cx, my - cy);
+        if (d < bestDist) {
+            bestDist = d;
+            best = { type: "shape", index: i, orig: { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2 } };
+        }
+    }
     return best;
 }
 
@@ -2552,6 +2650,7 @@ function getFullState() {
         stampData:   JSON.parse(JSON.stringify(stampAnnotations)),
         textData:    JSON.parse(JSON.stringify(textAnnotations)),
         hairpinData: JSON.parse(JSON.stringify(hairpinAnnotations)),
+        shapeData:   JSON.parse(JSON.stringify(shapeAnnotations)),
         w: noteCanvas.width, h: noteCanvas.height
     };
 }
@@ -2566,7 +2665,7 @@ function _rawHasAnnotations(raw) {
         if (!d || typeof d !== 'object') return false;
         return !!((d.penStrokes && d.penStrokes.length) || (d.markerData && d.markerData.length) ||
                   (d.stampData && d.stampData.length) || (d.textData && d.textData.length) ||
-                  (d.hairpinData && d.hairpinData.length));
+                  (d.hairpinData && d.hairpinData.length) || (d.shapeData && d.shapeData.length));
     } catch { return false; }
 }
 window.getAnnotatedPages = function() {
@@ -2622,7 +2721,7 @@ function _mapNotePoints(st, mapFn) {
         }
     };
     mapArr(st.penStrokes); mapArr(st.markerData); mapArr(st.stampData);
-    mapArr(st.textData);   mapArr(st.hairpinData);
+    mapArr(st.textData);   mapArr(st.hairpinData); mapArr(st.shapeData);
     return st;
 }
 
@@ -2646,7 +2745,7 @@ function loadNotes() {
     markerCtx.clearRect(0, 0, markerCanvas.width, markerCanvas.height);
     penStrokes = [];
     markerAnnotations  = []; stampAnnotations   = [];
-    textAnnotations    = []; hairpinAnnotations = [];
+    textAnnotations    = []; hairpinAnnotations = []; shapeAnnotations = [];
     undoStack = []; redoStack = [];
 
     let raw;
@@ -2685,6 +2784,7 @@ function loadNotes() {
     if (data.stampData)   stampAnnotations   = data.stampData;
     if (data.textData)    textAnnotations    = data.textData;
     if (data.hairpinData) hairpinAnnotations = data.hairpinData;
+    if (data.shapeData)   shapeAnnotations   = data.shapeData;
 
     if (data.penStrokes) {
         penStrokes = data.penStrokes;
@@ -2711,7 +2811,7 @@ window.clearNotes = function() {
     noteCtx.clearRect(0, 0, noteCanvas.width, noteCanvas.height);
     penStrokes = [];
     markerAnnotations  = []; stampAnnotations   = [];
-    textAnnotations    = []; hairpinAnnotations = [];
+    textAnnotations    = []; hairpinAnnotations = []; shapeAnnotations = [];
     saveNotes();
 };
 
@@ -2742,6 +2842,7 @@ async function applyUndoState(s) {
     stampAnnotations   = s.stampData   || [];
     textAnnotations    = s.textData    || [];
     hairpinAnnotations = s.hairpinData || [];
+    shapeAnnotations   = s.shapeData   || [];
 
     penCtx.clearRect(0, 0, penCanvas.width, penCanvas.height);
 
