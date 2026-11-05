@@ -1341,6 +1341,7 @@
     private bool   showTextInput;
     private double textCanvasX, textCanvasY, textScreenX, textScreenY;
     private string textValue = "";
+    private int    _textEditIndex = -1;   // index of the text note being edited, or -1 for a new one
 
     // ── Color system ─────────────────────────────────────────────────────
     private List<string[]> allColors = new();
@@ -2522,10 +2523,12 @@
 
     // ── JS-invokable callbacks ────────────────────────────────────────────
     [JSInvokable]
-    public void ShowTextInput(double cx, double cy, double sx, double sy)
+    public void ShowTextInput(double cx, double cy, double sx, double sy, int editIndex = -1, string existingText = "")
     {
         textCanvasX = cx; textCanvasY = cy;
         textScreenX = sx; textScreenY = sy;
+        _textEditIndex = editIndex;          // ≥0 → editing that text note; -1 → new note
+        textValue = existingText ?? "";
         showTextInput = true; StateHasChanged();
     }
 
@@ -2556,22 +2559,27 @@
     }
     private async Task ConfirmText()
     {
-        if (!string.IsNullOrWhiteSpace(textValue))
+        try
         {
-            try
+            int fontSize = ActiveSize * 3 + 10;
+            if (_textEditIndex >= 0)
             {
-                int fontSize = ActiveSize * 3 + 10;
+                // Editing an existing note: update it in place (clearing the text deletes it).
+                await JS.InvokeVoidAsync("updateTextAnnotation", _textEditIndex, textValue, activeColor, fontSize);
+            }
+            else if (!string.IsNullOrWhiteSpace(textValue))
+            {
                 await JS.InvokeVoidAsync("drawTextOnCanvas", textCanvasX, textCanvasY,
                                          textValue, activeColor, fontSize);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[SheetView] Text konnte nicht gezeichnet werden: {ex.Message}");
-            }
         }
-        showTextInput = false; textValue = "";
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SheetView] Text konnte nicht gezeichnet werden: {ex.Message}");
+        }
+        showTextInput = false; textValue = ""; _textEditIndex = -1;
     }
-    private void CancelText() { showTextInput = false; textValue = ""; }
+    private void CancelText() { showTextInput = false; textValue = ""; _textEditIndex = -1; }
 
     // ── Page navigation ───────────────────────────────────────────────────
     private async Task OnSlider(ChangeEventArgs e)

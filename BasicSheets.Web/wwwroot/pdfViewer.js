@@ -2183,7 +2183,9 @@ function startDraw(e) {
         if (dotNetRef) {
             const sx = e.touches ? e.touches[0].clientX : e.clientX;
             const sy = e.touches ? e.touches[0].clientY : e.clientY;
-            dotNetRef.invokeMethodAsync("ShowTextInput", p.x, p.y, sx, sy);
+            const hit = _findTextAt(p.x, p.y);   // tapped an existing text note? → edit it
+            if (hit) dotNetRef.invokeMethodAsync("ShowTextInput", hit.x, hit.y, sx, sy, hit.index, hit.text);
+            else     dotNetRef.invokeMethodAsync("ShowTextInput", p.x, p.y, sx, sy, -1, "");
         }
         return;
     }
@@ -2647,6 +2649,31 @@ function findMoveTarget(cx, cy) {
 
 window.drawTextOnCanvas = function(x, y, text, color, fontSize) {
     textAnnotations.push({ text, x, y, color, fontSize });
+    redrawVectorLayer();
+    saveNotes();
+};
+
+// Hit-test existing text notes (drawn top-left at t.x,t.y). Returns {index,text,x,y} or null.
+function _findTextAt(px, py) {
+    for (let i = textAnnotations.length - 1; i >= 0; i--) {
+        const t = textAnnotations[i];
+        const w = Math.max(20, (t.text || '').length * (t.fontSize || 20) * 0.6);
+        const h = (t.fontSize || 20) * 1.3;
+        if (px >= t.x - 8 && px <= t.x + w + 8 && py >= t.y - 8 && py <= t.y + h + 8)
+            return { index: i, text: t.text, x: t.x, y: t.y };
+    }
+    return null;
+}
+
+// Update an existing text note in place; clearing the text deletes it.
+window.updateTextAnnotation = function(index, text, color, fontSize) {
+    if (index < 0 || index >= textAnnotations.length) return;
+    if (!text || !text.trim()) {
+        textAnnotations.splice(index, 1);               // cleared → remove the note
+    } else {
+        const t = textAnnotations[index];
+        t.text = text; t.color = color; t.fontSize = fontSize;
+    }
     redrawVectorLayer();
     saveNotes();
 };
