@@ -350,7 +350,18 @@
         <input type="range" min="1" max="@pageCount"
                @bind="currentPage" @oninput="OnSlider"
                class="vbottom-range" style="--p:@(PagePercent)%" />
-        <span class="vbottom-page">@currentPage<span class="vbottom-sep">/</span>@pageCount</span>
+        @if (_showPageInput)
+        {
+            <input type="number" min="1" max="@pageCount" inputmode="numeric"
+                   class="vbottom-page" @ref="_pageInputRef"
+                   @bind="_pageInputVal" @bind:event="oninput"
+                   @onkeydown="PageInputKey" @onblur="ClosePageInput"
+                   style="width:3.4rem;height:1.75rem;border-radius:0.5rem;border:1px solid rgba(147,191,183,0.45);background:rgba(255,255,255,0.16);color:#fff;text-align:center;font-size:0.82rem;font-variant-numeric:tabular-nums;outline:none;" />
+        }
+        else
+        {
+            <span class="vbottom-page" @onclick="OpenPageInput" style="cursor:pointer" title="Seite eingeben">@currentPage<span class="vbottom-sep">/</span>@pageCount</span>
+        }
     </div>
 }
 
@@ -1294,6 +1305,10 @@
     private bool   _warm;      // warm reading tint (mutually exclusive with night-mode invert)
     private bool   _notesHidden;   // annotations temporarily hidden (clean-page view)
     private bool   _docHasNotes;   // any page of this doc has saved annotations (gates the toggle)
+    private bool   _showPageInput; // the bottom "page / total" display is in type-a-page mode
+    private string _pageInputVal = "";
+    private ElementReference _pageInputRef;
+    private bool   _focusPageInput;
 
     // ── Quick panel ─────────────────────────────────────────────────────
     private bool showQuickPanel = false;
@@ -1953,6 +1968,11 @@
                 _needPanelClamp = false;
                 try { await JS.InvokeVoidAsync("clampPanelIntoView"); } catch { }
             }
+            if (_focusPageInput)
+            {
+                _focusPageInput = false;
+                try { await _pageInputRef.FocusAsync(); } catch { }
+            }
             bool topVis = showUi || isEditMode;
             bool botVis = showUi && !isEditMode && pageCount > 1 && !IsScrollMode;
             if (!_chromeInit || topVis != _lastTopVis || botVis != _lastBotVis)
@@ -2561,6 +2581,38 @@
         await RenderCurrent();
         if (SettingsService.RememberLastPage())
             _ = JS.InvokeVoidAsync("saveLastPage", file, currentPage);
+    }
+
+    // ── Go-to-page: tap the "page / total" readout to type a page number ──
+    private void OpenPageInput()
+    {
+        _pageInputVal  = currentPage.ToString();
+        _showPageInput = true;
+        _focusPageInput = true;
+    }
+
+    private async Task PageInputKey(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or "NumpadEnter") await CommitPageInput();
+        else if (e.Key == "Escape") ClosePageInput();
+    }
+
+    private async Task CommitPageInput()
+    {
+        if (int.TryParse(_pageInputVal, out var p))
+        {
+            p = Math.Clamp(p, 1, pageCount);
+            _showPageInput = false;
+            if (p != currentPage) await JumpPage(p);
+            else StateHasChanged();
+        }
+        else ClosePageInput();
+    }
+
+    private void ClosePageInput()
+    {
+        _showPageInput = false;
+        StateHasChanged();
     }
 
     private async Task RenderCurrent()
