@@ -12,6 +12,7 @@ let noteCanvas = null, noteCtx = null;
 let penCanvas = null, penCtx = null;
 
 let zoom = 1;
+let _baseZoom = 1;   // the page's current fit zoom (set by applyPageScaling); double-tap toggles around it
 let panX = 0, panY = 0;
 let baseWidth = 0, baseHeight = 0;
 
@@ -1022,6 +1023,7 @@ function applyPageScaling() {
         case 'full-screen':  fitFullScreen(); break;
         default:             fitToScreen();  break;
     }
+    _baseZoom = zoom;
 }
 
 window.setPageScaling = function(mode) {
@@ -1188,6 +1190,16 @@ function smoothZoomTo(targetZoom, cx, cy) {
         if (t < 1) requestAnimationFrame(step);
     })(performance.now());
 }
+
+// Double-tap zoom: toggle between fit-to-width and a zoomed-in view centred on the tap point.
+window.toggleZoomAt = function(sx, sy) {
+    if (!baseWidth) return;
+    if (zoom > _baseZoom * 1.15) {
+        smoothZoomTo(_baseZoom, window.innerWidth / 2, window.innerHeight / 2);   // zoomed in → back to the page's fit
+    } else {
+        smoothZoomTo(Math.min(_baseZoom * 2.5, 5), sx, sy);   // zoom in, centred on the tapped point
+    }
+};
 
 window.getWindowWidth = () => window.innerWidth;
 

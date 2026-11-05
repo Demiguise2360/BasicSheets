@@ -1309,6 +1309,7 @@
     private string _pageInputVal = "";
     private ElementReference _pageInputRef;
     private bool   _focusPageInput;
+    private DateTime _lastCenterTapAt = DateTime.MinValue;   // for centre-zone double-tap zoom
 
     // ── Quick panel ─────────────────────────────────────────────────────
     private bool showQuickPanel = false;
@@ -2764,6 +2765,16 @@
         }
         else
         {
+            // Double-tap in the centre zone → smart zoom to the tap point. Centre taps only
+            // toggle chrome, so this never fights the edge page-turn zones.
+            var now = DateTime.UtcNow;
+            if ((now - _lastCenterTapAt).TotalMilliseconds < 300)
+            {
+                _lastCenterTapAt = DateTime.MinValue;
+                _ = JS.InvokeVoidAsync("toggleZoomAt", e.ClientX, e.ClientY);
+                return;
+            }
+            _lastCenterTapAt = now;
             if (SettingsService.AutoHideToolbar()) { showUi = true; ResetAutoHide(); }
             else { showUi = !showUi; }
             StateHasChanged();
