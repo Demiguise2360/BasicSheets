@@ -1558,7 +1558,10 @@
     private string _linkLabel      = "";       // optional short marker label (e.g. "DC", "Coda")
     private string? _linkEditId    = null;     // non-null while editing an existing point
     // Link points only make sense on a single, non-scrolling PDF page.
+    // Placing/managing link points stays single-mode only (points are normalized to one page).
     private bool LinksActive => !_isText && !_isImage && !isEditMode && !_cropEditMode && effectiveMode == "single";
+    // Showing + tapping existing link points works in every PDF page mode (single/two/half-turn/scroll).
+    private bool LinksVisible => !_isText && !_isImage && !isEditMode && !_cropEditMode;
     private sealed class NormPt { public double x { get; set; } public double y { get; set; } }
 
     // ── Smart buttons (user-defined on-screen quick-jump buttons; global "floating" ViewerButtons) ──
@@ -2528,7 +2531,7 @@
             {
                 int  pdfPage = PdfPageFor((currentPage + 1) / 2);   // maps the display slot → PDF page (honors a custom order)
                 bool topHalf = currentPage % 2 == 1;
-                await JS.InvokeVoidAsync("renderHalfTurn", pdfPage, topHalf);
+                await JS.InvokeVoidAsync("renderHalfTurn", pdfPage, topHalf, (currentPage + 1) / 2);
             }
             else if (effectiveMode == "two")
             {
@@ -2541,7 +2544,7 @@
                 var crop = _crops.GetValueOrDefault(pdfPage);
                 if (crop != null) await JS.InvokeVoidAsync("setCrop", crop.L, crop.T, crop.R, crop.B);
                 else await JS.InvokeVoidAsync("clearCrop");
-                await JS.InvokeVoidAsync("renderPage", pdfPage);
+                await JS.InvokeVoidAsync("renderPage", pdfPage, currentPage);
             }
             await PushPageButtons();
         }
@@ -2556,10 +2559,12 @@
     private async Task PushPageButtons()
     {
         var list = new List<object>();
-        if (LinksActive)
+        if (LinksVisible)
         {
-            foreach (var b in _linkPoints.Where(b => b.SourcePage == currentPage && b.SourceNX >= 0))
-                list.Add(new { id = b.Id, nx = b.SourceNX, ny = b.SourceNY, label = b.Label, color = b.Color, isTarget = false });
+            // Send every point (with its source display page); the viewer places each on
+            // the right page for the current mode and skips those not currently on screen.
+            foreach (var b in _linkPoints.Where(b => b.SourceNX >= 0))
+                list.Add(new { id = b.Id, page = b.SourcePage, nx = b.SourceNX, ny = b.SourceNY, label = b.Label, color = b.Color, isTarget = false });
         }
         try { await JS.InvokeVoidAsync("setPageButtons", list); } catch { }
     }
@@ -2587,7 +2592,7 @@
 
         // Link points: while armed, a tap drops a new point; otherwise a tap on an
         // existing point jumps to its target page. Checked before the page-turn zones.
-        if (LinksActive)
+        if (LinksVisible)
         {
             if (_placingLink) { await PlaceLinkAt(e.ClientX, e.ClientY); return; }
             try
@@ -2596,7 +2601,9 @@
                 if (!string.IsNullOrEmpty(hit) && hit.EndsWith(":source"))
                 {
                     var lp = _linkPoints.FirstOrDefault(b => b.Id == hit[..^7]);
-                    if (lp != null) { await JumpPage(lp.TargetPage); ResetAutoHide(); return; }
+                    // TargetPage is a display page; route through JumpToPdfPage so the jump
+                    // lands correctly in scroll / half-turn / custom-order modes too.
+                    if (lp != null) { await JumpToPdfPage(PdfPageFor(lp.TargetPage)); ResetAutoHide(); return; }
                 }
             }
             catch { }

@@ -329,8 +329,9 @@ window.initCanvas = function(pdfId, markerId, noteId) {
 //  Rendering
 // ═══════════════════════════════════════════════════════════════════
 
-window.renderPage = async function(num) {
+window.renderPage = async function(num, dispPage) {
     scrollMode = null; halfSide = null; _displayMode = 'single';
+    _btnCurDisp = (dispPage != null ? dispPage : num);   // display page shown → places link markers
     _clearScrollTiles();
     cancelActiveRender();
     const gen = _renderGen;
@@ -381,6 +382,7 @@ window.renderImage = async function() {
     scrollMode = null; halfSide = null; _displayMode = 'single';
     _clearScrollTiles();
     pageNum = 1;
+    _btnCurDisp = 1;
     showSpinner();
     let iw = imgEl.naturalWidth || 1, ih = imgEl.naturalHeight || 1;
     const maxDim = 2600;
@@ -455,6 +457,8 @@ window.renderTwoPage = async function(num) {
     if (t2) ctx.drawImage(t2, t1.width + gap, 0);
 
     _twoLeftPdf = _leftPdf; _twoRightPdf = _rightPdf; _twoLeftW = t1.width; _twoGap = gap;
+    _twoLeftDisp = num; _twoRightDisp = t2 ? num + 1 : 0;   // display-page numbers in each slot
+    _twoLeftH = t1.height; _twoRightW = t2 ? t2.width : 0; _twoRightH = t2 ? t2.height : 0;
     baseWidth = tw; baseHeight = th;
     loadNotes();
     if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
@@ -469,11 +473,12 @@ window.renderTwoPage = async function(num) {
 // Renders FULL page at fit-to-width. Taps alternate between showing
 // the top half and the bottom half of the same page.
 
-window.renderHalfTurn = async function(num, topHalf) {
+window.renderHalfTurn = async function(num, topHalf, dispPage) {
     scrollMode = null; halfSide = null;
     _displayMode = 'half-turn';
     _clearScrollTiles();
     _halfTurnTop = topHalf;
+    _btnCurDisp = (dispPage != null ? dispPage : num);   // the sheet shown (both halves share it)
     cancelActiveRender();
     const gen = _renderGen;
     showSpinner();
@@ -2972,7 +2977,9 @@ window.initStylusDetection = function() {
 // ═══════════════════════════════════════════════════════════════════
 
 let btnCanvas = null, btnCtx = null;
-let _pageButtons = [];       // buttons for current page {id,nx,ny,label,color,isTarget}
+let _pageButtons = [];       // link points {id,page,nx,ny,label,color,isTarget} — page = single-mode display number
+let _btnCurDisp = 0;         // display page shown in single/half-turn/image (for marker placement)
+let _twoLeftDisp = 0, _twoRightDisp = 0, _twoLeftH = 0, _twoRightW = 0, _twoRightH = 0;
 let _isPlacingBtn = false;   // placement mode active
 
 window.initBtnCanvas = function(id) {
@@ -3003,8 +3010,10 @@ window.getButtonAtScreen = function(sx, sy) {
     if (!baseWidth || !baseHeight || !_pageButtons.length) return null;
     const HIT = 32;   // screen-px radius
     for (const b of _pageButtons) {
-        const bx = b.nx * baseWidth  * zoom + panX;
-        const by = b.ny * baseHeight * zoom + panY;
+        const r = _btnRect(b.page == null ? _btnCurDisp : b.page);
+        if (!r) continue;
+        const bx = (r.x + b.nx * r.w) * zoom + panX;
+        const by = (r.y + b.ny * r.h) * zoom + panY;
         if (Math.hypot(bx - sx, by - sy) < HIT) {
             return b.id + (b.isTarget ? ':target' : ':source');
         }
@@ -3021,17 +3030,41 @@ window.screenToNormalized = function(sx, sy) {
     };
 };
 
+// The rect (in base/composite canvas coords) occupied by a given single-mode display
+// page under the CURRENT display mode, or null if that page isn't currently on screen.
+// Lets link-point markers land on the right page in every mode, not just single.
+function _btnRect(dp) {
+    dp = parseInt(dp, 10);
+    if (!Number.isInteger(dp) || !baseWidth || !baseHeight) return null;
+    if (_displayMode === 'two') {
+        if (dp === _twoLeftDisp)  return { x: 0, y: 0, w: _twoLeftW, h: _twoLeftH || baseHeight };
+        if (dp === _twoRightDisp && _twoRightW)
+            return { x: _twoLeftW + _twoGap, y: 0, w: _twoRightW, h: _twoRightH || baseHeight };
+        return null;
+    }
+    if (_displayMode === 'scroll-v' || _displayMode === 'scroll-h') {
+        const i = dp - 1;                                    // slot index: display page N is at slot N-1
+        if (i < 0 || i >= _scrollPageW.length) return null;
+        const w = _scrollPageW[i], h = _scrollPageH[i];
+        return _displayMode === 'scroll-v'
+            ? { x: Math.round((baseWidth - w) / 2), y: _scrollTops[i]  || 0, w, h }
+            : { x: _scrollLefts[i] || 0, y: Math.round((baseHeight - h) / 2), w, h };
+    }
+    // single / half-turn / image: the canvas holds exactly the one shown page
+    return dp === _btnCurDisp ? { x: 0, y: 0, w: baseWidth, h: baseHeight } : null;
+}
+
 function _drawButtons() {
     if (!btnCanvas || !btnCtx || !baseWidth || !baseHeight) return;
-    // Match canvas buffer to PDF canvas
+    // Match canvas buffer to the composite/page canvas
     btnCanvas.width  = baseWidth;
     btnCanvas.height = baseHeight;
     btnCtx.clearRect(0, 0, baseWidth, baseHeight);
 
     for (const b of _pageButtons) {
-        const cx = b.nx * baseWidth;
-        const cy = b.ny * baseHeight;
-        _drawMarker(btnCtx, cx, cy, b.label, b.color, b.isTarget);
+        const r = _btnRect(b.page == null ? _btnCurDisp : b.page);
+        if (!r) continue;
+        _drawMarker(btnCtx, r.x + b.nx * r.w, r.y + b.ny * r.h, b.label, b.color, b.isTarget);
     }
 }
 
