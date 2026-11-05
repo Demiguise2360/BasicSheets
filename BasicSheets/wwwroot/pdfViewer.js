@@ -51,6 +51,7 @@ let textAnnotations    = [];
 let hairpinAnnotations = [];
 let shapeAnnotations   = [];        // line / arrow / rect / ellipse: {kind,x1,y1,x2,y2,color,size}
 let shapeStart = null, liveShape = null;
+let _shapeFill = false;              // fill rect/ellipse with a translucent wash (region highlight)
 let _notesVisible = true;            // are the annotation layers shown? (hide/show toggle)
 
 // ── Move tool ───────────────────────────────────────────────────────
@@ -2252,7 +2253,8 @@ function onDrawMove(e) {
 
     if (SHAPE_TOOLS.includes(tool) && shapeStart) {
         liveShape = { kind: tool, x1: shapeStart.x, y1: shapeStart.y, x2: p.x, y2: p.y,
-                      color: penColor, size: penSize };
+                      color: penColor, size: penSize,
+                      fill: (_shapeFill && (tool === "rect" || tool === "ellipse")) };
         redrawVectorLayer();
         lastX = p.x; lastY = p.y; return;
     }
@@ -2464,7 +2466,8 @@ function drawHairpinShape(h) {
 // Line / arrow / rectangle / ellipse — a 2-point drag shape (x1,y1)→(x2,y2).
 function drawShapeShape(s, alpha) {
     noteCtx.save();
-    noteCtx.globalAlpha = alpha == null ? 1 : alpha;
+    const baseAlpha = alpha == null ? 1 : alpha;
+    noteCtx.globalAlpha = baseAlpha;
     noteCtx.strokeStyle = s.color;
     noteCtx.lineWidth   = Math.max(1.5, s.size * 0.9);
     noteCtx.lineCap     = "round";
@@ -2472,12 +2475,15 @@ function drawShapeShape(s, alpha) {
     noteCtx.globalCompositeOperation = "source-over";
     const x1 = s.x1, y1 = s.y1, x2 = s.x2, y2 = s.y2;
     if (s.kind === "rect") {
-        noteCtx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+        const rx = Math.min(x1, x2), ry = Math.min(y1, y2), rw = Math.abs(x2 - x1), rh = Math.abs(y2 - y1);
+        if (s.fill) { noteCtx.globalAlpha = baseAlpha * 0.25; noteCtx.fillStyle = s.color; noteCtx.fillRect(rx, ry, rw, rh); noteCtx.globalAlpha = baseAlpha; }
+        noteCtx.strokeRect(rx, ry, rw, rh);
     } else if (s.kind === "ellipse") {
         noteCtx.beginPath();
         noteCtx.ellipse((x1 + x2) / 2, (y1 + y2) / 2,
                         Math.max(1, Math.abs(x2 - x1) / 2), Math.max(1, Math.abs(y2 - y1) / 2),
                         0, 0, Math.PI * 2);
+        if (s.fill) { noteCtx.globalAlpha = baseAlpha * 0.25; noteCtx.fillStyle = s.color; noteCtx.fill(); noteCtx.globalAlpha = baseAlpha; }
         noteCtx.stroke();
     } else {   // line or arrow
         noteCtx.beginPath();
@@ -2828,6 +2834,9 @@ window.setNotesVisible = function(v) {
     if (markerCanvas) markerCanvas.style.visibility = vis;
     if (noteCanvas)   noteCanvas.style.visibility   = vis;
 };
+
+// Fill rect/ellipse shapes with a translucent wash (region highlight) when on.
+window.setShapeFill = function(v) { _shapeFill = !!v; };
 
 function pushUndo() {
     const s = JSON.stringify(getFullState());

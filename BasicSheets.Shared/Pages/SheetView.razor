@@ -445,6 +445,14 @@
                 <span class="et-size-val">@ActiveSize</span>
             }
 
+            @if (IsShapeFillable)
+            {
+                <button class="et-act @(_shapeFill ? "et-tool-on" : "")" @onclick="ToggleShapeFill"
+                        title="@(_shapeFill ? "Fläche gefüllt" : "Nur Umriss")">
+                    <img src="/_content/BasicSheets.Shared/icons/shape-fill.svg" class="eticon" />
+                </button>
+            }
+
             <div class="et-flex"></div>
 
             <button class="et-act" @onclick="Undo" title="Rückgängig">
@@ -1412,6 +1420,8 @@
     private bool   CurrentStampIsDyn => activeStamp.StartsWith("dyn-");
     private string CurrentStampSym   => AllStamps.FirstOrDefault(s => s.Key == activeStamp)?.Sym ?? "♭";
     private bool   IsNoSizeTool      => activeTool == "move" || IsStampActive;
+    private bool   IsShapeFillable   => activeTool == "rect" || activeTool == "ellipse";
+    private bool   _shapeFill;       // fill rect/ellipse with a translucent wash (region highlight)
     private bool   IsScrollMode   => effectiveMode == "scroll-v" || effectiveMode == "scroll-h";
     private bool   CanAutoScroll  => !_isText && (effectiveMode == "single" || effectiveMode == "scroll-v");
     private bool   IsHalfTurnMode => effectiveMode == "half-turn";
@@ -2982,6 +2992,12 @@
         activeColor = c;
         toolColors[activeTool] = c;
         _ = JS.InvokeVoidAsync("setColor", c);
+    }
+
+    private async Task ToggleShapeFill()
+    {
+        _shapeFill = !_shapeFill;
+        try { await JS.InvokeVoidAsync("setShapeFill", _shapeFill); } catch { }
     }
 
     private void Undo()      => _ = JS.InvokeVoidAsync("undoNote");
