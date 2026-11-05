@@ -231,6 +231,30 @@
                     </svg>
                 </button>
             }
+
+            @* Hide / show annotations (clean-page study view) *@
+            @if (_docHasNotes)
+            {
+                <button class="vhdr-btn @(_notesHidden ? "vhdr-btn-active" : "")"
+                        @onclick="ToggleNotesHidden"
+                        title="@(_notesHidden ? "Notizen einblenden" : "Notizen ausblenden")">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"
+                         class="vhdr-icon">
+                        @if (_notesHidden)
+                        {
+                            <path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                            <path d="M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a9.1 9.1 0 0 0 5.39-1.61"/>
+                            <line x1="2" y1="2" x2="22" y2="22"/>
+                        }
+                        else
+                        {
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        }
+                    </svg>
+                </button>
+            }
         }
     }
 
@@ -1260,6 +1284,8 @@
     private string viewerBg = "dark";
     private bool   _invert;
     private bool   _warm;      // warm reading tint (mutually exclusive with night-mode invert)
+    private bool   _notesHidden;   // annotations temporarily hidden (clean-page view)
+    private bool   _docHasNotes;   // any page of this doc has saved annotations (gates the toggle)
 
     // ── Quick panel ─────────────────────────────────────────────────────
     private bool showQuickPanel = false;
@@ -2127,6 +2153,7 @@
             RefreshPageBookmark();
             await RenderCurrent();
             StateHasChanged();
+            await RefreshDocHasNotes();   // show the hide/show-annotations toggle if this doc has any
 
             if (SettingsService.KeepScreenOn())
                 _ = JS.InvokeVoidAsync("setWakeLock", true);
@@ -2843,13 +2870,35 @@
             await HaltAutoScroll();
             StopAutoHide();
             showUi = true;
+            // Always reveal annotations while editing — you can't annotate what you can't see.
+            if (_notesHidden)
+            {
+                _notesHidden = false;
+                try { await JS.InvokeVoidAsync("setNotesVisible", true); } catch { }
+            }
             await SetTool(SettingsService.GetDefaultTool());
         }
         else
         {
             StartAutoPageTurn();
             StartAutoHide();
+            await RefreshDocHasNotes();   // the toggle appears once a doc has its first annotation
         }
+    }
+
+    // Hide/show saved annotations without deleting them (study on a clean page, then reveal).
+    private async Task ToggleNotesHidden()
+    {
+        _notesHidden = !_notesHidden;
+        try { await JS.InvokeVoidAsync("setNotesVisible", !_notesHidden); } catch { }
+    }
+
+    private async Task RefreshDocHasNotes()
+    {
+        var prev = _docHasNotes;
+        try { _docHasNotes = (await JS.InvokeAsync<int[]>("getAnnotatedPages")).Length > 0; }
+        catch { _docHasNotes = false; }
+        if (_docHasNotes != prev) StateHasChanged();   // toggle appears/disappears without another interaction
     }
 
     // ── Size slider ────────────────────────────────────────────────────────

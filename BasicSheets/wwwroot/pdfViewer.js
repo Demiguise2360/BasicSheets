@@ -51,6 +51,7 @@ let textAnnotations    = [];
 let hairpinAnnotations = [];
 let shapeAnnotations   = [];        // line / arrow / rect / ellipse: {kind,x1,y1,x2,y2,color,size}
 let shapeStart = null, liveShape = null;
+let _notesVisible = true;            // are the annotation layers shown? (hide/show toggle)
 
 // ── Move tool ───────────────────────────────────────────────────────
 let moveTgt    = null;
@@ -301,6 +302,10 @@ window.initCanvas = function(pdfId, markerId, noteId) {
     canvas       = document.getElementById(pdfId);     ctx       = canvas.getContext("2d");
     markerCanvas = document.getElementById(markerId);  markerCtx = markerCanvas.getContext("2d");
     noteCanvas   = document.getElementById(noteId);    noteCtx   = noteCanvas.getContext("2d");
+
+    // Annotations start shown for every freshly-opened document.
+    _notesVisible = true;
+    markerCanvas.style.visibility = ""; noteCanvas.style.visibility = "";
 
     penCanvas = document.createElement("canvas");
     penCtx    = penCanvas.getContext("2d");
@@ -2813,6 +2818,15 @@ window.clearNotes = function() {
     markerAnnotations  = []; stampAnnotations   = [];
     textAnnotations    = []; hairpinAnnotations = []; shapeAnnotations = [];
     saveNotes();
+};
+
+// Hide / show all annotation layers (pen, marker, stamps, text, hairpins, shapes)
+// without deleting them — the PDF page and link-point markers stay visible.
+window.setNotesVisible = function(v) {
+    _notesVisible = !!v;
+    const vis = _notesVisible ? "" : "hidden";
+    if (markerCanvas) markerCanvas.style.visibility = vis;
+    if (noteCanvas)   noteCanvas.style.visibility   = vis;
 };
 
 function pushUndo() {

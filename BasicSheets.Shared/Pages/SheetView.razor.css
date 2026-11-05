@@ -59,7 +59,8 @@
 .vhdr-hidden { opacity: 0; pointer-events: none; transform: translateY(-110%); }
 
 .vhdr-btn {
-    flex-shrink: 0;
+    flex-shrink: 1;              /* shrink to fit when the bar is crowded (e.g. +annotations toggle) */
+    min-width: 2rem;            /* but keep a usable tap target */
     background: rgba(255,255,255,0.12);
     border: 1px solid rgba(147,191,183,0.18);
     border-radius: 0.6rem;
