@@ -211,10 +211,11 @@ window.searchPdf = async function(query) {
             let count = 0, from = 0, k;
             while ((k = norm.indexOf(q, from)) >= 0) { count++; from = k + q.length; }   // occurrences on this page
             const start = Math.max(0, idx - 30);
-            let snippet = text.substring(start, idx + q.length + 45).trim();             // snippet from the original text
-            if (start > 0) snippet = '…' + snippet;
-            if (idx + q.length + 45 < text.length) snippet += '…';
-            results.push({ page: p, snippet, count });
+            // Build the snippet in parts so the matched term's position is exact (the UI bolds it).
+            const pre  = ((start > 0 ? '…' : '') + text.substring(start, idx)).replace(/^\s+/, '');
+            const mid  = text.substring(idx, idx + q.length);
+            const post = (text.substring(idx + q.length, idx + q.length + 45) + (idx + q.length + 45 < text.length ? '…' : '')).replace(/\s+$/, '');
+            results.push({ page: p, snippet: pre + mid + post, count, matchStart: pre.length, matchLen: mid.length });
         }
     }
     return results;

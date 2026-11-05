@@ -671,7 +671,8 @@
                     <button @onclick="() => OnSearchJump(h)"
                             style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--c-border);padding:0.6rem 0.7rem;cursor:pointer;color:var(--c-text)">
                         <div style="font-weight:600;font-size:0.85rem">Seite @h.page@(h.count > 1 ? $" · {h.count}×" : "")</div>
-                        <div style="font-size:0.8rem;opacity:.7;margin-top:0.2rem;line-height:1.3">@h.snippet</div>
+                        @{ var sp = SnippetParts(h); }
+                        <div style="font-size:0.8rem;opacity:.7;margin-top:0.2rem;line-height:1.3">@sp.pre<strong style="opacity:1;font-weight:700">@sp.match</strong>@sp.post</div>
                     </button>
                 }
             }
@@ -1585,7 +1586,14 @@
     private bool _searched = false;   // a search has run (tells "no results" apart from the initial prompt)
     private List<SearchHit> _searchResults = new();
     private bool CanSearch => !_isText && !_isImage;
-    private sealed class SearchHit { public int page { get; set; } public string snippet { get; set; } = ""; public int count { get; set; } }
+    private sealed class SearchHit { public int page { get; set; } public string snippet { get; set; } = ""; public int count { get; set; } public int matchStart { get; set; } public int matchLen { get; set; } }
+    // Split a result snippet into (before, matched term, after) so the UI can bold the term.
+    private static (string pre, string match, string post) SnippetParts(SearchHit h)
+    {
+        var s = h.snippet ?? "";
+        if (h.matchLen <= 0 || h.matchStart < 0 || h.matchStart + h.matchLen > s.Length) return (s, "", "");
+        return (s.Substring(0, h.matchStart), s.Substring(h.matchStart, h.matchLen), s.Substring(h.matchStart + h.matchLen));
+    }
 
     // ── Match navigator (step through search results after a jump) ──
     private int _searchIdx = -1;            // current result index
