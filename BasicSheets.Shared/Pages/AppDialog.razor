@@ -1,0 +1,83 @@
+@* Reusable confirm / prompt dialog. Replaces native window.confirm / window.prompt,
+   which are unreliable in the MAUI Android WebView (no WebChromeClient → suppressed).
+   Drive it via @ref: `await _dlg.ConfirmAsync(...)` / `await _dlg.PromptAsync(...)`. *@
+@if (_open)
+{
+    <div class="adlg-bg" @onclick="OnBackdrop">
+        <div class="adlg-box" @onclick:stopPropagation="true">
+            <div class="adlg-title">@_title</div>
+            @if (_isPrompt)
+            {
+                <input class="adlg-input" @bind="_value" @bind:event="oninput"
+                       @onkeydown="OnKey" @ref="_inputRef" />
+            }
+            else if (!string.IsNullOrEmpty(_body))
+            {
+                <div class="adlg-body">@_body</div>
+            }
+            <div class="adlg-btns">
+                <button class="adlg-cancel" @onclick="() => Close(false)">@_cancelLabel</button>
+                <button class="adlg-ok @(_danger ? "adlg-danger" : "")" @onclick="() => Close(true)">@_okLabel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _open, _isPrompt, _danger;
+    private string _title = "", _body = "", _value = "", _okLabel = "OK", _cancelLabel = "Abbrechen";
+    private ElementReference _inputRef;
+    private bool _focusPending;
+    private TaskCompletionSource<bool>? _tcs;
+
+    /// <summary>Shows a confirm dialog; returns true if the user confirmed.</summary>
+    public Task<bool> ConfirmAsync(string title, string? body = null, string okLabel = "Löschen", bool danger = true)
+    {
+        _isPrompt = false; _title = title; _body = body ?? ""; _okLabel = okLabel; _danger = danger;
+        return Open();
+    }
+
+    /// <summary>Shows a text-prompt dialog; returns the entered text, or null if cancelled.</summary>
+    public async Task<string?> PromptAsync(string title, string defaultValue = "", string okLabel = "OK")
+    {
+        _isPrompt = true; _title = title; _value = defaultValue; _okLabel = okLabel; _danger = false;
+        var ok = await Open();
+        return ok ? _value : null;
+    }
+
+    private Task<bool> Open()
+    {
+        _open = true;
+        _focusPending = _isPrompt;
+        _cancelLabel = "Abbrechen";
+        _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusPending)
+        {
+            _focusPending = false;
+            try { await _inputRef.FocusAsync(); } catch { }
+        }
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Close(true);
+        else if (e.Key == "Escape") Close(false);
+    }
+
+    private void OnBackdrop() => Close(false);
+
+    private void Close(bool ok)
+    {
+        if (!_open) return;
+        _open = false;
+        var tcs = _tcs; _tcs = null;
+        StateHasChanged();
+        tcs?.TrySetResult(ok);
+    }
+}

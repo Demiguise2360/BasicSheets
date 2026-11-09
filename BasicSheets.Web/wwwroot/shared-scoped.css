@@ -88,6 +88,43 @@
         height: auto;
     }
 }
+/* _content/BasicSheets.Shared/Pages/AppDialog.razor.rz.scp.css */
+.adlg-bg[b-a9yrlf0b6i] {
+    position: fixed; inset: 0; z-index: 650;
+    background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.adlg-box[b-a9yrlf0b6i] {
+    background: var(--c-surface, #fff);
+    color: var(--c-text, #1a1a1a);
+    border-radius: 1rem;
+    padding: 1.25rem 1.25rem 1rem;
+    width: min(22rem, calc(100vw - 2rem));
+    box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+}
+.adlg-title[b-a9yrlf0b6i] { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.6rem; }
+.adlg-body[b-a9yrlf0b6i]  { font-size: 0.88rem; opacity: 0.78; line-height: 1.45; margin-bottom: 1rem; }
+.adlg-input[b-a9yrlf0b6i] {
+    width: 100%; box-sizing: border-box;
+    padding: 0.6rem 0.7rem; margin-bottom: 1rem;
+    border: 1.5px solid var(--c-border, rgba(127,127,127,0.4)); border-radius: 0.6rem;
+    background: var(--c-surface, #fff); color: var(--c-text, #1a1a1a);
+    font-size: 0.95rem;
+}
+.adlg-input:focus[b-a9yrlf0b6i] { outline: none; border-color: #4d8a80; }
+.adlg-btns[b-a9yrlf0b6i] { display: flex; gap: 0.6rem; justify-content: flex-end; }
+.adlg-cancel[b-a9yrlf0b6i], .adlg-ok[b-a9yrlf0b6i] {
+    padding: 0.55rem 1.15rem; border-radius: 0.6rem;
+    font-size: 0.92rem; font-weight: 600; cursor: pointer; border: none;
+    transition: background 0.1s ease;
+}
+.adlg-cancel[b-a9yrlf0b6i] { background: rgba(127,127,127,0.18); color: var(--c-text, #1a1a1a); }
+.adlg-cancel:active[b-a9yrlf0b6i] { background: rgba(127,127,127,0.32); }
+.adlg-ok[b-a9yrlf0b6i] { background: #4d8a80; color: #fff; }
+.adlg-ok:active[b-a9yrlf0b6i] { background: #3c7169; }
+.adlg-danger[b-a9yrlf0b6i] { background: #E53935; }
+.adlg-danger:active[b-a9yrlf0b6i] { background: #c62828; }
 /* _content/BasicSheets.Shared/Pages/Edit.razor.rz.scp.css */
 /* Shared form styles live in app.css — nothing component-specific needed here */
 /* _content/BasicSheets.Shared/Pages/Home.razor.rz.scp.css */

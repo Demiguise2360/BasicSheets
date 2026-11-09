@@ -94,8 +94,12 @@ else
     </div>
 }
 
+<AppDialog @ref="_dlg" />
+
 @code {
     [Parameter] public int Id { get; set; }
+
+    private AppDialog _dlg = default!;
 
     private Setlist? setlist;
     private List<(SetlistItem Item, Sheet Sheet)> rows = new();
@@ -121,7 +125,7 @@ else
     private async Task Rename()
     {
         if (setlist == null) return;
-        var name = await JS.InvokeAsync<string>("prompt", "Name der Setlist:", setlist.Name);
+        var name = await _dlg.PromptAsync("Name der Setlist:", setlist.Name);
         if (string.IsNullOrWhiteSpace(name)) return;
         SetlistService.Rename(Id, name);
         Load();

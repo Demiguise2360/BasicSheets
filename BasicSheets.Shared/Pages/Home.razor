@@ -211,6 +211,8 @@
     }
 </div>
 
+<AppDialog @ref="_dlg" />
+
 @implements IDisposable
 
 @code {
@@ -421,12 +423,14 @@
                            .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
     }
 
+    private AppDialog _dlg = default!;
+
     private async Task DeleteSheet(Sheet sheet)
     {
         statusMessage = null;
         try
         {
-            bool ok = await JsRuntime.InvokeAsync<bool>("confirm", $"«{sheet.Name}» wirklich löschen?");
+            bool ok = await _dlg.ConfirmAsync($"«{sheet.Name}» wirklich löschen?");
             if (!ok) return;
             SheetService.RemoveSheets(sheet);
             StateHasChanged();
@@ -465,7 +469,7 @@
     {
         try
         {
-            var name = await JsRuntime.InvokeAsync<string>("prompt", "Name der Setlist:", "Neue Setlist");
+            var name = await _dlg.PromptAsync("Name der Setlist:", "Neue Setlist");
             if (name == null) return; // cancelled
             var id = SetlistService.Create(name);
             navigationManager.NavigateTo($"/setlists/{id}");
@@ -478,7 +482,7 @@
         try
         {
             var sl = SetlistService.Get(id);
-            bool ok = await JsRuntime.InvokeAsync<bool>("confirm", $"Setlist «{sl?.Name}» löschen?");
+            bool ok = await _dlg.ConfirmAsync($"Setlist «{sl?.Name}» löschen?");
             if (!ok) return;
             SetlistService.Delete(id);
             StateHasChanged();
