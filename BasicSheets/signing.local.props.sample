@@ -1,0 +1,17 @@
+<Project>
+  <!--
+    TEMPLATE. Copy this file to "signing.local.props" (same folder) and fill in
+    your real keystore password(s). The real signing.local.props and *.keystore
+    are git-ignored so your private key and passwords never get committed.
+
+    If signing.local.props is absent, Release Android builds are UNSIGNED and the
+    csproj import is simply skipped — nothing breaks. See ANDROID-SIGNING.md.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>basicsheets-release.keystore</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias>basicsheets</AndroidSigningKeyAlias>
+    <AndroidSigningStorePass>YOUR_KEYSTORE_PASSWORD</AndroidSigningStorePass>
+    <AndroidSigningKeyPass>YOUR_KEY_PASSWORD</AndroidSigningKeyPass>
+  </PropertyGroup>
+</Project>

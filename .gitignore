@@ -41,6 +41,8 @@ project.lock.json
 *.pfx
 *.keystore
 *.jks
+signing.local.props
+
 
 # Xcode / iOS
 DerivedData/
