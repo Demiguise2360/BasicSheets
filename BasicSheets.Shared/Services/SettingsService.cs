@@ -239,6 +239,20 @@ public class SettingsService
             Value       = "hold",
             Options     = ["hold|Halten zum Radieren", "toggle|Umschalten zum Radierer", "off|Aus"]
         });
+        AddIfMissing(new Setting
+        {
+            Name        = "Stift: Druckstärke",
+            Description = "Strichbreite folgt dem Druck des Stifts (nur bei druckempfindlichem Stift).",
+            Type        = "toggle",
+            Value       = "true"
+        });
+        AddIfMissing(new Setting
+        {
+            Name        = "Stift: Handballenerkennung",
+            Description = "Finger- und Handballenberührungen ignorieren, solange der Stift zeichnet.",
+            Type        = "toggle",
+            Value       = "true"
+        });
     }
 
     private static List<string> MakePageModeOptions() =>
@@ -377,6 +391,18 @@ public class SettingsService
     {
         var s = _settings.FirstOrDefault(x => x.Name == "Stift: Seitentaste");
         return s?.Value ?? "hold";
+    }
+
+    public bool PenPressure()
+    {
+        var s = _settings.FirstOrDefault(x => x.Name == "Stift: Druckstärke");
+        return s == null || s.Value != "false";
+    }
+
+    public bool PalmReject()
+    {
+        var s = _settings.FirstOrDefault(x => x.Name == "Stift: Handballenerkennung");
+        return s == null || s.Value != "false";
     }
 
     public bool IsDarkMode()

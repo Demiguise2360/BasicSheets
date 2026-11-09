@@ -2140,6 +2140,8 @@
             await JS.InvokeVoidAsync("initStylusDetection");
             await JS.InvokeVoidAsync("setStylusAutoEdit", SettingsService.StylusAutoEdit());
             await JS.InvokeVoidAsync("setStylusButtonMode", SettingsService.StylusButtonMode());
+            await JS.InvokeVoidAsync("setPenPressure", SettingsService.PenPressure());
+            await JS.InvokeVoidAsync("setPalmReject", SettingsService.PalmReject());
         }
         catch (Exception ex)
         {

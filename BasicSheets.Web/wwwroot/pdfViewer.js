@@ -2366,6 +2366,8 @@ function startDraw(e) {
     if (!editMode) return;
     if (e.touches && e.touches.length > 1) return;
     _drawLocked = false;   // a fresh single-finger / mouse press always begins a new draw
+    // Palm rejection: while a pen is the active instrument, ignore finger/palm touches
+    if (palmRejectOn && e.touches && _lastDownType !== 'pen' && _penActive()) return;
     e.preventDefault();
     const p = getPos(e);
     lastX = p.x; lastY = p.y;
@@ -2415,8 +2417,10 @@ function startDraw(e) {
     }
 
     // Pen / Eraser — begin a new vector stroke
+    _strokePressure = penPressureOn && _lastDownType === 'pen' && tool !== "eraser";
     drawing = true;
-    liveStroke = { color: penColor, size: penSize, eraser: tool === "eraser", points: [p] };
+    liveStroke = { color: penColor, size: penSize, eraser: tool === "eraser",
+                   points: [ _strokePressure ? { x: p.x, y: p.y, p: _penPressure } : p ] };
 }
 
 
@@ -2499,7 +2503,7 @@ function onDrawMove(e) {
 
     // Pen / Eraser — accumulate points and update live preview
     if (liveStroke) {
-        liveStroke.points.push(p);
+        liveStroke.points.push(_strokePressure ? { x: p.x, y: p.y, p: _penPressure } : p);
         if (liveStroke.eraser) eraseNearby(p.x, p.y, penSize * 5);
         redrawPenLayer();
         redrawVectorLayer();
@@ -2587,6 +2591,10 @@ function redrawPenLayer() {
         if (!s.points || s.points.length < 2) continue;
         penCtx.save();
         penCtx.lineCap = penCtx.lineJoin = "round";
+        penCtx.globalAlpha = 1;
+        // Pressure-sensitive pen strokes (points carry `p`) draw segment-by-segment so the
+        // width tracks the pen pressure; everything else keeps the single fast polyline.
+        const varied = !s.eraser && s.points.some(pt => typeof pt.p === "number");
         if (s.eraser) {
             penCtx.globalCompositeOperation = "destination-out";
             penCtx.strokeStyle = "rgba(0,0,0,1)";
@@ -2596,11 +2604,22 @@ function redrawPenLayer() {
             penCtx.strokeStyle = s.color;
             penCtx.lineWidth   = s.size;
         }
-        penCtx.globalAlpha = 1;
-        penCtx.beginPath();
-        penCtx.moveTo(s.points[0].x, s.points[0].y);
-        for (let i = 1; i < s.points.length; i++) penCtx.lineTo(s.points[i].x, s.points[i].y);
-        penCtx.stroke();
+        if (varied) {
+            for (let i = 1; i < s.points.length; i++) {
+                const a = s.points[i - 1], b = s.points[i];
+                const pr = typeof b.p === "number" ? b.p : (typeof a.p === "number" ? a.p : 0.5);
+                penCtx.lineWidth = Math.max(0.5, s.size * (0.35 + 0.85 * pr));
+                penCtx.beginPath();
+                penCtx.moveTo(a.x, a.y);
+                penCtx.lineTo(b.x, b.y);
+                penCtx.stroke();
+            }
+        } else {
+            penCtx.beginPath();
+            penCtx.moveTo(s.points[0].x, s.points[0].y);
+            for (let i = 1; i < s.points.length; i++) penCtx.lineTo(s.points[i].x, s.points[i].y);
+            penCtx.stroke();
+        }
         penCtx.restore();
     }
 }
@@ -3270,6 +3289,19 @@ let _penBtnEraser = false;          // eraser currently engaged via the pen butt
 let _toolBeforePenBtn = null, _sizeBeforePenBtn = null;
 let _stylusBtnBound = false;
 
+// ── Pen pressure + palm rejection ───────────────────────────────────
+let penPressureOn   = true;   // pressure-sensitive stroke width (pen only)
+let palmRejectOn    = true;   // ignore finger/palm touches while a pen is active
+let _penPressure    = 0.5;    // latest pen pressure (0..1)
+let _lastDownType   = 'mouse';// pointerType of the most recent pointerdown
+let _penContact     = false;  // a pen pointer is currently in contact
+let _penSeenTs      = 0;      // last time any pen pointer event fired
+let _strokePressure = false;  // the current stroke is a pressure-sensitive pen stroke
+function _penActive() { return _penContact || (Date.now() - _penSeenTs < 700); }
+
+window.setPenPressure = function(on) { penPressureOn = (on !== false); };
+window.setPalmReject  = function(on) { palmRejectOn  = (on !== false); };
+
 window.setStylusAutoEdit = function(on) { stylusAutoEdit = on; };
 window.setStylusButtonMode = function(m) {
     stylusButtonMode = (m === 'hold' || m === 'toggle') ? m : 'off';
@@ -3349,6 +3381,23 @@ window.initStylusDetection = function() {
         }, true);
         document.addEventListener('pointerup', function(e) {
             if (e.pointerType === 'pen' && stylusButtonMode === 'hold' && _penBtnEraser) disengagePenEraser();
+        }, true);
+
+        // Track pointer type + pen pressure (drives palm rejection + pressure-sensitive strokes).
+        // Pointer events fire just before the paired touch/mouse events the drawing uses, so by
+        // the time startDraw/onDrawMove run, these reflect the current contact.
+        document.addEventListener('pointerdown', function(e) {
+            _lastDownType = e.pointerType;
+            if (e.pointerType === 'pen') { _penContact = true; _penSeenTs = Date.now(); if (e.pressure > 0) _penPressure = e.pressure; }
+        }, true);
+        document.addEventListener('pointermove', function(e) {
+            if (e.pointerType === 'pen') { _penSeenTs = Date.now(); if (e.pressure > 0) _penPressure = e.pressure; }
+        }, true);
+        document.addEventListener('pointerup', function(e) {
+            if (e.pointerType === 'pen') { _penContact = false; _penSeenTs = Date.now(); }
+        }, true);
+        document.addEventListener('pointercancel', function(e) {
+            if (e.pointerType === 'pen') _penContact = false;
         }, true);
     }
 };
