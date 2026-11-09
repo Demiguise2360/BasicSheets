@@ -2730,6 +2730,19 @@
             catch { }
         }
 
+        if (IsScrollMode)
+        {
+            // Scroll modes have no page-turn zones, so a double-tap anywhere just zooms.
+            var tnow = DateTime.UtcNow;
+            if ((tnow - _lastCenterTapAt).TotalMilliseconds < 300)
+            {
+                _lastCenterTapAt = DateTime.MinValue;
+                _ = JS.InvokeVoidAsync("toggleZoomAt", e.ClientX, e.ClientY);
+                return;
+            }
+            _lastCenterTapAt = tnow;
+        }
+
         if (!enableHandleClick || IsScrollMode) return;
 
         double x, w;

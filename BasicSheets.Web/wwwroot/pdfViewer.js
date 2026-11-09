@@ -1195,10 +1195,13 @@ function smoothZoomTo(targetZoom, cx, cy) {
 // Double-tap zoom: toggle between fit-to-width and a zoomed-in view centred on the tap point.
 window.toggleZoomAt = function(sx, sy) {
     if (!baseWidth) return;
-    if (zoom > _baseZoom * 1.15) {
-        smoothZoomTo(_baseZoom, window.innerWidth / 2, window.innerHeight / 2);   // zoomed in → back to the page's fit
+    // single/two use the page-scaling fit (_baseZoom, set by applyPageScaling); half-turn and
+    // scroll fits aren't set there, but getFitZoom() returns their correct fit — so use it.
+    const base = (_displayMode === 'single' || _displayMode === 'two') ? _baseZoom : getFitZoom();
+    if (zoom > base * 1.15) {
+        smoothZoomTo(base, window.innerWidth / 2, window.innerHeight / 2);   // zoomed in → back to fit
     } else {
-        smoothZoomTo(Math.min(_baseZoom * 2.5, 5), sx, sy);   // zoom in, centred on the tapped point
+        smoothZoomTo(Math.min(base * 2.5, 5), sx, sy);   // zoom in, centred on the tapped point
     }
 };
 
