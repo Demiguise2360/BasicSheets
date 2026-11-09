@@ -2584,6 +2584,22 @@ function endDraw(e) {
 //  Pen layer — vector stroke replay (fixes eraser in all WebViews)
 // ═══════════════════════════════════════════════════════════════════
 
+// Stroke a smooth path through pts using quadratic Béziers via segment midpoints, so fast
+// scribbles read as curves instead of faceted polylines. Uses the ctx's current style/width.
+function _strokeSmoothPath(ctx, pts) {
+    const n = pts.length;
+    if (n < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    if (n === 2) { ctx.lineTo(pts[1].x, pts[1].y); ctx.stroke(); return; }
+    for (let i = 1; i < n - 1; i++) {
+        const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    }
+    ctx.quadraticCurveTo(pts[n - 2].x, pts[n - 2].y, pts[n - 1].x, pts[n - 1].y);
+    ctx.stroke();
+}
+
 function redrawPenLayer() {
     penCtx.clearRect(0, 0, penCanvas.width, penCanvas.height);
     const all = liveStroke ? [...penStrokes, liveStroke] : penStrokes;
@@ -2615,10 +2631,7 @@ function redrawPenLayer() {
                 penCtx.stroke();
             }
         } else {
-            penCtx.beginPath();
-            penCtx.moveTo(s.points[0].x, s.points[0].y);
-            for (let i = 1; i < s.points.length; i++) penCtx.lineTo(s.points[i].x, s.points[i].y);
-            penCtx.stroke();
+            _strokeSmoothPath(penCtx, s.points);
         }
         penCtx.restore();
     }
@@ -2640,17 +2653,13 @@ function redrawMarkers(livePoints) {
         tc.strokeStyle = m.color;
         tc.lineWidth   = m.size || 15;
         tc.globalAlpha = 1; tc.globalCompositeOperation = "source-over";
-        tc.beginPath(); tc.moveTo(m.points[0].x, m.points[0].y);
-        for (let i = 1; i < m.points.length; i++) tc.lineTo(m.points[i].x, m.points[i].y);
-        tc.stroke();
+        _strokeSmoothPath(tc, m.points);
     }
     if (livePoints && livePoints.length > 1) {
         tc.strokeStyle = penColor;
         tc.lineWidth   = penSize * 3;
         tc.globalAlpha = 1; tc.globalCompositeOperation = "source-over";
-        tc.beginPath(); tc.moveTo(livePoints[0].x, livePoints[0].y);
-        for (let i = 1; i < livePoints.length; i++) tc.lineTo(livePoints[i].x, livePoints[i].y);
-        tc.stroke();
+        _strokeSmoothPath(tc, livePoints);
     }
     markerCtx.globalAlpha = 0.35;
     markerCtx.drawImage(tmp, 0, 0);
