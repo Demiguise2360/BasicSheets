@@ -2292,7 +2292,20 @@ function onDrawMove(e) {
     }
 
     if (SHAPE_TOOLS.includes(tool) && shapeStart) {
-        liveShape = { kind: tool, x1: shapeStart.x, y1: shapeStart.y, x2: p.x, y2: p.y,
+        let ex = p.x, ey = p.y;                            // snapped endpoint
+        const adx = Math.abs(ex - shapeStart.x), ady = Math.abs(ey - shapeStart.y);
+        const m = Math.max(adx, ady);
+        if (m > 10) {
+            if (tool === "line" || tool === "arrow") {
+                const deg = Math.atan2(ady, adx) * 180 / Math.PI;   // 0 (horizontal) … 90 (vertical)
+                if (deg < 8)       ey = shapeStart.y;               // near-horizontal → flatten
+                else if (deg > 82) ex = shapeStart.x;               // near-vertical → straighten
+            } else if (Math.abs(adx - ady) < m * 0.12) {           // rect/ellipse near-square → snap equal
+                ex = shapeStart.x + Math.sign(ex - shapeStart.x) * m;
+                ey = shapeStart.y + Math.sign(ey - shapeStart.y) * m;
+            }
+        }
+        liveShape = { kind: tool, x1: shapeStart.x, y1: shapeStart.y, x2: ex, y2: ey,
                       color: penColor, size: penSize,
                       fill: (_shapeFill && (tool === "rect" || tool === "ellipse")) };
         redrawVectorLayer();
