@@ -76,6 +76,8 @@ let _panDragging = false, _panStartX = 0, _panStartY = 0;
 let _mouseRawStartX = 0, _mouseRawStartY = 0;   // raw pointer-down position, for swipe-to-turn
 let _wasPinching = false;
 let _twoFingerTapStart = 0;
+let _editSwipe  = null;     // active two-finger page-turn gesture while in edit mode
+let _drawLocked = false;    // true from a 2nd finger landing until all fingers lift (blocks stray drawing)
 
 // ── Active render task (cancel before re-rendering same canvas) ─────
 let _activeRenderTask = null;
@@ -1460,7 +1462,8 @@ function setupInteraction() {
 // ── Touch ──────────────────────────────────────────────────────────
 
 function onTouchStart(e) {
-    if (editMode || cropEditing) return;
+    if (cropEditing) return;
+    if (editMode) { _editSwipeStart(e); return; }   // edit mode: one finger draws, two fingers turn pages
     stopInertia();
     if (e.touches.length === 1) {
         _touchDragging = true;
@@ -1482,7 +1485,8 @@ function onTouchStart(e) {
 }
 
 function onTouchMove(e) {
-    if (editMode || cropEditing) return;
+    if (cropEditing) return;
+    if (editMode) { _editSwipeMove(e); return; }
 
     if (e.touches.length === 2) {
         e.preventDefault();
@@ -1542,8 +1546,55 @@ function _maybeSwipeTurn(dx, dy) {
     return true;
 }
 
+// ── Two-finger swipe to turn pages while in EDIT mode ────────────────
+// One finger draws; the moment a second finger lands we drop the stroke the first finger
+// began and start a page-turn candidate. If the two fingers then slide sideways together
+// (not a pinch), the page turns. Drawing stays locked until every finger lifts, so the
+// gesture never leaves a stray mark.
+function _cancelActiveDraw() {
+    drawing = false;
+    liveStroke = null;
+    markerPoints = [];
+    hairpinStart = null; liveHairpin = null;
+    shapeStart = null; liveShape = null;
+    liveStamp = null;
+    moveTgt = null;
+    try { redrawPenLayer(); redrawVectorLayer(); } catch (e) {}
+}
+function _editSwipeStart(e) {
+    if (!e.touches || e.touches.length !== 2) return;
+    _cancelActiveDraw();
+    _drawLocked = true;
+    const a = e.touches[0], b = e.touches[1];
+    const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+    _editSwipe = { sx: cx, sy: cy, lx: cx, ly: cy,
+                   d0: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), maxDD: 0 };
+}
+function _editSwipeMove(e) {
+    if (!_editSwipe || !e.touches || e.touches.length !== 2) return;
+    e.preventDefault();
+    const a = e.touches[0], b = e.touches[1];
+    _editSwipe.lx = (a.clientX + b.clientX) / 2;
+    _editSwipe.ly = (a.clientY + b.clientY) / 2;
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    _editSwipe.maxDD = Math.max(_editSwipe.maxDD, Math.abs(d - _editSwipe.d0));   // track pinch amount
+}
+function _editSwipeEnd(e) {
+    if (_editSwipe && e.touches.length < 2) {
+        const s = _editSwipe; _editSwipe = null;
+        const dx = s.lx - s.sx, dy = s.ly - s.sy;
+        // mostly-horizontal slide and NOT a pinch → turn the page
+        if (s.maxDD < 60 && Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+            _suppressClick = true;
+            if (dotNetRef) dotNetRef.invokeMethodAsync('OnGesture', dx < 0 ? 'next_page' : 'prev_page');
+        }
+    }
+    if (e.touches.length === 0) _drawLocked = false;   // all fingers up → drawing allowed again
+}
+
 function onTouchEnd(e) {
-    if (editMode || cropEditing) return;
+    if (cropEditing) return;
+    if (editMode) { _editSwipeEnd(e); return; }
     if (e.touches.length === 0) {
         if (_wasPinching === false && _twoFingerTapStart > 0 && !lastDist) {
             const elapsed = Date.now() - _twoFingerTapStart;
@@ -2314,6 +2365,7 @@ function getPos(e) {
 function startDraw(e) {
     if (!editMode) return;
     if (e.touches && e.touches.length > 1) return;
+    _drawLocked = false;   // a fresh single-finger / mouse press always begins a new draw
     e.preventDefault();
     const p = getPos(e);
     lastX = p.x; lastY = p.y;
@@ -2372,6 +2424,7 @@ function startDraw(e) {
 function onDrawMove(e) {
     if (!editMode) return;
     if (e.touches && e.touches.length > 1) return;
+    if (_drawLocked) return;   // a two-finger page-turn is in progress → don't draw
     e.preventDefault();
     const p = getPos(e);
 
@@ -2457,6 +2510,7 @@ function onDrawMove(e) {
 
 // ── endDraw ──────────────────────────────────────────────────────────
 function endDraw(e) {
+    if (_drawLocked) return;   // stroke was cancelled for a two-finger page-turn → commit nothing
     const isLeave = e && e.type === "mouseleave";
 
     if (isLeave) {

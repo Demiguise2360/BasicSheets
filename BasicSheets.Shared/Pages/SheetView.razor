@@ -443,6 +443,21 @@
             </button>
         </div>
 
+        @* Quick-colour row — pops up with any colour tool so you can switch colour
+           with one tap, before or after drawing (the dot below opens the full editor) *@
+        @if (ColorAppliesToTool)
+        {
+            <div class="sp-qcolor-row">
+                @foreach (var c in allColors)
+                {
+                    var cc = c;
+                    <button class="qcolor @(activeColor == cc[0] ? "qcolor-on" : "")"
+                            style="background:@cc[0]" title="@(string.IsNullOrEmpty(cc[1]) ? cc[0] : cc[1])"
+                            @onclick="() => SetColor(cc[0])"></button>
+                }
+            </div>
+        }
+
         @* Options row *@
         <div class="sp-opts-row">
             <button class="et-color-btn" @onclick="OpenColorPicker">
@@ -1472,6 +1487,7 @@
     private bool   CurrentStampIsDyn => activeStamp.StartsWith("dyn-");
     private string CurrentStampSym   => AllStamps.FirstOrDefault(s => s.Key == activeStamp)?.Sym ?? "♭";
     private bool   IsNoSizeTool      => activeTool == "move" || IsStampActive;
+    private bool   ColorAppliesToTool => activeTool != "eraser" && activeTool != "move";   // quick-colour row shows for these
     private bool   IsShapeFillable   => activeTool == "rect" || activeTool == "ellipse";
     private bool   _shapeFill;       // fill rect/ellipse with a translucent wash (region highlight)
     private bool   IsScrollMode   => effectiveMode == "scroll-v" || effectiveMode == "scroll-h";
