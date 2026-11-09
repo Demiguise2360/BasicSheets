@@ -7,4 +7,7 @@ namespace BasicSheets.Shared.Services;
 public interface IShareService
 {
     Task ShareImageAsync(byte[] data, string fileName, string title);
+
+    /// <summary>Writes the bytes to a file and hands it to the OS share sheet (any file type).</summary>
+    Task ShareFileAsync(byte[] data, string fileName, string title);
 }

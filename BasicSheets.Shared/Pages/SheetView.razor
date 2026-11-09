@@ -1235,6 +1235,16 @@
                 </div>
             }
 
+            <div class="vab-section">
+                <div class="vab-head">Notizen-Backup</div>
+                <button class="vab-add" @onclick="ExportAnnotations" title="Alle Stift-/Marker-/Text-Notizen in eine Datei sichern">
+                    &#x2913; In Datei sichern
+                </button>
+                <button class="vab-add" @onclick="ImportAnnotations" title="Notizen aus einer Sicherungsdatei wiederherstellen">
+                    &#x2912; Aus Datei laden
+                </button>
+            </div>
+
         </div>
     </div>
 }
@@ -2673,6 +2683,69 @@
         foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
         name = name.Trim();
         return string.IsNullOrEmpty(name) ? "Seite" : name;
+    }
+
+    // ── Freehand-notes backup / restore ───────────────────────────────────
+    // Pen/marker/stamp/text/hairpin/shape annotations live only in the browser's
+    // localStorage (bookmarks, link points and tempo are in the DB). These save a
+    // copy to a file and restore it — e.g. before clearing data or on a new device.
+    private async Task ExportAnnotations()
+    {
+        showActionBox = false;
+        try
+        {
+            var json = await JS.InvokeAsync<string?>("exportAnnotationsJson");
+            if (string.IsNullOrEmpty(json))
+            {
+                ShowNotice("Keine Notizen zum Sichern vorhanden.");
+                return;
+            }
+            var name = $"BasicSheets-Notizen_{DateTime.Now:yyyy-MM-dd}.json";
+            if (_shareService != null)   // MAUI → native share sheet
+            {
+                var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+                await _shareService.ShareFileAsync(bytes, name, "Notizen sichern");
+            }
+            else                         // web → browser download
+            {
+                var b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+                await JS.InvokeVoidAsync("downloadDataUrl", "data:application/json;base64," + b64, name);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage($"Sicherung fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    private async Task ImportAnnotations()
+    {
+        showActionBox = false;
+        try
+        {
+            var n = await JS.InvokeAsync<int>("importAnnotationsPick");
+            if (n < 0)  { ShowErrorMessage("Datei konnte nicht gelesen werden (kein gültiges Backup)."); return; }
+            if (n == 0) { return; }   // cancelled / nothing imported
+            await RenderCurrent();     // reloads this page's notes so restored marks appear at once
+            ShowNotice($"{n} wiederhergestellt. Andere Dokumente zeigen die Notizen beim nächsten Öffnen.");
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage($"Wiederherstellung fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    // Transient neutral toast (reuses the vnotice slot), auto-clears after a moment.
+    private void ShowNotice(string msg)
+    {
+        _batchNotice = msg;
+        StateHasChanged();
+        var token = msg;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(2600);
+            await InvokeAsync(() => { if (_batchNotice == token) { _batchNotice = null; StateHasChanged(); } });
+        });
     }
 
     private async Task RenderCurrent()

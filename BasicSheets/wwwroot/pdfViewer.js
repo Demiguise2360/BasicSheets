@@ -1236,6 +1236,98 @@ window.downloadDataUrl = function(dataUrl, filename) {
     } catch (e) { return false; }
 };
 
+// ── Freehand-notes backup / restore ─────────────────────────────────
+// Pen/marker/stamp/text/hairpin/shape annotations live ONLY in this browser's
+// localStorage, under bsv2_<pdfKey>_p<N> / _scroll-v / _scroll-h. Bookmarks,
+// link points and tempo are in the DB; these notes have no other copy, so a
+// cleared cache or a new device loses them. The helpers below let the user keep
+// a copy in a file and bring it back.
+const _BSV2_PREFIX = 'bsv2_';
+
+window.countAnnotationKeys = function() {
+    let n = 0;
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf(_BSV2_PREFIX) === 0) n++;
+        }
+    } catch (e) {}
+    return n;
+};
+
+// Returns a JSON string { v, app, exported, count, data:{ key:value } } holding
+// every bsv2_ entry, or null if there are none / on error.
+window.exportAnnotationsJson = function() {
+    try {
+        const data = {};
+        let n = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf(_BSV2_PREFIX) === 0) {
+                const v = localStorage.getItem(k);
+                if (v != null) { data[k] = v; n++; }
+            }
+        }
+        if (n === 0) return null;
+        return JSON.stringify({ v: 1, app: 'BasicSheets', exported: new Date().toISOString(), count: n, data: data });
+    } catch (e) { return null; }
+};
+
+// Writes back every bsv2_ entry from a backup JSON string (additive/overwrite:
+// documents not present in the file keep their current notes). Returns the number
+// of entries written, or -1 if the text is not a valid backup.
+window.importAnnotationsJson = function(json) {
+    try {
+        const obj = JSON.parse(json);
+        const data = obj && obj.data;
+        if (!data || typeof data !== 'object') return -1;
+        let n = 0;
+        for (const k in data) {
+            if (k.indexOf(_BSV2_PREFIX) !== 0) continue;   // never write outside our namespace
+            const v = data[k];
+            if (typeof v === 'string') { try { localStorage.setItem(k, v); n++; } catch (e) {} }
+        }
+        return n;
+    } catch (e) { return -1; }
+};
+
+// Opens the OS file picker (works in the MAUI WebView and on the web host), reads
+// the chosen .json and imports it. Resolves to the number of entries written
+// (0 if cancelled, -1 on a bad file). Pure JS, so no native file service needed.
+window.importAnnotationsPick = function() {
+    return new Promise(function(resolve) {
+        try {
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.accept = 'application/json,.json';
+            inp.style.position = 'fixed'; inp.style.left = '-9999px';
+            let settled = false;
+            const done = function(val) {
+                if (settled) return;
+                settled = true;
+                try { inp.remove(); } catch (e) {}
+                resolve(val);
+            };
+            inp.onchange = function() {
+                const f = inp.files && inp.files[0];
+                if (!f) return done(0);
+                const r = new FileReader();
+                r.onload  = function() { done(window.importAnnotationsJson(String(r.result || ''))); };
+                r.onerror = function() { done(-1); };
+                r.readAsText(f);
+            };
+            // Cancel detection: if the dialog is dismissed, onchange never fires;
+            // when focus returns and no file was chosen, resolve 0.
+            window.addEventListener('focus', function onF() {
+                window.removeEventListener('focus', onF);
+                setTimeout(function() { if (!settled && (!inp.files || !inp.files.length)) done(0); }, 500);
+            }, { once: true });
+            document.body.appendChild(inp);
+            inp.click();
+        } catch (e) { resolve(-1); }
+    });
+};
+
 // ── PDF embedded outline (table of contents) ────────────────────────
 // Flattens the PDF's own bookmark tree to [{title, page, level}] with
 // 1-based page numbers. Dest-less nodes get page 0 (Blazor filters them out).

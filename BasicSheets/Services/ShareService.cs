@@ -8,7 +8,10 @@ namespace BasicSheets.Services;
 /// </summary>
 public class ShareService : IShareService
 {
-    public async Task ShareImageAsync(byte[] data, string fileName, string title)
+    public Task ShareImageAsync(byte[] data, string fileName, string title)
+        => ShareFileAsync(data, fileName, title);
+
+    public async Task ShareFileAsync(byte[] data, string fileName, string title)
     {
         var path = Path.Combine(FileSystem.Current.CacheDirectory, fileName);
         await File.WriteAllBytesAsync(path, data);
