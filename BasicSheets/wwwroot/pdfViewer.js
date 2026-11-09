@@ -73,6 +73,7 @@ let _touchDragging = false, _touchStartX = 0, _touchStartY = 0;
 let _touchInitPanX = 0, _touchInitPanY = 0, _touchMoved = false;
 let _lastTouchX = 0, _lastTouchY = 0, _lastTouchTime = 0;
 let _panDragging = false, _panStartX = 0, _panStartY = 0;
+let _mouseRawStartX = 0, _mouseRawStartY = 0;   // raw pointer-down position, for swipe-to-turn
 let _wasPinching = false;
 let _twoFingerTapStart = 0;
 
@@ -1400,6 +1401,18 @@ function onTouchMove(e) {
     }
 }
 
+// A fast horizontal swipe turns the page — but only in paged modes and only when the page
+// can't pan horizontally (at fit). When zoomed in, a horizontal drag pans instead, so the
+// gesture never fights panning. Returns true if it turned a page.
+function _maybeSwipeTurn(dx, dy) {
+    if (_displayMode !== 'single' && _displayMode !== 'two' && _displayMode !== 'half-turn') return false;
+    if (_cw() * zoom > window.innerWidth + 2) return false;                 // pannable horizontally → it's a pan
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return false;
+    _suppressClick = true;
+    if (dotNetRef) dotNetRef.invokeMethodAsync('OnGesture', dx < 0 ? 'next_page' : 'prev_page');
+    return true;
+}
+
 function onTouchEnd(e) {
     if (editMode || cropEditing) return;
     if (e.touches.length === 0) {
@@ -1413,6 +1426,11 @@ function onTouchEnd(e) {
             }
         }
         _twoFingerTapStart = 0;
+        if (_touchDragging && _touchMoved && !lastDist && e.changedTouches && e.changedTouches.length) {
+            const dx = e.changedTouches[0].clientX - _touchStartX;
+            const dy = e.changedTouches[0].clientY - _touchStartY;
+            if (_maybeSwipeTurn(dx, dy)) { _touchDragging = false; return; }
+        }
         if (lastDist) {
             const fit = getFitZoom();
             if (zoom < fit * 1.08 && zoom > fit * 0.85) smoothZoomTo(fit);
@@ -1531,6 +1549,7 @@ function onMouseDown(e) {
     if (editMode || cropEditing || e.button !== 0) return;
     _panDragging = true;
     _panStartX = e.clientX - panX; _panStartY = e.clientY - panY;
+    _mouseRawStartX = e.clientX; _mouseRawStartY = e.clientY;
     document.body.style.cursor = 'grabbing';
 }
 
@@ -1541,10 +1560,14 @@ function onMouseMove(e) {
     clampPan(); applyView();
 }
 
-function onMouseUp() {
+function onMouseUp(e) {
     if (!_panDragging) return;
     _panDragging = false;
     document.body.style.cursor = editMode ? 'crosshair' : 'grab';
+    if (e) {
+        const dx = e.clientX - _mouseRawStartX, dy = e.clientY - _mouseRawStartY;
+        _maybeSwipeTurn(dx, dy);
+    }
 }
 
 // ── Resize ─────────────────────────────────────────────────────────
