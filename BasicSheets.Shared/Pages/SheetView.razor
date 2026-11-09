@@ -21,7 +21,7 @@
     @if (showEnd)   { <div class="vnotice"><p>Ende des Stücks</p></div>   }
     @if (_batchNotice != null) { <div class="vnotice"><p>@_batchNotice</p></div> }
     @if (_lockMsg != null)     { <div class="vnotice"><p>@_lockMsg</p></div>     }
-    @if (showError) { <div class="verror"><p>@errorMessage</p></div>       }
+    @if (showError) { <div class="verror" @onclick="() => showError = false"><p>@errorMessage</p></div> }
     <div id="page-spinner" class="page-spinner" style="display:none">
         <div class="spinner-ring"></div>
     </div>
@@ -2226,7 +2226,7 @@
             // Generate a first-page thumbnail once (cached), reusing the loaded pdfDoc.
             try
             {
-                if (!ThumbnailService.Has(file))
+                if (!string.IsNullOrEmpty(file) && !ThumbnailService.Has(file))
                 {
                     var thumb = await RenderThumbAsync();
                     if (!string.IsNullOrEmpty(thumb))
@@ -2315,6 +2315,13 @@
         showError = true;
         errorMessage = msg;
         StateHasChanged();
+        // Auto-dismiss so an error banner never sticks forever (it's also tap-to-dismiss).
+        var token = msg;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(6500);
+            await InvokeAsync(() => { if (showError && errorMessage == token) { showError = false; StateHasChanged(); } });
+        });
     }
 
     private void RecalcPageCount()
