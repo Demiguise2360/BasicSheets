@@ -235,15 +235,27 @@
    anywhere on it expands. 2 classes beat the responsive `.spanel { width }` rule. */
 .spanel.spanel-collapsed {
     width: auto;
-    min-width: 5.5rem;
+    min-width: 0;
     padding: 0;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 .spanel-collapsed .spanel-head {
     margin: 0;
-    height: 2.4rem;
-    padding: 0 0.9rem;
-    border-radius: 0.9rem;
+    width: 3.15rem; height: 3.15rem;
+    padding: 0;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.3);
+    background: linear-gradient(145deg,#6ba89e 0%,#4d8a80 65%,#3c7169 100%);
+    box-shadow: 0 6px 20px rgba(77,138,128,0.55), inset 0 1px 1px rgba(255,255,255,0.3);
 }
+.spanel-collapsed .spanel-head:active { background: linear-gradient(145deg,#5f9a90,#43796f); }
+.spanel-fab-icon { width: 44%; height: 44%; object-fit: contain; filter: invert(1); opacity: 1; }
+.spanel-fab-sym  { color: #fff; font-size: 1.3rem; line-height: 1; font-weight: 600; }
+.spanel-fab-music { font-family: "FreeSerif","Noto Serif",Georgia,serif; font-weight: 400; }
 
 /* ── Tool strip (wrapping grid) ───────────────────── */
 .sp-tools-strip {
@@ -251,25 +263,30 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.22rem;
-    padding: 0.1rem 0;
+    gap: 0.3rem;
+    padding: 0.2rem 0 0.1rem;
 }
 .spanel .et-sep { display: none; }
 
 .et-tool {
     flex-shrink: 0;
-    width: 2.1rem; height: 2.1rem;
-    border-radius: 0.4rem;
-    border: 2px solid transparent;
-    background: rgba(255,255,255,0.09);
+    width: 2.35rem; height: 2.35rem;
+    border-radius: 50%;                       /* round tool icons */
+    border: 1.5px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.07);
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
-    transition: background 0.1s, border-color 0.1s;
+    transition: background 0.14s ease, border-color 0.14s ease, transform 0.08s ease, box-shadow 0.14s ease;
     padding: 0;
 }
-.et-tool:active { background: rgba(255,255,255,0.25); }
-.et-tool-on     { background: rgba(255,255,255,0.92) !important; border-color: rgba(147,191,183,0.6); }
-.et-tool-on .etsym { color: var(--c-primary-dk, #345e58); }
+.et-tool:hover  { background: rgba(255,255,255,0.14); }
+.et-tool:active { transform: scale(0.9); }
+.et-tool-on {
+    background: linear-gradient(145deg,#6ba89e 0%,#4d8a80 70%) !important;
+    border-color: rgba(255,255,255,0.55);
+    box-shadow: 0 2px 9px rgba(77,138,128,0.55), inset 0 1px 1px rgba(255,255,255,0.25);
+}
+.et-tool-on .etsym { color: #ffffff; }
 
 .et-sep {
     width: 1px; height: 1.4rem;
@@ -279,12 +296,13 @@
 }
 
 .eticon {
-    width: 50%; height: 50%;
+    width: 52%; height: 52%;
     object-fit: contain;
-    filter: invert(1) opacity(0.85);
+    filter: invert(1) opacity(0.8);
+    transition: opacity 0.14s ease;
 }
 .eticon-on,
-.et-tool-on .eticon { filter: none; opacity: 1; }
+.et-tool-on .eticon { filter: invert(1); opacity: 1; }   /* white icon on the teal active fill */
 
 .etsym {
     color: rgba(255,255,255,0.88);
@@ -388,16 +406,17 @@
 .et-flex { flex: 1; }
 
 .et-act {
-    width: 1.7rem; height: 1.7rem;
+    width: 1.95rem; height: 1.95rem;
     background: rgba(255,255,255,0.07);
-    border: none; border-radius: 0.4rem;
+    border: none; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background 0.12s ease, transform 0.08s ease;
     flex-shrink: 0;
 }
-.et-act:active { background: rgba(255,255,255,0.2); }
-.et-act .eticon { width: 48%; height: 48%; }
+.et-act:hover  { background: rgba(255,255,255,0.14); }
+.et-act:active { background: rgba(255,255,255,0.2); transform: scale(0.9); }
+.et-act .eticon { width: 50%; height: 50%; }
 
 /* ── mode dropdown ────────────────────────────────────────────────────────── */
 .mdrop-bg {

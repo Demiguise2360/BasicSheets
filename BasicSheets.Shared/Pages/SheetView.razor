@@ -375,11 +375,34 @@
         @* Header = drag + tap-to-toggle: tippen klappt ein/aus, ziehen verschiebt *@
         <div id="spanel-drag" class="spanel-head"
              title="@(panelCollapsed ? "Antippen zum Ausklappen · ziehen zum Verschieben" : "Antippen zum Einklappen · ziehen zum Verschieben")">
-            <span class="spanel-grip-bar"></span>
-            <svg class="spanel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="6 15 12 9 18 15"/>
-            </svg>
+            @if (panelCollapsed)
+            {
+                @* Collapsed = a round FAB showing the active tool (tap to open the tools) *@
+                @if (ToolIconSvg.TryGetValue(activeTool, out var _fabSvg))
+                {
+                    <img src="/_content/BasicSheets.Shared/icons/@_fabSvg" class="spanel-fab-icon" alt="" />
+                }
+                else if (IsStampActive)
+                {
+                    <span class="spanel-fab-sym spanel-fab-music @(CurrentStampIsDyn ? "etsym-dyn" : "")">@CurrentStampSym</span>
+                }
+                else if (activeTool == "text")
+                {
+                    <span class="spanel-fab-sym">T</span>
+                }
+                else
+                {
+                    <span class="spanel-fab-sym">&#x270E;</span>
+                }
+            }
+            else
+            {
+                <span class="spanel-grip-bar"></span>
+                <svg class="spanel-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 15 12 9 18 15"/>
+                </svg>
+            }
         </div>
 
       @if (!panelCollapsed)
@@ -1495,6 +1518,14 @@
     private bool   IsHalfTurnMode => effectiveMode == "half-turn";
     private int    PagePercent    => pageCount > 1 ? (int)Math.Round((currentPage - 1) * 100.0 / (pageCount - 1)) : 0;
     private string ET(string t) => "et-tool" + (activeTool == t ? " et-tool-on" : "");
+
+    // icon (svg) for each non-text/stamp tool — used by the collapsed round FAB
+    private static readonly Dictionary<string, string> ToolIconSvg = new()
+    {
+        ["pen"] = "pen.svg", ["marker"] = "marker.svg", ["eraser"] = "eraser.svg", ["move"] = "move.svg",
+        ["crescendo"] = "crescendo.svg", ["decrescendo"] = "decrescendo.svg",
+        ["line"] = "shape-line.svg", ["arrow"] = "shape-arrow.svg", ["rect"] = "shape-rect.svg", ["ellipse"] = "shape-ellipse.svg",
+    };
     private double ClampX(double x) => Math.Max(4,  Math.Min(x, 260));
     private double ClampY(double y) => Math.Max(60, Math.Min(y, 500));
 
