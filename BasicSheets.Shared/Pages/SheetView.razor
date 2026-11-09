@@ -613,6 +613,21 @@
     </div>
 }
 
+@* ── Clear-page confirmation ─────────────────────────────────────── *@
+@if (_showClearConfirm)
+{
+    <div class="vconfirm-bg" @onclick="() => { _showClearConfirm = false; }">
+        <div class="vconfirm-box" @onclick:stopPropagation="true">
+            <div class="vconfirm-title">Seite leeren?</div>
+            <div class="vconfirm-text">Alle Notizen auf dieser Seite werden gelöscht. Nach dem Blättern lässt sich das nicht mehr rückgängig machen.</div>
+            <div class="vconfirm-btns">
+                <button class="vconfirm-cancel" @onclick="() => { _showClearConfirm = false; }">Abbrechen</button>
+                <button class="vconfirm-del" @onclick="ConfirmClearPage">Löschen</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* ── Stamp picker popup ───────────────────────────────────────────── *@
 @if (showStampPicker)
 {
@@ -3272,7 +3287,21 @@
 
     private void Undo()      => _ = JS.InvokeVoidAsync("undoNote");
     private void Redo()      => _ = JS.InvokeVoidAsync("redoNote");
-    private void ClearPage() => _ = JS.InvokeVoidAsync("clearNotes");
+    private bool _showClearConfirm;
+    private async Task ClearPage()
+    {
+        bool has = false;
+        try { has = await JS.InvokeAsync<bool>("hasPageNotes"); } catch { }
+        if (!has) return;                     // nothing on this page → no-op, no dialog
+        _showClearConfirm = true;
+        StateHasChanged();
+    }
+    private async Task ConfirmClearPage()
+    {
+        _showClearConfirm = false;
+        try { await JS.InvokeVoidAsync("clearNotes"); } catch { }
+        StateHasChanged();
+    }
 
     // ── Color picker ─────────────────────────────────────────────────────
     private void OpenColorPicker()  { showColorPicker = true; colorEditMode = false; editColorIdx = -1; }

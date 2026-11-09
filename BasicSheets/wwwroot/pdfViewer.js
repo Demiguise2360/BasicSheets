@@ -3112,6 +3112,12 @@ window.clearNotes = function() {
     saveNotes();
 };
 
+// Does the current page have any live annotations? Used to confirm before clearing.
+window.hasPageNotes = function() {
+    return !!(penStrokes.length || markerAnnotations.length || stampAnnotations.length ||
+              textAnnotations.length || hairpinAnnotations.length || shapeAnnotations.length);
+};
+
 // Hide / show all annotation layers (pen, marker, stamps, text, hairpins, shapes)
 // without deleting them — the PDF page and link-point markers stay visible.
 window.setNotesVisible = function(v) {

@@ -479,6 +479,34 @@
 .mdrop-check { color: var(--c-primary); font-size: 1rem; font-weight: 700; flex-shrink: 0; }
 
 /* ── color picker popup ───────────────────────────────────────────────────── */
+/* Clear-page confirmation (centered alert) */
+.vconfirm-bg {
+    position: fixed; inset: 0; z-index: 600;
+    background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.vconfirm-box {
+    background: var(--c-surface, #fff);
+    color: var(--c-text, #1a1a1a);
+    border-radius: 1rem;
+    padding: 1.25rem 1.25rem 1rem;
+    width: min(21rem, calc(100vw - 2rem));
+    box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+}
+.vconfirm-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
+.vconfirm-text  { font-size: 0.88rem; opacity: 0.78; line-height: 1.45; margin-bottom: 1.15rem; }
+.vconfirm-btns  { display: flex; gap: 0.6rem; justify-content: flex-end; }
+.vconfirm-cancel, .vconfirm-del {
+    padding: 0.55rem 1.15rem; border-radius: 0.6rem;
+    font-size: 0.92rem; font-weight: 600; cursor: pointer; border: none;
+    transition: background 0.1s ease;
+}
+.vconfirm-cancel { background: rgba(127,127,127,0.18); color: var(--c-text, #1a1a1a); }
+.vconfirm-cancel:active { background: rgba(127,127,127,0.32); }
+.vconfirm-del    { background: #E53935; color: #fff; }
+.vconfirm-del:active { background: #c62828; }
+
 .cpick-bg {
     position: fixed; inset: 0; z-index: 500;
     background: rgba(0,0,0,0.45);
