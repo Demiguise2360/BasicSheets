@@ -1207,6 +1207,35 @@ window.toggleZoomAt = function(sx, sy) {
 
 window.getWindowWidth = () => window.innerWidth;
 
+// Composite the current page — PDF + highlights + annotations (pen/stamps/text/hairpins/
+// shapes) — into a PNG data URL. Excludes the link-point overlay (navigation UI). The PDF
+// canvas is already opaque white, but we fill white first as a safety net. Returns null if
+// nothing suitable is rendered.
+window.exportPagePng = function() {
+    try {
+        if (!canvas || !canvas.width || !canvas.height) return null;
+        const w = canvas.width, h = canvas.height;
+        if (w < 2 || h < 2) return null;
+        const out = makeCanvas(w, h);
+        const o = out.getContext('2d');
+        o.fillStyle = '#ffffff'; o.fillRect(0, 0, w, h);
+        o.drawImage(canvas, 0, 0);
+        if (markerCanvas && markerCanvas.width) o.drawImage(markerCanvas, 0, 0);
+        if (noteCanvas && noteCanvas.width)     o.drawImage(noteCanvas, 0, 0);
+        return out.toDataURL('image/png');
+    } catch (e) { return null; }
+};
+
+// Web fallback: trigger a browser download of a data URL (MAUI uses the native share service).
+window.downloadDataUrl = function(dataUrl, filename) {
+    try {
+        const a = document.createElement('a');
+        a.href = dataUrl; a.download = filename || 'page.png';
+        document.body.appendChild(a); a.click(); a.remove();
+        return true;
+    } catch (e) { return false; }
+};
+
 // ── PDF embedded outline (table of contents) ────────────────────────
 // Flattens the PDF's own bookmark tree to [{title, page, level}] with
 // 1-based page numbers. Dest-less nodes get page 0 (Blazor filters them out).

@@ -1225,6 +1225,16 @@
                 </button>
             </div>
 
+            @if (CanExportPage)
+            {
+                <div class="vab-section">
+                    <div class="vab-head">Teilen</div>
+                    <button class="vab-add" @onclick="ExportCurrentPage">
+                        &#x21a5; Seite als Bild (mit Notizen)
+                    </button>
+                </div>
+            }
+
         </div>
     </div>
 }
@@ -1310,6 +1320,8 @@
     private ElementReference _pageInputRef;
     private bool   _focusPageInput;
     private DateTime _lastCenterTapAt = DateTime.MinValue;   // for centre-zone double-tap zoom
+    [Inject] private IServiceProvider Services { get; set; } = default!;
+    private IShareService? _shareService;   // native share (MAUI); null on web → browser download
 
     // ── Quick panel ─────────────────────────────────────────────────────
     private bool showQuickPanel = false;
@@ -1992,6 +2004,7 @@
         }
 
         _ref = DotNetObjectReference.Create(this);
+        _shareService = Services.GetService(typeof(IShareService)) as IShareService;   // MAUI only; null on web
         viewerBg = SettingsService.GetViewerBackground();
         _invert  = SettingsService.InvertColors();
         _warm    = SettingsService.WarmReading();
@@ -2622,6 +2635,44 @@
     {
         _showPageInput = false;
         StateHasChanged();
+    }
+
+    // ── Export / share the current page as an image (annotations baked in) ──
+    private bool CanExportPage => !_isText && !IsScrollMode;   // scroll = one big composite; text = no canvas
+
+    private async Task ExportCurrentPage()
+    {
+        showActionBox = false;
+        try
+        {
+            var dataUrl = await JS.InvokeAsync<string?>("exportPagePng");
+            if (string.IsNullOrEmpty(dataUrl) || !dataUrl.Contains(','))
+            {
+                ShowErrorMessage("Diese Ansicht kann nicht als Bild exportiert werden.");
+                return;
+            }
+            var name = $"{SanitizeFileName(currentSheet?.Name ?? "Seite")}_S{currentPage}.png";
+            if (_shareService != null)   // MAUI → native share sheet
+            {
+                var bytes = Convert.FromBase64String(dataUrl[(dataUrl.IndexOf(',') + 1)..]);
+                await _shareService.ShareImageAsync(bytes, name, "Seite teilen");
+            }
+            else                         // web → browser download
+            {
+                await JS.InvokeVoidAsync("downloadDataUrl", dataUrl, name);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowErrorMessage($"Export fehlgeschlagen: {ex.Message}");
+        }
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+        name = name.Trim();
+        return string.IsNullOrEmpty(name) ? "Seite" : name;
     }
 
     private async Task RenderCurrent()

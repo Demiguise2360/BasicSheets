@@ -30,6 +30,7 @@ namespace BasicSheets
             builder.Services.AddSingleton<ViewerButtonService>();
             builder.Services.AddSingleton<IUpdateService, UpdateService>();
             builder.Services.AddSingleton<IFilePickerService, NativeFilePickerService>();
+            builder.Services.AddSingleton<IShareService, ShareService>();
 
             builder.Services.AddMauiBlazorWebView();
 
