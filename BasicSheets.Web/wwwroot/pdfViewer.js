@@ -96,6 +96,7 @@ const CACHE_AHEAD = 2, CACHE_BEHIND = 1;
 
 // ── Symbol maps ─────────────────────────────────────────────────────
 const STAMP_TOOLS = ["flat","sharp","natural","double-flat","double-sharp","fermata","trill","segno","coda",
+    "accent","marcato","staccato","tenuto","down-bow","up-bow","breath","caesura","nav-dc","nav-ds","nav-fine","ped-down","ped-up",
     "dyn-ppp","dyn-pp","dyn-p","dyn-mp","dyn-mf","dyn-f","dyn-ff","dyn-fff","dyn-sf","dyn-sfz","dyn-fp"];
 const SHAPE_TOOLS = ["line","arrow","rect","ellipse"];   // 2-point drag-to-draw vector shapes
 const STAMP_SYM   = {
@@ -103,6 +104,10 @@ const STAMP_SYM   = {
     "double-flat":"𝄫", "double-sharp":"𝄪",
     fermata:"𝄐", trill:"tr",
     segno:"𝄋", coda:"𝄌",
+    accent:">", marcato:"^", staccato:"•", tenuto:"–",
+    "down-bow":"⊓", "up-bow":"V", breath:"’", caesura:"//",
+    "nav-dc":"D.C.", "nav-ds":"D.S.", "nav-fine":"Fine",
+    "ped-down":"Ped.", "ped-up":"✱",
     "dyn-ppp":"ppp", "dyn-pp":"pp", "dyn-p":"p", "dyn-mp":"mp", "dyn-mf":"mf",
     "dyn-f":"f", "dyn-ff":"ff", "dyn-fff":"fff", "dyn-sf":"sf", "dyn-sfz":"sfz", "dyn-fp":"fp"
 };
@@ -2612,8 +2617,8 @@ function drawStampShape(ctx2d, s, alpha) {
     ctx2d.save();
     ctx2d.globalAlpha = alpha;
     ctx2d.fillStyle = s.color;
-    const isDyn = typeof s.type === "string" && s.type.startsWith("dyn-");
-    ctx2d.font = `${isDyn ? "italic bold" : "bold"} ${s.size * 5 + 15}px "FreeSerif","Noto Serif",serif`;
+    const isTextMark = typeof s.type === "string" && (s.type.startsWith("dyn-") || s.type.startsWith("nav-") || s.type.startsWith("ped-"));
+    ctx2d.font = `${isTextMark ? "italic bold" : "bold"} ${s.size * 5 + 15}px "FreeSerif","Noto Serif",serif`;
     ctx2d.textAlign = "center"; ctx2d.textBaseline = "middle";
     ctx2d.fillText(STAMP_SYM[s.type] || s.type, s.x, s.y);
     ctx2d.restore();

@@ -589,7 +589,7 @@
                     var s = st;
                     <button class="stamp-item @(activeTool == s.Key ? "stamp-item-on" : "")"
                             @onclick="async () => await PickStamp(s.Key)">
-                        <span class="stamp-sym @(s.Key.StartsWith("dyn-") ? "stamp-dyn" : "")">@s.Sym</span>
+                        <span class="stamp-sym @((s.Key.StartsWith("dyn-") || s.Key.StartsWith("nav-") || s.Key.StartsWith("ped-")) ? "stamp-dyn" : "")">@s.Sym</span>
                         <span class="stamp-nm">@s.Label</span>
                     </button>
                 }
@@ -1441,6 +1441,19 @@
         new("trill","tr","Triller"),
         new("segno","𝄋","Segno"),
         new("coda","𝄌","Coda"),
+        new("accent",">","Akzent"),
+        new("marcato","^","Marcato"),
+        new("staccato","•","Staccato"),
+        new("tenuto","–","Tenuto"),
+        new("down-bow","⊓","Abstrich"),
+        new("up-bow","V","Aufstrich"),
+        new("breath","’","Atemzeichen"),
+        new("caesura","//","Zäsur"),
+        new("nav-dc","D.C.","Da Capo"),
+        new("nav-ds","D.S.","Dal Segno"),
+        new("nav-fine","Fine","Fine"),
+        new("ped-down","Ped.","Pedal"),
+        new("ped-up","✱","Pedal auf"),
         new("dyn-ppp","ppp","Pianississimo"),
         new("dyn-pp","pp","Pianissimo"),
         new("dyn-p","p","Piano"),
