@@ -33,7 +33,7 @@ dotnet publish BasicSheets/BasicSheets.csproj -f net9.0-android -c Release -p:An
 
 The signed APK is written under
 `BasicSheets/bin/Release/net9.0-android/publish/` (e.g.
-`com.companyname.basicsheets-Signed.apk`). For each release:
+`ch.desgin.basicsheets-Signed.apk`). For each release:
 
 1. **Bump the version** in `BasicSheets.csproj`:
    - `ApplicationVersion` (the Android *versionCode*) — **must increase every
@@ -47,7 +47,7 @@ Confirm the signature any time with:
 
 ```bash
 # apksigner lives in the Android SDK build-tools
-apksigner verify --print-certs BasicSheets/bin/Release/net9.0-android/publish/com.companyname.basicsheets-Signed.apk
+apksigner verify --print-certs BasicSheets/bin/Release/net9.0-android/publish/ch.desgin.basicsheets-Signed.apk
 ```
 
 ## One‑time migration (important)
@@ -86,13 +86,13 @@ remove:
 Only the **signature‑mismatch failure** is a real defect, and that's what the
 keystore fixes.
 
-## Optional: fix the package id
+## Package id
 
-The app id is still the template default `com.companyname.basicsheets`. If you want
-a real one (e.g. `ch.desgin.basicsheets`), change `ApplicationId` in
-`BasicSheets.csproj` — but note that changing it makes Android treat it as a **new
-app** (another reinstall). The one‑time reinstall above is the natural moment to do
-this too, if you want.
+The app id is `ch.desgin.basicsheets` (in `BasicSheets.csproj`), changed from the
+template default `com.companyname.basicsheets`. Like the new signing key, the
+current install won't update over it — Android treats a different id as a **new
+app** — so the one-time reinstall above adopts both the id and the key at once.
+Don't change the id again after you ship, or it's yet another reinstall.
 
 ## Moving to another build machine
 
