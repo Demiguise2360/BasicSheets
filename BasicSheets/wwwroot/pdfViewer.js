@@ -22,6 +22,10 @@ let halfSide   = null;        // null | 0 | 1 (legacy compat)
 let _displayMode = 'single';  // 'single' | 'two' | 'half-turn' | 'scroll-v'
 let _halfComposite = false;   // half-page: current view is a composite (bottom-of-N + top-of-N+1)
 let _halfSplit = 0.5;         // half-page split position (fraction of page height)
+let _halfA = null;            // cached render {c,w,h} of the composite's current page
+let _halfB = null;            // cached render {c,w,h} of the composite's next page
+let _halfBarDrag = null;      // active blue-bar drag state (composite split adjust)
+let _halfSaveTimer = null;    // debounce timer for persisting the split
 
 // ── Page scaling ────────────────────────────────────────────────────
 let pageScaling = 'fit-screen';  // 'fit-screen' | 'fit-width' | 'fit-height' | 'full-screen'
@@ -160,6 +164,7 @@ window.loadImageData = async function(filename, data) {
 window.loadPdfData = async function(filename, data) {
     await destroyCurrentPdf();
     currentPdfKey = filename;
+    _halfSplit = window.loadHalfSplit();   // per-song remembered split
     const lib = window["pdfjs-dist/build/pdf"];
     lib.GlobalWorkerOptions.workerSrc =
         "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -170,6 +175,7 @@ window.loadPdfData = async function(filename, data) {
 window.loadPdf = async function(url) {
     await destroyCurrentPdf();
     currentPdfKey = url;
+    _halfSplit = window.loadHalfSplit();   // per-song remembered split
     const lib = window["pdfjs-dist/build/pdf"];
     lib.GlobalWorkerOptions.workerSrc =
         "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -502,7 +508,12 @@ window.renderHalfTurn = async function(pdfPage, composite, nextPdf, dispPage, sp
     _displayMode = 'half-turn';
     _clearScrollTiles();
     _halfComposite = !!composite;
-    _halfSplit = (typeof splitPos === 'number' && splitPos > 0.08 && splitPos < 0.92) ? splitPos : 0.5;
+    // The split is JS-owned: loaded per song on open and updated live by the blue-bar drag.
+    // The C# param is only a seed for the first render (it would otherwise reset the split to
+    // its default on every page turn), so take it only when we have no value of our own yet.
+    if (!(_halfSplit > 0.08 && _halfSplit < 0.92)) {
+        _halfSplit = (typeof splitPos === 'number' && splitPos > 0.08 && splitPos < 0.92) ? splitPos : 0.5;
+    }
     _btnCurDisp = (dispPage != null ? dispPage : pdfPage);
     cancelActiveRender();
     const gen = _renderGen;
@@ -550,8 +561,21 @@ window.renderHalfTurn = async function(pdfPage, composite, nextPdf, dispPage, sp
     const B = (nextPdf && nextPdf >= 1) ? await rend(nextPdf) : null;
     if (gen !== _renderGen) return;
 
-    const split   = _halfSplit;
-    const aCut     = Math.round(A.h * split);            // bottom of A = aCut..A.h
+    _halfA = A; _halfB = B;
+    _drawComposite(_halfSplit, true);   // refit the whole composite to the screen
+    endPageTransition(); hideSpinner();
+};
+
+// Draw the composite (bottom of _halfA + blue bar + top of _halfB) at the given split.
+// Reused live while dragging the blue bar, so it only re-blits the already-rendered page
+// canvases (cheap). `refit` recentres/zooms the composite to the screen (first draw); during a
+// drag it is false so the bar tracks the finger (equal-height pages keep a constant height).
+function _drawComposite(split, refit) {
+    const A = _halfA, B = _halfB;
+    if (!A) return;
+    split = Math.min(0.85, Math.max(0.15, split));
+    _halfSplit = split;
+    const aCut    = Math.round(A.h * split);             // bottom of A = aCut..A.h
     const bottomH = A.h - aCut;
     const topH    = B ? Math.round(B.h * split) : 0;     // top of B = 0..topH
     const W = Math.max(A.w, B ? B.w : 0);
@@ -573,9 +597,32 @@ window.renderHalfTurn = async function(pdfPage, composite, nextPdf, dispPage, sp
     textAnnotations = []; hairpinAnnotations = []; shapeAnnotations = [];
     baseWidth = W; baseHeight = H;
     if (btnCanvas) { btnCanvas.width = W; btnCanvas.height = H; btnCtx.clearRect(0, 0, W, H); }
-    _applyHalfFit();
-    endPageTransition(); hideSpinner();
-};
+    if (refit) _applyHalfFit(); else applyView();
+}
+
+// ── Blue-bar drag: set the composite split by dragging the divider up/down ──
+// True when the screen point (sx,sy) is on/near the blue bar of the current composite.
+function _halfBarHit(sx, sy) {
+    if (_displayMode !== 'half-turn' || !_halfComposite || !_halfA) return false;
+    const A = _halfA;
+    const bottomH = A.h - Math.round(A.h * _halfSplit);
+    const barScreenY = panY + (bottomH + _HALF_BAR / 2) * zoom;
+    const tol = Math.max(24, _HALF_BAR * zoom * 3);     // generous touch target around the bar
+    return Math.abs(sy - barScreenY) <= tol;
+}
+function _halfBarDragStart() { _halfBarDrag = {}; }
+function _halfBarDragMove(sy) {
+    if (!_halfBarDrag || !_halfA) return;
+    const A = _halfA;
+    const bottomH = Math.min(A.h - 8, Math.max(8, (sy - panY) / zoom));   // bar's new composite-Y
+    _drawComposite(1 - bottomH / A.h, false);
+}
+function _halfBarDragEnd() {
+    if (!_halfBarDrag) return;
+    _halfBarDrag = null;
+    _saveHalfSplitDebounced();
+    if (window.onHalfSplitChanged) { try { window.onHalfSplitChanged(_halfSplit); } catch {} }
+}
 
 // Fit the current half-page view (full page or composite) entirely to the screen, centred.
 function _applyHalfFit() {
@@ -1490,6 +1537,9 @@ function setupInteraction() {
 
 function onTouchStart(e) {
     if (cropEditing) return;
+    if (e.touches.length === 1 && _halfBarHit(e.touches[0].clientX, e.touches[0].clientY)) {
+        _halfBarDragStart(); _suppressClick = true; return;   // drag the blue split bar
+    }
     if (editMode) { _editSwipeStart(e); return; }   // edit mode: one finger draws, two fingers turn pages
     stopInertia();
     if (e.touches.length === 1) {
@@ -1513,6 +1563,7 @@ function onTouchStart(e) {
 
 function onTouchMove(e) {
     if (cropEditing) return;
+    if (_halfBarDrag) { e.preventDefault(); if (e.touches.length) _halfBarDragMove(e.touches[0].clientY); return; }
     if (editMode) { _editSwipeMove(e); return; }
 
     if (e.touches.length === 2) {
@@ -1621,6 +1672,7 @@ function _editSwipeEnd(e) {
 
 function onTouchEnd(e) {
     if (cropEditing) return;
+    if (_halfBarDrag) { _halfBarDragEnd(); _suppressClick = true; return; }
     if (editMode) { _editSwipeEnd(e); return; }
     if (e.touches.length === 0) {
         if (_wasPinching === false && _twoFingerTapStart > 0 && !lastDist) {
@@ -1753,7 +1805,12 @@ function onWheelZoom(e) {
 }
 
 function onMouseDown(e) {
-    if (editMode || cropEditing || e.button !== 0) return;
+    if (e.button !== 0 || cropEditing) return;
+    if (_halfBarHit(e.clientX, e.clientY)) {
+        _halfBarDragStart(); _suppressClick = true;
+        document.body.style.cursor = 'ns-resize'; e.preventDefault(); return;   // drag the blue split bar
+    }
+    if (editMode) return;
     _panDragging = true;
     _panStartX = e.clientX - panX; _panStartY = e.clientY - panY;
     _mouseRawStartX = e.clientX; _mouseRawStartY = e.clientY;
@@ -1761,13 +1818,19 @@ function onMouseDown(e) {
 }
 
 function onMouseMove(e) {
-    if (!_panDragging) return;
+    if (_halfBarDrag) { _halfBarDragMove(e.clientY); return; }
+    if (!_panDragging) {
+        if (!editMode && !cropEditing && _displayMode === 'half-turn' && _halfComposite)
+            document.body.style.cursor = _halfBarHit(e.clientX, e.clientY) ? 'ns-resize' : 'grab';
+        return;
+    }
     _autoScrollInterrupt();
     panX = e.clientX - _panStartX; panY = e.clientY - _panStartY;
     clampPan(); applyView();
 }
 
 function onMouseUp(e) {
+    if (_halfBarDrag) { _halfBarDragEnd(); document.body.style.cursor = editMode ? 'crosshair' : 'grab'; return; }
     if (!_panDragging) return;
     _panDragging = false;
     document.body.style.cursor = editMode ? 'crosshair' : 'grab';
@@ -3352,6 +3415,20 @@ window.hapticTick = function() { try { if (navigator.vibrate) navigator.vibrate(
 // Screen-dim level (0..0.85), persisted per device for performing in dark venues.
 window.saveDim = function(v) { try { localStorage.setItem('bs_dim', String(v)); } catch (e) {} };
 window.loadDim = function() { try { const v = parseFloat(localStorage.getItem('bs_dim')); return isNaN(v) ? 0 : v; } catch (e) { return 0; } };
+
+// Half-page split position, remembered per song (keyed by the current PDF). Where the fold
+// between consecutive pages falls — drag the blue bar to land it between staves.
+function _halfSplitKey() { return 'bs_halfsplit_' + currentPdfKey; }
+window.saveHalfSplit = function(v) { try { localStorage.setItem(_halfSplitKey(), String(v)); } catch (e) {} };
+window.loadHalfSplit = function() {
+    try { const v = parseFloat(localStorage.getItem(_halfSplitKey())); return (isNaN(v) || v < 0.15 || v > 0.85) ? 0.5 : v; }
+    catch (e) { return 0.5; }
+};
+function _saveHalfSplitDebounced() {
+    try { clearTimeout(_halfSaveTimer); } catch (e) {}
+    const v = _halfSplit;
+    _halfSaveTimer = setTimeout(function() { window.saveHalfSplit(v); }, 250);
+}
 
 window.setStylusAutoEdit = function(on) { stylusAutoEdit = on; };
 window.setStylusButtonMode = function(m) {
