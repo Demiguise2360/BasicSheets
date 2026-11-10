@@ -1548,6 +1548,7 @@
     private bool   IsScrollMode   => effectiveMode == "scroll-v" || effectiveMode == "scroll-h";
     private bool   CanAutoScroll  => !_isText && (effectiveMode == "single" || effectiveMode == "scroll-v");
     private bool   IsHalfTurnMode => effectiveMode == "half-turn";
+    private double _halfSplit = 0.5;   // half-page split position (fraction); draggable blue bar (next step)
     private int    PagePercent    => pageCount > 1 ? (int)Math.Round((currentPage - 1) * 100.0 / (pageCount - 1)) : 0;
     private string ET(string t) => "et-tool" + (activeTool == t ? " et-tool-on" : "");
 
@@ -2368,7 +2369,7 @@
         if (HasPageOrder && effectiveMode == "half-turn")
         {
             _pageOffset = 0;
-            pageCount = _pageOrder.Count * 2;   // two halves per display slot
+            pageCount = Math.Max(1, _pageOrder.Count * 2 - 1);   // full pages interleaved with composites
             return;
         }
         if (HasPageOrder && effectiveMode == "two")
@@ -2381,7 +2382,7 @@
         pageCount = effectiveMode switch
         {
             "two"       => Math.Max(1, totalPages - 1),
-            "half-turn" => totalPages * 2,
+            "half-turn" => Math.Max(1, totalPages * 2 - 1),
             "scroll-v"  => 1,
             "scroll-h"  => 1,
             _           => totalPages
@@ -2882,9 +2883,11 @@
             }
             else if (IsHalfTurnMode)
             {
-                int  pdfPage = PdfPageFor((currentPage + 1) / 2);   // maps the display slot → PDF page (honors a custom order)
-                bool topHalf = currentPage % 2 == 1;
-                await JS.InvokeVoidAsync("renderHalfTurn", pdfPage, topHalf, (currentPage + 1) / 2);
+                int  slot      = (currentPage + 1) / 2;                 // display slot → PDF page (honors a custom order)
+                int  pdfPage   = PdfPageFor(slot);
+                bool composite = currentPage % 2 == 0;                  // even slot = bottom-of-N + top-of-N+1, with the blue bar
+                int  nextPdf   = composite ? PdfPageFor(slot + 1) : 0;
+                await JS.InvokeVoidAsync("renderHalfTurn", pdfPage, composite, nextPdf, slot, _halfSplit);
             }
             else if (effectiveMode == "two")
             {

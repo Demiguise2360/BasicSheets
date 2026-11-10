@@ -20,7 +20,8 @@ let baseWidth = 0, baseHeight = 0;
 let scrollMode = null;        // null | 'scroll-v' (legacy compat)
 let halfSide   = null;        // null | 0 | 1 (legacy compat)
 let _displayMode = 'single';  // 'single' | 'two' | 'half-turn' | 'scroll-v'
-let _halfTurnTop = true;      // last half-turn position for resize
+let _halfComposite = false;   // half-page: current view is a composite (bottom-of-N + top-of-N+1)
+let _halfSplit = 0.5;         // half-page split position (fraction of page height)
 
 // ── Page scaling ────────────────────────────────────────────────────
 let pageScaling = 'fit-screen';  // 'fit-screen' | 'fit-width' | 'fit-height' | 'full-screen'
@@ -491,73 +492,99 @@ window.renderTwoPage = async function(num) {
 // Renders FULL page at fit-to-width. Taps alternate between showing
 // the top half and the bottom half of the same page.
 
-window.renderHalfTurn = async function(num, topHalf, dispPage) {
+// MobileSheets-style half-page mode. Odd display slots show a full page; even slots show a
+// COMPOSITE — the bottom part of page `pdfPage` above the top part of `nextPdf`, split at
+// `splitPos` and separated by a blue bar — so the music flows across the page boundary and
+// each turn advances half a page. Both views fit the whole thing to the screen.
+const _HALF_BAR = 6;   // blue split-bar thickness (composite-canvas px)
+window.renderHalfTurn = async function(pdfPage, composite, nextPdf, dispPage, splitPos) {
     scrollMode = null; halfSide = null;
     _displayMode = 'half-turn';
     _clearScrollTiles();
-    _halfTurnTop = topHalf;
-    _btnCurDisp = (dispPage != null ? dispPage : num);   // the sheet shown (both halves share it)
+    _halfComposite = !!composite;
+    _halfSplit = (typeof splitPos === 'number' && splitPos > 0.08 && splitPos < 0.92) ? splitPos : 0.5;
+    _btnCurDisp = (dispPage != null ? dispPage : pdfPage);
     cancelActiveRender();
     const gen = _renderGen;
     showSpinner();
-    beginPageTransition(num);
+    beginPageTransition(pdfPage);
 
-    // Same PDF page → just reposition, skip re-render
-    if (pageNum === num && baseWidth > 0) {
-        _applyHalfTurnFit(topHalf);
-        endPageTransition();
-        hideSpinner();
+    if (!composite) {
+        // ── Full page ──
+        pageNum = pdfPage;
+        const page = await pdfDoc.getPage(pdfPage);
+        if (gen !== _renderGen) return;
+        const vp = page.getViewport({ scale: 2, rotation: pageRotation });
+        const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
+        canvas.width = markerCanvas.width = noteCanvas.width  = w;
+        canvas.height = markerCanvas.height = noteCanvas.height = h;
+        penCanvas.width = w; penCanvas.height = h;
+        ctx.fillStyle = "white"; ctx.fillRect(0, 0, w, h);
+        if (_activeRenderTask) { try { _activeRenderTask.cancel(); } catch {} _activeRenderTask = null; }
+        const task = page.render({ canvasContext: ctx, viewport: vp });
+        _activeRenderTask = task;
+        try { await task.promise; } catch (e) { if (e?.name === 'RenderingCancelledException') return; throw e; }
+        if (gen !== _renderGen) return;
+        _activeRenderTask = null;
+        baseWidth = w; baseHeight = h;
+        loadNotes();   // the page's annotations
+        if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
+        _applyHalfFit();
+        endPageTransition(); hideSpinner();
         return;
     }
 
-    pageNum = num;
-    const page = await pdfDoc.getPage(num);
+    // ── Composite: bottom of pdfPage + blue bar + top of nextPdf ──
+    pageNum = pdfPage;
+    const rend = async (p) => {
+        const pg = await pdfDoc.getPage(p);
+        const vp = pg.getViewport({ scale: 2, rotation: pageRotation });
+        const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
+        const c = makeCanvas(w, h), cx = c.getContext('2d');
+        cx.fillStyle = 'white'; cx.fillRect(0, 0, w, h);
+        await pg.render({ canvasContext: cx, viewport: vp }).promise;
+        return { c, w, h };
+    };
+    const A = await rend(pdfPage);
     if (gen !== _renderGen) return;
-    const vp   = page.getViewport({ scale: 2, rotation: pageRotation });
-    const w = Math.ceil(vp.width), h = Math.ceil(vp.height);
-
-    canvas.width = markerCanvas.width = noteCanvas.width  = w;
-    canvas.height = markerCanvas.height = noteCanvas.height = h;
-    penCanvas.width = w; penCanvas.height = h;
-
-    ctx.fillStyle = "white"; ctx.fillRect(0, 0, w, h);
-    if (_activeRenderTask) { try { _activeRenderTask.cancel(); } catch {} _activeRenderTask = null; }
-    const task = page.render({ canvasContext: ctx, viewport: vp });
-    _activeRenderTask = task;
-    try { await task.promise; } catch (e) { if (e?.name === 'RenderingCancelledException') return; throw e; }
+    const B = (nextPdf && nextPdf >= 1) ? await rend(nextPdf) : null;
     if (gen !== _renderGen) return;
-    _activeRenderTask = null;
 
-    baseWidth = w; baseHeight = h;
-    loadNotes();
-    if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
-    _applyHalfTurnFit(topHalf);
-    endPageTransition();
-    hideSpinner();
+    const split   = _halfSplit;
+    const aCut     = Math.round(A.h * split);            // bottom of A = aCut..A.h
+    const bottomH = A.h - aCut;
+    const topH    = B ? Math.round(B.h * split) : 0;     // top of B = 0..topH
+    const W = Math.max(A.w, B ? B.w : 0);
+    const H = bottomH + _HALF_BAR + topH;
+
+    canvas.width = markerCanvas.width = noteCanvas.width  = W;
+    canvas.height = markerCanvas.height = noteCanvas.height = H;
+    penCanvas.width = W; penCanvas.height = H;
+    ctx.fillStyle = 'white'; ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(A.c, 0, aCut, A.w, bottomH, Math.round((W - A.w) / 2), 0, A.w, bottomH);   // bottom of A
+    ctx.fillStyle = '#1E88E5'; ctx.fillRect(0, bottomH, W, _HALF_BAR);                        // blue bar
+    if (B) ctx.drawImage(B.c, 0, 0, B.w, topH, Math.round((W - B.w) / 2), bottomH + _HALF_BAR, B.w, topH);
+
+    // Milestone 1: composite shows PDF only; annotations show on the full-page views.
+    markerCtx.clearRect(0, 0, W, H);
+    noteCtx.clearRect(0, 0, W, H);
+    penCtx.clearRect(0, 0, W, H);
+    penStrokes = []; markerAnnotations = []; stampAnnotations = [];
+    textAnnotations = []; hairpinAnnotations = []; shapeAnnotations = [];
+    baseWidth = W; baseHeight = H;
+    if (btnCanvas) { btnCanvas.width = W; btnCanvas.height = H; btnCtx.clearRect(0, 0, W, H); }
+    _applyHalfFit();
+    endPageTransition(); hideSpinner();
 };
 
-// Position: fit page to screen width, then pan to show top or bottom half.
-function _applyHalfTurnFit(topHalf) {
+// Fit the current half-page view (full page or composite) entirely to the screen, centred.
+function _applyHalfFit() {
     if (!baseWidth || !baseHeight) return;
-    const hdrH  = getHeaderHeight();
+    const hdrH = getHeaderHeight();
     const viewH = availViewH();
-
-    // Always fit to width
-    zoom = window.innerWidth / baseWidth;
-    panX = 0;
-
-    const scaledH = baseHeight * zoom;
-
-    if (scaledH <= viewH) {
-        // Page fits entirely — center it
-        panY = hdrH + (viewH - scaledH) / 2;
-    } else if (topHalf) {
-        // Show top of page (align page-top to header)
-        panY = hdrH;
-    } else {
-        // Show bottom half: align page bottom to viewport bottom
-        panY = hdrH + viewH - scaledH;
-    }
+    zoom = Math.min(window.innerWidth / baseWidth, viewH / baseHeight);
+    panX = (window.innerWidth - baseWidth * zoom) / 2;
+    panY = hdrH + (viewH - baseHeight * zoom) / 2;
     applyView();
 }
 
@@ -947,7 +974,7 @@ function getFitZoom() {
     if (!baseWidth || !baseHeight) return 1;
     if (_cropActive()) return window.innerWidth / _cw();
     if (_displayMode === 'scroll-h') return availViewH() / baseHeight;   // fit height, scroll sideways
-    if (_displayMode === 'scroll-v' || _displayMode === 'half-turn')
+    if (_displayMode === 'scroll-v')
         return window.innerWidth / baseWidth;
     const viewW = window.innerWidth;
     const viewH = availViewH();
@@ -1763,7 +1790,7 @@ function onViewResize() {
     if (!baseWidth) return;
     measureChrome();
     if (_displayMode === 'scroll-v') { fitToWidth(); return; }
-    if (_displayMode === 'half-turn') { _applyHalfTurnFit(_halfTurnTop); return; }
+    if (_displayMode === 'half-turn') { _applyHalfFit(); return; }
     if (!isZoomed()) applyPageScaling();
     else { clampPan(); applyView(); }
 }
@@ -2364,6 +2391,7 @@ function getPos(e) {
 // ── startDraw ────────────────────────────────────────────────────────
 function startDraw(e) {
     if (!editMode) return;
+    if (_displayMode === 'half-turn' && _halfComposite) return;   // composite spans 2 pages — annotate on the full-page views
     if (e.touches && e.touches.length > 1) return;
     _drawLocked = false;   // a fresh single-finger / mouse press always begins a new draw
     // Palm rejection: while a pen is the active instrument, ignore finger/palm touches
@@ -3205,7 +3233,7 @@ window.updateGestureConfig = function(config) {
 
 window.fitToWidthPublic = function() {
     if (_displayMode === 'scroll-v') fitToWidth();
-    else if (_displayMode === 'half-turn') _applyHalfTurnFit(_halfTurnTop);
+    else if (_displayMode === 'half-turn') _applyHalfFit();
     else applyPageScaling();
 };
 
