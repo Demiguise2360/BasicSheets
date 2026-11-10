@@ -1256,6 +1256,11 @@
 }
 .vab-add:active[b-7o9qf6vxg7] { background: rgba(77,138,128,0.2); }
 
+.vab-dim-row[b-7o9qf6vxg7] { display: flex; align-items: center; gap: 0.6rem; padding: 0.1rem; }
+.vab-dim-ico[b-7o9qf6vxg7] { font-size: 1rem; opacity: 0.7; }
+.vab-dim-slider[b-7o9qf6vxg7] { flex: 1; max-width: none; }
+.vab-dim-pct[b-7o9qf6vxg7] { font-size: 0.78rem; opacity: 0.7; min-width: 2.4rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--c-text, #222); }
+
 /* ── Page manager (reorder / duplicate / hide) ────────────────────────────── */
 .pmgr[b-7o9qf6vxg7] {
     position: fixed; inset: 0; z-index: 500;

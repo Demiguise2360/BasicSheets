@@ -3321,6 +3321,10 @@ window.setPalmReject  = function(on) { palmRejectOn  = (on !== false); };
 // when the VIBRATE permission is granted; a silent no-op elsewhere).
 window.hapticTick = function() { try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {} };
 
+// Screen-dim level (0..0.85), persisted per device for performing in dark venues.
+window.saveDim = function(v) { try { localStorage.setItem('bs_dim', String(v)); } catch (e) {} };
+window.loadDim = function() { try { const v = parseFloat(localStorage.getItem('bs_dim')); return isNaN(v) ? 0 : v; } catch (e) { return 0; } };
+
 window.setStylusAutoEdit = function(on) { stylusAutoEdit = on; };
 window.setStylusButtonMode = function(m) {
     stylusButtonMode = (m === 'hold' || m === 'toggle') ? m : 'off';
