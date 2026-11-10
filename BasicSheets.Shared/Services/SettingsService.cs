@@ -253,6 +253,13 @@ public class SettingsService
             Type        = "toggle",
             Value       = "true"
         });
+        AddIfMissing(new Setting
+        {
+            Name        = "Haptisches Feedback",
+            Description = "Kurze Vibration beim Umblättern (nur auf dem Gerät).",
+            Type        = "toggle",
+            Value       = "true"
+        });
     }
 
     private static List<string> MakePageModeOptions() =>
@@ -402,6 +409,12 @@ public class SettingsService
     public bool PalmReject()
     {
         var s = _settings.FirstOrDefault(x => x.Name == "Stift: Handballenerkennung");
+        return s == null || s.Value != "false";
+    }
+
+    public bool Haptics()
+    {
+        var s = _settings.FirstOrDefault(x => x.Name == "Haptisches Feedback");
         return s == null || s.Value != "false";
     }
 

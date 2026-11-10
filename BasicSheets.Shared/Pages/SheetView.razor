@@ -2310,6 +2310,12 @@
         }
     }
 
+    // Short haptic tick on a manual page turn (Android vibration; no-op elsewhere / if off).
+    private void Haptic()
+    {
+        if (SettingsService.Haptics()) _ = JS.InvokeVoidAsync("hapticTick");
+    }
+
     private void ShowErrorMessage(string msg)
     {
         showError = true;
@@ -2961,6 +2967,7 @@
         if (x < w * 0.35 && currentPage > 1)
         {
             currentPage--;
+            Haptic();
             RefreshPageBookmark();
             await RenderCurrent();
             ResetAutoHide();
@@ -2970,6 +2977,7 @@
         else if (x > w * 0.65 && currentPage < pageCount)
         {
             currentPage++;
+            Haptic();
             RefreshPageBookmark();
             await RenderCurrent();
             ResetAutoHide();
@@ -3496,6 +3504,7 @@
                     if (currentPage < pageCount)
                     {
                         currentPage++;
+                        Haptic();
                         RefreshPageBookmark();
                         await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
                     }
@@ -3508,6 +3517,7 @@
                     if (currentPage > 1)
                     {
                         currentPage--;
+                        Haptic();
                         RefreshPageBookmark();
                         await InvokeAsync(async () => { await RenderCurrent(); StateHasChanged(); });
                     }

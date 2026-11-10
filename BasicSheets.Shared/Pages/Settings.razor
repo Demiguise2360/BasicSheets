@@ -16,7 +16,7 @@
                                     or "Letzte Seite merken" or "Seiten automatisch umblättern"
                                     or "Seitenübergang animieren")
     @RenderSection("Annotieren",  s => s.Name is "Standard-Notizwerkzeug")
-    @RenderSection("Gerät",       s => s.Name is "Bildschirm wach halten" or "Sortierung")
+    @RenderSection("Gerät",       s => s.Name is "Bildschirm wach halten" or "Sortierung" or "Haptisches Feedback")
     @RenderSection("Stift",       s => s.Name is "Stift: Bearbeitungsmodus" or "Stift: Seitentaste"
                                     or "Stift: Druckstärke" or "Stift: Handballenerkennung")
     @RenderSection("Gesten",      s => s.Name.StartsWith("Geste:"))

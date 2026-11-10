@@ -3317,6 +3317,10 @@ function _penActive() { return _penContact || (Date.now() - _penSeenTs < 700); }
 window.setPenPressure = function(on) { penPressureOn = (on !== false); };
 window.setPalmReject  = function(on) { palmRejectOn  = (on !== false); };
 
+// Short haptic tick on a manual page turn (Android WebView supports the Vibration API
+// when the VIBRATE permission is granted; a silent no-op elsewhere).
+window.hapticTick = function() { try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {} };
+
 window.setStylusAutoEdit = function(on) { stylusAutoEdit = on; };
 window.setStylusButtonMode = function(m) {
     stylusButtonMode = (m === 'hold' || m === 'toggle') ? m : 'off';
