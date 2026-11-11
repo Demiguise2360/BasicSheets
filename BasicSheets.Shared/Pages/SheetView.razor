@@ -508,6 +508,14 @@
                 </button>
             }
 
+            @if (activeTool == "eraser")
+            {
+                <button class="et-act @(_eraserBox ? "et-tool-on" : "")" @onclick="ToggleEraserBox"
+                        title="@(_eraserBox ? "Flächen-Radierer: Bereich aufziehen" : "Radierer: entlang ziehen")">
+                    <img src="/_content/BasicSheets.Shared/icons/shape-rect.svg" class="eticon" />
+                </button>
+            }
+
             <div class="et-flex"></div>
 
             <button class="et-act" @onclick="Undo" title="Rückgängig">
@@ -1567,6 +1575,7 @@
     private bool   ColorAppliesToTool => activeTool != "eraser" && activeTool != "move";   // quick-colour row shows for these
     private bool   IsShapeFillable   => activeTool == "rect" || activeTool == "ellipse";
     private bool   _shapeFill;       // fill rect/ellipse with a translucent wash (region highlight)
+    private bool   _eraserBox;       // eraser mode: false = drag-across, true = drag a box to clear a region
     private bool   IsScrollMode   => effectiveMode == "scroll-v" || effectiveMode == "scroll-h";
     private bool   CanAutoScroll  => !_isText && (effectiveMode == "single" || effectiveMode == "scroll-v");
     private bool   IsHalfTurnMode => effectiveMode == "half-turn";
@@ -3342,6 +3351,13 @@
     {
         _shapeFill = !_shapeFill;
         try { await JS.InvokeVoidAsync("setShapeFill", _shapeFill); } catch { }
+    }
+
+    private async Task ToggleEraserBox()
+    {
+        _eraserBox = !_eraserBox;
+        try { await JS.InvokeVoidAsync("setEraserBox", _eraserBox); } catch { }
+        StateHasChanged();
     }
 
     private void Undo()      => _ = JS.InvokeVoidAsync("undoNote");

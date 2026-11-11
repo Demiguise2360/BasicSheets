@@ -60,6 +60,8 @@ let hairpinAnnotations = [];
 let shapeAnnotations   = [];        // line / arrow / rect / ellipse: {kind,x1,y1,x2,y2,color,size}
 let shapeStart = null, liveShape = null;
 let _shapeFill = false;              // fill rect/ellipse with a translucent wash (region highlight)
+let _eraserBox = false;             // eraser mode: false = drag-across, true = drag a box to clear a region
+let _eraseBoxRect = null;           // the live box-erase selection {x1,y1,x2,y2} during a drag
 let _notesVisible = true;            // are the annotation layers shown? (hide/show toggle)
 
 // ── Move tool ───────────────────────────────────────────────────────
@@ -2625,6 +2627,12 @@ function startDraw(e) {
         return;
     }
 
+    if (tool === "eraser" && _eraserBox) {        // box eraser: drag a rectangle, clear it on release
+        drawing = true;
+        _eraseBoxRect = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+        return;
+    }
+
     // Pen / Eraser — begin a new vector stroke
     _strokePressure = penPressureOn && _lastDownType === 'pen' && tool !== "eraser";
     drawing = true;
@@ -2710,6 +2718,12 @@ function onDrawMove(e) {
         lastX = p.x; lastY = p.y; return;
     }
 
+    if (tool === "eraser" && _eraserBox && _eraseBoxRect) {   // box eraser: grow the live selection rect
+        _eraseBoxRect.x2 = p.x; _eraseBoxRect.y2 = p.y;
+        redrawVectorLayer();
+        lastX = p.x; lastY = p.y; return;
+    }
+
     // Pen / Eraser — accumulate points and update live preview
     if (liveStroke) {
         liveStroke.points.push(_strokePressure ? { x: p.x, y: p.y, p: _penPressure } : p);
@@ -2744,6 +2758,15 @@ function endDraw(e) {
 
     if (!drawing) return;
     drawing = false;
+
+    if (tool === "eraser" && _eraserBox) {        // box eraser: remove everything inside the box
+        if (_eraseBoxRect) {
+            eraseInBox(_eraseBoxRect);
+            _eraseBoxRect = null;
+            redrawPenLayer(); redrawVectorLayer(); saveNotes();
+        }
+        return;
+    }
 
     if (tool === "move" && moveTgt) {
         moveTgt = null; saveNotes(); return;
@@ -2902,6 +2925,21 @@ function redrawVectorLayer() {
 
     for (const s of shapeAnnotations) drawShapeShape(s, 1);
     if (liveShape) drawShapeShape(liveShape, 0.75);
+
+    if (_eraseBoxRect) {                           // live box-eraser selection (dashed red region)
+        const r = _eraseBoxRect;
+        const x = Math.min(r.x1, r.x2), y = Math.min(r.y1, r.y2);
+        const w = Math.abs(r.x2 - r.x1), h = Math.abs(r.y2 - r.y1);
+        noteCtx.save();
+        noteCtx.globalCompositeOperation = "source-over";
+        noteCtx.setLineDash([9, 6]);
+        noteCtx.lineWidth = 2;
+        noteCtx.strokeStyle = "rgba(220,40,40,0.95)";
+        noteCtx.fillStyle   = "rgba(220,40,40,0.12)";
+        noteCtx.fillRect(x, y, w, h);
+        noteCtx.strokeRect(x, y, w, h);
+        noteCtx.restore();
+    }
 }
 
 function drawStampShape(ctx2d, s, alpha) {
@@ -3056,6 +3094,24 @@ function distToSegment2(px, py, x1, y1, x2, y2) {
     t = Math.max(0, Math.min(1, t));
     const cx = x1 + t * dx, cy = y1 + t * dy;
     return (px - cx) * (px - cx) + (py - cy) * (py - cy);
+}
+
+// Box eraser: drop every annotation that has a defining point inside the dragged rectangle
+// (whole-object removal — a stroke/shape is gone if any of its points lands in the region).
+window.setEraserBox = function(on) { _eraserBox = !!on; };
+function eraseInBox(r) {
+    const x1 = Math.min(r.x1, r.x2), x2 = Math.max(r.x1, r.x2);
+    const y1 = Math.min(r.y1, r.y2), y2 = Math.max(r.y1, r.y2);
+    if (x2 - x1 < 2 && y2 - y1 < 2) return;                 // ignore an accidental tap
+    const inside = (x, y) => x >= x1 && x <= x2 && y >= y1 && y <= y2;
+    const anyPt  = (pts) => !!pts && pts.some(pt => inside(pt.x, pt.y));
+    const mid    = (a, b) => (a + b) / 2;
+    penStrokes         = penStrokes.filter(s => !anyPt(s.points));
+    markerAnnotations  = markerAnnotations.filter(m => !anyPt(m.points));
+    stampAnnotations   = stampAnnotations.filter(s => !inside(s.x, s.y));
+    textAnnotations    = textAnnotations.filter(t => !inside(t.x, t.y));
+    hairpinAnnotations = hairpinAnnotations.filter(h => !(inside(h.x1, h.y1) || inside(h.x2, h.y2) || inside(mid(h.x1, h.x2), mid(h.y1, h.y2))));
+    shapeAnnotations   = shapeAnnotations.filter(s => !(inside(s.x1, s.y1) || inside(s.x2, s.y2) || inside(mid(s.x1, s.x2), mid(s.y1, s.y2))));
 }
 
 
