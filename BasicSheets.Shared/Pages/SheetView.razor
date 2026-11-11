@@ -935,6 +935,15 @@
                         </div>
                     }
 
+                    <div class="qp-row">
+                        <span class="qp-label" title="Stimmton zum Stimmen oder als Bordun (A4 = 440 Hz)">Stimmton</span>
+                        <div class="seg-group">
+                            <button class="seg-btn @(_tonePlaying?"seg-btn-on":"")" @onclick="ToggleTone" title="Stimmton abspielen/stoppen">@(_tonePlaying ? "⏸" : "▶") @ToneLabel</button>
+                            <button class="seg-btn" @onclick="() => ShiftTone(-1)" title="Halbton tiefer">−</button>
+                            <button class="seg-btn" @onclick="() => ShiftTone(1)" title="Halbton höher">+</button>
+                        </div>
+                    </div>
+
                     @if (_hasAudio)
                     {
                         <div class="qp-row">
@@ -3736,6 +3745,13 @@
     private int  _metroSubdiv = 1;
     private int  _metroTurnBars;   // auto page-turn every N measures while running (0 = off)
 
+    // ── Tuning tone (sustained reference pitch) ──
+    private int  _toneMidi = 69;   // A4 = 440 Hz (the standard tuning reference)
+    private bool _tonePlaying;
+    private static readonly string[] _noteNames = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    private string ToneLabel => $"{_noteNames[_toneMidi % 12]}{_toneMidi / 12 - 1}";
+    private double ToneFreq  => 440.0 * Math.Pow(2, (_toneMidi - 69) / 12.0);
+
     private async Task ToggleMetronome()
     {
         if (_metroRunning)
@@ -3792,6 +3808,29 @@
         _metroTurnBars = Math.Clamp(n, 0, 32);
         PersistSetting("Metronom: Auto-Blättern", _metroTurnBars.ToString());
         try { await JS.InvokeVoidAsync("setMetronomeTurnBars", _metroTurnBars); } catch { }
+        StateHasChanged();
+    }
+
+    // ── Tuning tone ──
+    private async Task ToggleTone()
+    {
+        if (_tonePlaying)
+        {
+            _tonePlaying = false;
+            try { await JS.InvokeVoidAsync("stopTone"); } catch { }
+        }
+        else
+        {
+            _tonePlaying = true;
+            try { if (!await JS.InvokeAsync<bool>("startTone", ToneFreq)) _tonePlaying = false; }
+            catch { _tonePlaying = false; }
+        }
+        StateHasChanged();
+    }
+    private async Task ShiftTone(int delta)
+    {
+        _toneMidi = Math.Clamp(_toneMidi + delta, 36, 84);   // C2 .. C6
+        if (_tonePlaying) { try { await JS.InvokeVoidAsync("setToneFreq", ToneFreq); } catch { } }
         StateHasChanged();
     }
     private void PersistMetro()
@@ -4215,6 +4254,8 @@
         try { _ = JS.InvokeVoidAsync("stopAutoScroll"); } catch { }
         _metroRunning = false;
         try { _ = JS.InvokeVoidAsync("stopMetronome"); } catch { }
+        _tonePlaying = false;
+        try { _ = JS.InvokeVoidAsync("stopTone"); } catch { }
         if (_hasAudio) { try { _ = JS.InvokeVoidAsync("saveAudioPos", file ?? "", _audioPos); } catch { } }
         try { _ = JS.InvokeVoidAsync("unloadAudio"); } catch { }
         try { _ = JS.InvokeVoidAsync("disposeKeyNav"); } catch { }

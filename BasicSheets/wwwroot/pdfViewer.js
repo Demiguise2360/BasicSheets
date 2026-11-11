@@ -2304,6 +2304,51 @@ window.setMetronomeTurnBars = function(n) { _metroTurnBars = Math.max(0, Math.mi
 
 
 // ═══════════════════════════════════════════════════════════════════
+//  Tuning tone — a sustained reference pitch (tune to it, or use as a drone)
+// ═══════════════════════════════════════════════════════════════════
+// Its own AudioContext, independent of the metronome, so a drone and the click can run
+// together. A soft gain ramp on start/stop avoids clicks; the pitch glides when shifted live.
+let _toneCtx = null, _toneOsc = null, _toneGain = null, _tonePlaying = false;
+function _toneClampFreq(f) { return Math.max(20, Math.min(5000, f || 440)); }
+window.startTone = function(freq) {
+    try {
+        if (!_toneCtx) _toneCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_toneCtx.state === 'suspended') _toneCtx.resume();
+    } catch (e) { return false; }
+    const f = _toneClampFreq(freq);
+    if (_tonePlaying) { window.setToneFreq(f); return true; }   // already sounding → just retune
+    const ctx = _toneCtx, now = ctx.currentTime;
+    _toneOsc = ctx.createOscillator(); _toneGain = ctx.createGain();
+    _toneOsc.type = 'sine';
+    _toneOsc.frequency.setValueAtTime(f, now);
+    _toneGain.gain.setValueAtTime(0.0001, now);
+    _toneGain.gain.exponentialRampToValueAtTime(0.16, now + 0.03);   // soft attack (no click)
+    _toneOsc.connect(_toneGain); _toneGain.connect(ctx.destination);
+    _toneOsc.start(now);
+    _tonePlaying = true;
+    return true;
+};
+window.setToneFreq = function(freq) {
+    if (!_tonePlaying || !_toneOsc || !_toneCtx) return;
+    const f = _toneClampFreq(freq);
+    try { _toneOsc.frequency.setTargetAtTime(f, _toneCtx.currentTime, 0.02); }   // glide to the new pitch
+    catch (e) { _toneOsc.frequency.value = f; }
+};
+window.stopTone = function() {
+    if (!_tonePlaying || !_toneCtx || !_toneOsc) { _tonePlaying = false; return; }
+    const ctx = _toneCtx, now = ctx.currentTime, osc = _toneOsc, gain = _toneGain;
+    try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);   // soft release
+        osc.stop(now + 0.08);
+    } catch (e) { try { osc.stop(); } catch (e2) {} }
+    _tonePlaying = false; _toneOsc = null; _toneGain = null;
+};
+window.isTonePlaying = function() { return _tonePlaying; };
+
+
+// ═══════════════════════════════════════════════════════════════════
 //  Audio backing-track playback (self-contained; no viewer coupling)
 // ═══════════════════════════════════════════════════════════════════
 let _audioEl = null, _audioUrl = null;
