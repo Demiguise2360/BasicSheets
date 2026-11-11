@@ -5,8 +5,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Room schema — a faithful port of the MAUI app's sqlite-net models
- * (BasicSheets.Shared/Model/*.cs). Dates are stored as epoch millis.
+ * Room schema — a faithful port of the MAUI app's sqlite-net models under
+ * BasicSheets.Shared/Model. Dates are stored as epoch millis.
  * This is a fresh database; migrating an existing MAUI library is a separate task (see PORTING.md).
  */
 
