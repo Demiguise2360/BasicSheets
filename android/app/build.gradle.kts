@@ -87,7 +87,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-common:$media3")
 
-    // PDF text extraction for in-document search (Android's PdfRenderer draws pages but
-    // exposes no text). Pulled in when the search phase lands.
-    // implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // PDFBox — PDF outline (table of contents) extraction; also used for in-document search later
+    // (Android's PdfRenderer draws pages but exposes neither the outline nor text).
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }

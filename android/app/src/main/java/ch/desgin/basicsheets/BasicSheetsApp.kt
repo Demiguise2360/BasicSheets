@@ -3,8 +3,10 @@ package ch.desgin.basicsheets
 import android.app.Application
 import ch.desgin.basicsheets.data.AnnotationRepository
 import ch.desgin.basicsheets.data.BasicSheetsDatabase
+import ch.desgin.basicsheets.data.BookmarkRepository
 import ch.desgin.basicsheets.data.LibraryRepository
 import ch.desgin.basicsheets.data.SettingsRepository
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import java.io.File
 
 /** App singleton: owns the Room database, the PDF folder, and the repositories. */
@@ -18,10 +20,12 @@ class BasicSheetsApp : Application() {
     val library: LibraryRepository by lazy { LibraryRepository(db, sheetsDir) }
     val settings: SettingsRepository by lazy { SettingsRepository(db) }
     val annotations: AnnotationRepository by lazy { AnnotationRepository(db) }
+    val bookmarks: BookmarkRepository by lazy { BookmarkRepository(db) }
 
     override fun onCreate() {
         super.onCreate()
         instance = this
+        PDFBoxResourceLoader.init(applicationContext)   // init PDFBox before any outline/text parse
     }
 
     companion object {

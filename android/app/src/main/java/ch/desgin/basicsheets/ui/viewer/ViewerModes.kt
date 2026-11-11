@@ -17,9 +17,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -192,10 +192,11 @@ fun VerticalScrollView(
     annoRepo: AnnotationRepository? = null,
     pdfKey: String? = null,
     annoVersion: Int = 0,
+    jumpToken: Int = 0,
 ) {
-    val state = rememberLazyListState(
-        initialFirstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)),
-    )
+    val state = remember(jumpToken) {
+        LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)))
+    }
     LazyColumn(Modifier.fillMaxSize(), state = state) {
         items(pageCount) { i ->
             val bmp = pageBitmap(doc, i, renderPx)
@@ -221,10 +222,11 @@ fun HorizontalScrollView(
     annoRepo: AnnotationRepository? = null,
     pdfKey: String? = null,
     annoVersion: Int = 0,
+    jumpToken: Int = 0,
 ) {
-    val state = rememberLazyListState(
-        initialFirstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)),
-    )
+    val state = remember(jumpToken) {
+        LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)))
+    }
     LazyRow(
         Modifier.fillMaxSize(),
         state = state,
@@ -259,10 +261,11 @@ fun HalfTurnView(
     pageCount: Int,
     renderPx: Int,
     initialSplit: Float,
+    jumpToken: Int = 0,
     onSplitChange: (Float) -> Unit,
 ) {
     val total = maxOf(1, 2 * pageCount - 1)
-    var slot by remember { mutableIntStateOf((page * 2).coerceIn(0, total - 1)) }
+    var slot by remember(jumpToken) { mutableIntStateOf((page * 2).coerceIn(0, total - 1)) }
     var split by remember { mutableFloatStateOf(initialSplit.coerceIn(0.15f, 0.85f)) }
 
     val composite = slot % 2 == 1

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
@@ -49,8 +50,11 @@ import ch.desgin.basicsheets.annot.Stamp
 import ch.desgin.basicsheets.annot.TextAnnot
 import ch.desgin.basicsheets.annot.Tool
 import ch.desgin.basicsheets.audio.Metronome
+import ch.desgin.basicsheets.data.Bookmark
 import ch.desgin.basicsheets.data.Sheet
+import ch.desgin.basicsheets.pdf.OutlineEntry
 import ch.desgin.basicsheets.pdf.PdfDoc
+import ch.desgin.basicsheets.pdf.PdfOutline
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,16 +92,25 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
     var annoVersion by remember { mutableIntStateOf(0) }   // bumped on edit exit → reading overlays reload
     val undoStack = remember { mutableStateListOf<PageAnnotations>() }
 
+    // Bookmarks + outline
+    var showBookmarks by remember { mutableStateOf(false) }
+    var addingBookmark by remember { mutableStateOf(false) }
+    var bookmarks by remember { mutableStateOf<List<Bookmark>>(emptyList()) }
+    var outline by remember { mutableStateOf<List<OutlineEntry>>(emptyList()) }
+    var jumpToken by remember { mutableIntStateOf(0) }
+
     val renderPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() * 2f).toInt() }
 
     LaunchedEffect(sheetId) {
         val s = app.library.byId(sheetId) ?: return@LaunchedEffect
         sheet = s
+        bookmarks = app.bookmarks.forFile(s.filePath)
         mode = DisplayMode.from(s.pageMode)
         val d = withContext(Dispatchers.IO) { PdfDoc.open(app.library.fileFor(s)) }
         doc = d
         pageCount = d?.pageCount ?: 0
         page = 0
+        outline = PdfOutline.extract(app.library.fileFor(s))
     }
     DisposableEffect(doc) { onDispose { doc?.close() } }
 
@@ -162,6 +175,24 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
     fun undoAnn() {
         if (undoStack.isNotEmpty()) { annotations = undoStack.removeAt(undoStack.size - 1); saveAnn() }
     }
+    fun jumpToPage(target: Int) {
+        page = target.coerceIn(0, maxOf(0, pageCount - 1))
+        jumpToken++
+        showBookmarks = false
+    }
+    fun addBookmark(label: String, color: String) {
+        val key = sheet?.filePath ?: return
+        val bm = Bookmark(
+            id = java.util.UUID.randomUUID().toString(),
+            pdfFile = key, sheetName = sheet?.name ?: key, page = page + 1, label = label, color = color,
+        )
+        scope.launch { app.bookmarks.put(bm); bookmarks = app.bookmarks.forFile(key) }
+        addingBookmark = false
+    }
+    fun deleteBookmark(bm: Bookmark) {
+        val key = sheet?.filePath ?: return
+        scope.launch { app.bookmarks.remove(bm.id); bookmarks = app.bookmarks.forFile(key) }
+    }
 
     Scaffold(
         topBar = {
@@ -190,6 +221,9 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
                         }
                         TextButton(onClick = { showMetro = !showMetro }) {
                             Text(if (metro.running) "♩ ${metro.bpm} ▶" else "♩ ${metro.bpm}")
+                        }
+                        IconButton(onClick = { showBookmarks = true }) {
+                            Icon(Icons.Filled.Bookmarks, contentDescription = "Lesezeichen")
                         }
                     }
                     IconButton(onClick = { if (editMode) exitEdit() else editMode = true }) {
@@ -253,16 +287,34 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
                     DisplayMode.SINGLE -> SinglePageView(doc, page, pageCount, renderPx, app.annotations, key, annoVersion) { turn(it) }
                     DisplayMode.TWO -> TwoPageView(doc, page, pageCount, renderPx, app.annotations, key, annoVersion) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
-                        doc, page, pageCount, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(),
+                        doc, page, pageCount, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
-                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, pageCount, renderPx, page, app.annotations, key, annoVersion)
-                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, pageCount, renderPx, page, app.annotations, key, annoVersion)
+                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, pageCount, renderPx, page, app.annotations, key, annoVersion, jumpToken)
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, pageCount, renderPx, page, app.annotations, key, annoVersion, jumpToken)
                 }
                 if (showMetro) {
                     Box(Modifier.align(Alignment.BottomCenter)) {
                         MetronomePanel(metro, onClose = { showMetro = false })
                     }
                 }
+            }
+
+            if (showBookmarks) {
+                BookmarkSheet(
+                    outline = outline,
+                    bookmarks = bookmarks,
+                    onJump = { jumpToPage(it) },
+                    onDelete = { deleteBookmark(it) },
+                    onAddHere = { showBookmarks = false; addingBookmark = true },
+                    onDismiss = { showBookmarks = false },
+                )
+            }
+            if (addingBookmark) {
+                BookmarkAddDialog(
+                    page = page + 1,
+                    onSave = { label, color -> addBookmark(label, color) },
+                    onDismiss = { addingBookmark = false },
+                )
             }
         }
     }
