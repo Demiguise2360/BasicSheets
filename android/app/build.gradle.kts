@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -21,10 +24,10 @@ android {
     // Release signing is read from signing.local.properties if present (git-ignored); see PORTING.md.
     val signingProps = rootProject.file("signing.local.properties")
     if (signingProps.exists()) {
-        val props = java.util.Properties().apply { load(signingProps.inputStream()) }
+        val props = Properties().apply { signingProps.inputStream().use { load(it) } }
         signingConfigs {
             create("release") {
-                storeFile = file(props.getProperty("storeFile"))
+                storeFile = File(props.getProperty("storeFile") ?: "")
                 storePassword = props.getProperty("storePassword")
                 keyAlias = props.getProperty("keyAlias")
                 keyPassword = props.getProperty("keyPassword")
