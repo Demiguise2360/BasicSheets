@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -43,6 +44,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
+import ch.desgin.basicsheets.audio.Metronome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -64,6 +66,10 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    val metro = remember { Metronome() }
+    var showMetro by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { metro.release() } }
 
     // Render at ~2x the screen width so zooming stays sharp.
     val renderPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() * 2f).toInt() }
@@ -98,6 +104,11 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
                     }
                 },
+                actions = {
+                    TextButton(onClick = { showMetro = !showMetro }) {
+                        Text(if (metro.running) "♩ ${metro.bpm} ▶" else "♩ ${metro.bpm}")
+                    }
+                },
             )
         },
         bottomBar = {
@@ -112,39 +123,46 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
             }
         },
     ) { pad ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(pad)
-                .transformable(transform)
-                .pointerInput(pageCount) {
-                    detectTapGestures { pos ->
-                        if (scale <= 1.05f) {                       // only turn pages when not zoomed in
-                            val third = size.width / 3f
-                            if (pos.x < third) { if (page > 0) page-- }
-                            else if (pos.x > size.width - third) { if (page < pageCount - 1) page++ }
+        Box(Modifier.fillMaxSize().padding(pad)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .transformable(transform)
+                    .pointerInput(pageCount) {
+                        detectTapGestures { pos ->
+                            if (scale <= 1.05f) {                   // only turn pages when not zoomed in
+                                val third = size.width / 3f
+                                if (pos.x < third) { if (page > 0) page-- }
+                                else if (pos.x > size.width - third) { if (page < pageCount - 1) page++ }
+                            }
                         }
-                    }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            val bmp = bitmap
-            if (bmp != null) {
-                Image(
-                    bmp.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer(
-                            scaleX = scale,
-                            scaleY = scale,
-                            translationX = offset.x,
-                            translationY = offset.y,
-                        ),
-                    contentScale = ContentScale.FillWidth,
-                )
-            } else {
-                Text("Lädt …", color = MaterialTheme.colorScheme.outline)
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                val bmp = bitmap
+                if (bmp != null) {
+                    Image(
+                        bmp.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y,
+                            ),
+                        contentScale = ContentScale.FillWidth,
+                    )
+                } else {
+                    Text("Lädt …", color = MaterialTheme.colorScheme.outline)
+                }
+            }
+
+            if (showMetro) {
+                Box(Modifier.align(Alignment.BottomCenter)) {
+                    MetronomePanel(metro, onClose = { showMetro = false })
+                }
             }
         }
     }
