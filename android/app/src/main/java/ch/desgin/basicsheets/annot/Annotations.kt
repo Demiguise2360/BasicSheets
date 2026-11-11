@@ -44,5 +44,24 @@ data class PageAnnotations(
             textData.isEmpty() && hairpinData.isEmpty() && shapeData.isEmpty()
 }
 
-/** Tools implemented so far; more (marker, stamp, text, shapes) are added later. */
-enum class Tool { PEN, ERASER }
+/** Annotation tools, mirroring the MAUI editor's palette. */
+enum class Tool { PEN, MARKER, ERASER, STAMP, TEXT, CRESCENDO, DECRESCENDO, LINE, ARROW, RECT, ELLIPSE }
+
+/** Freehand drag tools that build a point path. */
+val Tool.isStroke: Boolean get() = this == Tool.PEN || this == Tool.MARKER
+
+/** Drag-from-a to-b tools (shapes + hairpins). */
+val Tool.isTwoPoint: Boolean get() = this == Tool.CRESCENDO || this == Tool.DECRESCENDO ||
+    this == Tool.LINE || this == Tool.ARROW || this == Tool.RECT || this == Tool.ELLIPSE
+
+/** Single-tap placement tools. */
+val Tool.isTap: Boolean get() = this == Tool.STAMP || this == Tool.TEXT
+
+/** The ShapeAnnot.kind string for a shape tool. */
+val Tool.shapeKind: String
+    get() = when (this) {
+        Tool.ARROW -> "arrow"
+        Tool.RECT -> "rect"
+        Tool.ELLIPSE -> "ellipse"
+        else -> "line"
+    }

@@ -44,6 +44,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import ch.desgin.basicsheets.annot.PageAnnotations
+import ch.desgin.basicsheets.data.AnnotationRepository
 import ch.desgin.basicsheets.pdf.PdfDoc
 import kotlin.math.roundToInt
 
@@ -68,15 +70,41 @@ fun pageBitmap(doc: PdfDoc?, index: Int, widthPx: Int): Bitmap? =
         value = if (doc != null && widthPx > 0 && index >= 0) doc.render(index, widthPx) else null
     }.value
 
+/** Load a page's saved annotations (empty when no repo/key); reloads when `version` bumps. */
 @Composable
-private fun PageImage(bmp: Bitmap?, modifier: Modifier = Modifier) {
-    if (bmp != null) {
-        Image(bmp.asImageBitmap(), contentDescription = null, modifier = modifier, contentScale = ContentScale.FillWidth)
+fun rememberPageAnnotations(repo: AnnotationRepository?, pdfKey: String?, page: Int, version: Int): PageAnnotations =
+    produceState(PageAnnotations(), repo, pdfKey, page, version) {
+        value = if (repo != null && !pdfKey.isNullOrEmpty())
+            runCatching { repo.load(pdfKey, page) }.getOrDefault(PageAnnotations())
+        else PageAnnotations()
+    }.value
+
+/**
+ * A page bitmap with its saved annotations drawn on top (read-only). The caller's `modifier`
+ * sizes one axis (fillMaxWidth / fillMaxHeight / weight); the page aspect fixes the other.
+ */
+@Composable
+private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Modifier) {
+    if (bmp == null) return
+    Box(modifier.aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())) {
+        Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        if (!anno.isEmpty()) {
+            Canvas(Modifier.matchParentSize()) { drawPageAnnotations(anno, size.width, size.height) }
+        }
     }
 }
 
 @Composable
-fun SinglePageView(doc: PdfDoc?, page: Int, pageCount: Int, renderPx: Int, onTurn: (Int) -> Unit) {
+fun SinglePageView(
+    doc: PdfDoc?,
+    page: Int,
+    pageCount: Int,
+    renderPx: Int,
+    annoRepo: AnnotationRepository? = null,
+    pdfKey: String? = null,
+    annoVersion: Int = 0,
+    onTurn: (Int) -> Unit,
+) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     LaunchedEffect(page) { scale = 1f; offset = Offset.Zero }
@@ -86,6 +114,7 @@ fun SinglePageView(doc: PdfDoc?, page: Int, pageCount: Int, renderPx: Int, onTur
         offset = if (scale > 1f) offset + pan else Offset.Zero
     }
     val bmp = pageBitmap(doc, page, renderPx)
+    val anno = rememberPageAnnotations(annoRepo, pdfKey, page, annoVersion)
 
     Box(
         Modifier
@@ -102,14 +131,17 @@ fun SinglePageView(doc: PdfDoc?, page: Int, pageCount: Int, renderPx: Int, onTur
         contentAlignment = Alignment.Center,
     ) {
         if (bmp != null) {
-            Image(
-                bmp.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxWidth().graphicsLayer(
-                    scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y,
-                ),
-                contentScale = ContentScale.FillWidth,
-            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())
+                    .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
+            ) {
+                Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillWidth)
+                if (!anno.isEmpty()) {
+                    Canvas(Modifier.matchParentSize()) { drawPageAnnotations(anno, size.width, size.height) }
+                }
+            }
         } else {
             Text("Lädt …", color = MaterialTheme.colorScheme.outline)
         }
@@ -117,10 +149,21 @@ fun SinglePageView(doc: PdfDoc?, page: Int, pageCount: Int, renderPx: Int, onTur
 }
 
 @Composable
-fun TwoPageView(doc: PdfDoc?, page: Int, pageCount: Int, renderPx: Int, onTurn: (Int) -> Unit) {
+fun TwoPageView(
+    doc: PdfDoc?,
+    page: Int,
+    pageCount: Int,
+    renderPx: Int,
+    annoRepo: AnnotationRepository? = null,
+    pdfKey: String? = null,
+    annoVersion: Int = 0,
+    onTurn: (Int) -> Unit,
+) {
     val half = renderPx / 2
     val left = pageBitmap(doc, page, half)
     val right = if (page + 1 < pageCount) pageBitmap(doc, page + 1, half) else null
+    val leftAnno = rememberPageAnnotations(annoRepo, pdfKey, page, annoVersion)
+    val rightAnno = rememberPageAnnotations(annoRepo, pdfKey, page + 1, annoVersion)
 
     Box(
         Modifier
@@ -134,22 +177,31 @@ fun TwoPageView(doc: PdfDoc?, page: Int, pageCount: Int, renderPx: Int, onTurn: 
         contentAlignment = Alignment.Center,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            PageImage(left, Modifier.weight(1f))
-            PageImage(right, Modifier.weight(1f))
+            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f))
+            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-fun VerticalScrollView(doc: PdfDoc?, pageCount: Int, renderPx: Int, startPage: Int) {
+fun VerticalScrollView(
+    doc: PdfDoc?,
+    pageCount: Int,
+    renderPx: Int,
+    startPage: Int,
+    annoRepo: AnnotationRepository? = null,
+    pdfKey: String? = null,
+    annoVersion: Int = 0,
+) {
     val state = rememberLazyListState(
         initialFirstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)),
     )
     LazyColumn(Modifier.fillMaxSize(), state = state) {
         items(pageCount) { i ->
             val bmp = pageBitmap(doc, i, renderPx)
+            val anno = rememberPageAnnotations(annoRepo, pdfKey, i, annoVersion)
             if (bmp != null) {
-                PageImage(bmp, Modifier.fillMaxWidth())
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth())
             } else {
                 Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
@@ -161,7 +213,15 @@ fun VerticalScrollView(doc: PdfDoc?, pageCount: Int, renderPx: Int, startPage: I
 
 /** All pages side by side, fit to the viewport height — scroll sideways (MAUI 'scroll-h'). */
 @Composable
-fun HorizontalScrollView(doc: PdfDoc?, pageCount: Int, renderPx: Int, startPage: Int) {
+fun HorizontalScrollView(
+    doc: PdfDoc?,
+    pageCount: Int,
+    renderPx: Int,
+    startPage: Int,
+    annoRepo: AnnotationRepository? = null,
+    pdfKey: String? = null,
+    annoVersion: Int = 0,
+) {
     val state = rememberLazyListState(
         initialFirstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)),
     )
@@ -172,13 +232,9 @@ fun HorizontalScrollView(doc: PdfDoc?, pageCount: Int, renderPx: Int, startPage:
     ) {
         items(pageCount) { i ->
             val bmp = pageBitmap(doc, i, renderPx)
+            val anno = rememberPageAnnotations(annoRepo, pdfKey, i, annoVersion)
             if (bmp != null) {
-                Image(
-                    bmp.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxHeight().aspectRatio(bmp.width.toFloat() / bmp.height.toFloat()),
-                    contentScale = ContentScale.FillHeight,
-                )
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight())
             } else {
                 Box(Modifier.fillMaxHeight().aspectRatio(0.7f), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
