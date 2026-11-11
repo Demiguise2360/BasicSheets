@@ -45,14 +45,27 @@ build it. The first `assembleDebug` will almost certainly surface version/import
 
 Min SDK 24, target/compile SDK 35. Package `ch.desgin.basicsheets`.
 
-## Done so far (foundation)
+## Done so far
 
+**Foundation**
 - Gradle project (Compose, Room+KSP, Media3, Navigation), manifest, theme, launcher icon.
 - **Room data layer** faithfully mirroring the MAUI models: `sheets`, `setlists`, `setlist_items`,
   `bookmarks`, `viewer_buttons` (link points), `collections`, `sheet_collections`, `sheet_files`,
   `crops`, `settings_kv`, plus a new `annotations` table (replaces the WebView `localStorage` blobs,
   same JSON shape). DAOs for each.
-- App skeleton: `MainActivity` → Compose, placeholder library screen wired to Room.
+
+**Library (phase 2, in progress)**
+- `LibraryRepository` (sheets CRUD + PDF import via SAF → copy into `sheetsDir`) and
+  `SettingsRepository` (get/set over `settings_kv` with a defaults map).
+- `LibraryScreen` + `LibraryViewModel`: song list, search, tabs (Titel/Zuletzt/Favoriten/
+  Komponisten/Genres), sort (name/composer/date/difficulty from the "Sortierung" setting),
+  rating (= favourites), delete, and **PDF import** (the + button opens the system file picker,
+  copies the PDF in, creates the Sheet).
+- `ViewerScreen`: a minimal real viewer — renders pages with `PdfRenderer` and prev/next — to
+  validate the native rendering path. Navigation (`AppRoot` NavHost) wires Library → Viewer.
+
+Still to do in the library: the song editor/metadata, page-split into songs, the Komponisten/
+Genres/Sammlungen/Setlists *pivot* views (currently simple sorts), thumbnails, multi-file songs.
 
 ## Roadmap (each stage is compiled + tested in Android Studio before moving on)
 
