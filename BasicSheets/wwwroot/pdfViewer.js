@@ -542,6 +542,10 @@ window.renderHalfTurn = async function(pdfPage, composite, nextPdf, dispPage, sp
         if (gen !== _renderGen) return;
         _activeRenderTask = null;
         baseWidth = w; baseHeight = h;
+        // Faint fold indicator: where this page will split in half-turn, and a cue that THIS is a
+        // whole-page view (the composite's bar is solid). On the PDF layer, under any annotations.
+        ctx.fillStyle = 'rgba(30,136,229,0.30)';
+        ctx.fillRect(0, Math.round(h * _halfSplit - _HALF_BAR / 2), w, _HALF_BAR);
         loadNotes();   // the page's annotations
         if (btnCanvas) { btnCanvas.width = baseWidth; btnCanvas.height = baseHeight; _drawButtons(); }
         _applyHalfFit();
@@ -571,44 +575,44 @@ window.renderHalfTurn = async function(pdfPage, composite, nextPdf, dispPage, sp
     endPageTransition(); hideSpinner();
 };
 
-// Draw the composite (bottom of _halfA + blue bar + top of _halfB) at the given split.
-// Reused live while dragging the blue bar, so it only re-blits the already-rendered page
-// canvases (cheap). `refit` recentres/zooms the composite to the screen (first draw); during a
-// drag it is false so the bar tracks the finger (equal-height pages keep a constant height).
+// Draw the composite at the given split: the NEXT page's top half on top, the blue bar, then
+// the CURRENT page's bottom half below. A page turn then swaps just one half and leaves the
+// other in place, so the music never scrolls up — you read on smoothly (A = current page,
+// B = next page). Reused live while dragging the bar, so it only re-blits the already-rendered
+// page canvases (cheap). `refit` recentres/zooms to the screen (first draw); during a drag it is
+// false so the bar tracks the finger (equal-height pages keep a constant height).
 function _drawComposite(split, refit) {
     const A = _halfA, B = _halfB;
     if (!A) return;
     split = Math.min(0.85, Math.max(0.15, split));
     _halfSplit = split;
-    const aCut    = Math.round(A.h * split);             // bottom of A = aCut..A.h
+    const aCut    = Math.round(A.h * split);             // current page bottom = [aCut, A.h]
     const bottomH = A.h - aCut;
-    const topH    = B ? Math.round(B.h * split) : 0;     // top of B = 0..topH
+    const topH    = B ? Math.round(B.h * split) : 0;     // next page top = [0, topH]
     const W = Math.max(A.w, B ? B.w : 0);
-    const H = bottomH + _HALF_BAR + topH;
+    const H = topH + _HALF_BAR + bottomH;
 
     canvas.width = markerCanvas.width = noteCanvas.width  = W;
     canvas.height = markerCanvas.height = noteCanvas.height = H;
     penCanvas.width = W; penCanvas.height = H;
+    const xA = Math.round((W - A.w) / 2), xB = B ? Math.round((W - B.w) / 2) : 0;
+    const yA = topH + _HALF_BAR;                          // current page bottom sits below the bar
     ctx.fillStyle = 'white'; ctx.fillRect(0, 0, W, H);
-    ctx.drawImage(A.c, 0, aCut, A.w, bottomH, Math.round((W - A.w) / 2), 0, A.w, bottomH);   // bottom of A
-    ctx.fillStyle = '#1E88E5'; ctx.fillRect(0, bottomH, W, _HALF_BAR);                        // blue bar
-    if (B) ctx.drawImage(B.c, 0, 0, B.w, topH, Math.round((W - B.w) / 2), bottomH + _HALF_BAR, B.w, topH);
+    if (B) ctx.drawImage(B.c, 0, 0, B.w, topH, xB, 0, B.w, topH);                 // next page top → TOP
+    ctx.fillStyle = '#1E88E5'; ctx.fillRect(0, topH, W, _HALF_BAR);               // solid bar at the fold
+    ctx.drawImage(A.c, 0, aCut, A.w, bottomH, xA, yA, A.w, bottomH);              // current page bottom → BOTTOM
 
-    // Annotations: blit the matching half of each page's cached layers onto the composite
-    // overlays. drawImage's source rect clips at the split, so a mark never bleeds past the fold
-    // or onto the blue bar. (The .width assignments above already cleared every overlay.) The
-    // live arrays stay empty — the composite is a read-only view spanning two pages.
+    // Annotations: blit each page's matching half (source rect clips at the fold). The live
+    // arrays stay empty — the composite is a read-only view spanning two pages.
     penStrokes = []; markerAnnotations = []; stampAnnotations = [];
     textAnnotations = []; hairpinAnnotations = []; shapeAnnotations = [];
-    const xA = Math.round((W - A.w) / 2), xB = B ? Math.round((W - B.w) / 2) : 0;
-    if (_halfNotesA) {
-        noteCtx.drawImage(_halfNotesA.note,     0, aCut, A.w, bottomH, xA, 0, A.w, bottomH);
-        markerCtx.drawImage(_halfNotesA.marker, 0, aCut, A.w, bottomH, xA, 0, A.w, bottomH);
-    }
     if (_halfNotesB && B) {
-        const yB = bottomH + _HALF_BAR;
-        noteCtx.drawImage(_halfNotesB.note,     0, 0, B.w, topH, xB, yB, B.w, topH);
-        markerCtx.drawImage(_halfNotesB.marker, 0, 0, B.w, topH, xB, yB, B.w, topH);
+        noteCtx.drawImage(_halfNotesB.note,     0, 0, B.w, topH, xB, 0, B.w, topH);
+        markerCtx.drawImage(_halfNotesB.marker, 0, 0, B.w, topH, xB, 0, B.w, topH);
+    }
+    if (_halfNotesA) {
+        noteCtx.drawImage(_halfNotesA.note,     0, aCut, A.w, bottomH, xA, yA, A.w, bottomH);
+        markerCtx.drawImage(_halfNotesA.marker, 0, aCut, A.w, bottomH, xA, yA, A.w, bottomH);
     }
     baseWidth = W; baseHeight = H;
     if (btnCanvas) { btnCanvas.width = W; btnCanvas.height = H; btnCtx.clearRect(0, 0, W, H); }
@@ -671,18 +675,18 @@ function _buildHalfNotes(pdfA, pdfB, A, B) {
 // True when the screen point (sx,sy) is on/near the blue bar of the current composite.
 function _halfBarHit(sx, sy) {
     if (_displayMode !== 'half-turn' || !_halfComposite || !_halfA) return false;
-    const A = _halfA;
-    const bottomH = A.h - Math.round(A.h * _halfSplit);
-    const barScreenY = panY + (bottomH + _HALF_BAR / 2) * zoom;
+    const bh = _halfB ? _halfB.h : _halfA.h;             // the bar sits at the next page's top-half height
+    const topH = Math.round(bh * _halfSplit);
+    const barScreenY = panY + (topH + _HALF_BAR / 2) * zoom;
     const tol = Math.max(24, _HALF_BAR * zoom * 3);     // generous touch target around the bar
     return Math.abs(sy - barScreenY) <= tol;
 }
 function _halfBarDragStart() { _halfBarDrag = {}; }
 function _halfBarDragMove(sy) {
     if (!_halfBarDrag || !_halfA) return;
-    const A = _halfA;
-    const bottomH = Math.min(A.h - 8, Math.max(8, (sy - panY) / zoom));   // bar's new composite-Y
-    _drawComposite(1 - bottomH / A.h, false);
+    const bh = _halfB ? _halfB.h : _halfA.h;
+    const topH = Math.min(bh - 8, Math.max(8, (sy - panY) / zoom));       // bar's new composite-Y = next-page top height
+    _drawComposite(topH / bh, false);
 }
 function _halfBarDragEnd() {
     if (!_halfBarDrag) return;
