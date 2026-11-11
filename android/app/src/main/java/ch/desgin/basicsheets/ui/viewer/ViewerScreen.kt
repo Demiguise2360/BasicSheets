@@ -163,7 +163,7 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
             )
         },
         bottomBar = {
-            if (!editMode && mode != DisplayMode.SCROLL_V && pageCount > 1) {
+            if (!editMode && (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && pageCount > 1) {
                 val step = if (mode == DisplayMode.TWO) 2 else 1
                 BottomAppBar {
                     TextButton(onClick = { turn(-step) }, enabled = page > 0) { Text("‹") }
@@ -195,7 +195,11 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
                 when (mode) {
                     DisplayMode.SINGLE -> SinglePageView(doc, page, pageCount, renderPx) { turn(it) }
                     DisplayMode.TWO -> TwoPageView(doc, page, pageCount, renderPx) { turn(it) }
+                    DisplayMode.HALF -> HalfTurnView(
+                        doc, page, pageCount, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(),
+                    ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
                     DisplayMode.SCROLL_V -> VerticalScrollView(doc, pageCount, renderPx, page)
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, pageCount, renderPx, page)
                 }
                 if (showMetro) {
                     Box(Modifier.align(Alignment.BottomCenter)) {
