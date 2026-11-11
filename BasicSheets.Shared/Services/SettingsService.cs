@@ -110,6 +110,14 @@ public class SettingsService
         });
         AddIfMissing(new Setting
         {
+            Name        = "Metronom: Auto-Blättern",
+            Description = "Mit laufendem Metronom automatisch nach einer festen Anzahl Takte umblättern.",
+            Type        = "select",
+            Value       = "0",
+            Options     = ["0|Aus", "1|Jeden Takt", "2|Alle 2 Takte", "4|Alle 4 Takte", "8|Alle 8 Takte"]
+        });
+        AddIfMissing(new Setting
+        {
             Name        = "Viewer-Hintergrund",
             Description = "Hintergrundfarbe hinter den Noten.",
             Type        = "select",
@@ -416,6 +424,13 @@ public class SettingsService
     {
         var s = _settings.FirstOrDefault(x => x.Name == "Haptisches Feedback");
         return s == null || s.Value != "false";
+    }
+
+    // Measures per automatic metronome-driven page turn (0 = off).
+    public int MetroTurnBars()
+    {
+        var s = _settings.FirstOrDefault(x => x.Name == "Metronom: Auto-Blättern");
+        return (s != null && int.TryParse(s.Value, out var v) && v >= 0) ? v : 0;
     }
 
     public bool IsDarkMode()

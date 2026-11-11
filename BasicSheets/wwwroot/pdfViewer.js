@@ -2226,14 +2226,15 @@ window.isLandscape = () => window.innerWidth > window.innerHeight;
 // ═══════════════════════════════════════════════════════════════════
 //  Metronome — Web Audio click + visual pulse (lookahead scheduling)
 // ═══════════════════════════════════════════════════════════════════
-// Entirely self-contained: does not touch the viewer render / annotation /
-// navigation paths. Precise audio is scheduled on the Web Audio clock; the
-// visual pulse rides a setTimeout per beat (cosmetic).
+// Self-contained audio/visual engine: precise audio is scheduled on the Web Audio clock and
+// the visual pulse rides a setTimeout per beat (cosmetic). The one outward hook is the opt-in
+// auto page-turn (_metroTurnBars), which fires OnGesture('next_page') on a measure downbeat.
 
 let _metroCtx = null, _metroTimer = null;
 let _metroNextNote = 0, _metroBeat = 0;
 let _metroBpm = 100, _metroBeats = 4, _metroRunning = false;
 let _metroMuted = false, _metroAccent = true, _metroSubdiv = 1;
+let _metroTurnBars = 0;          // auto page-turn every N measures (0 = off), driven by the beat count
 const _METRO_LOOKAHEAD = 25;     // ms between scheduler ticks
 const _METRO_AHEAD = 0.12;       // sec of audio scheduled ahead of the clock
 
@@ -2266,6 +2267,12 @@ function _metroScheduler() {
         }
         const delayMs = Math.max(0, (_metroNextNote - ctx.currentTime) * 1000);
         setTimeout(() => { if (_metroRunning) _metroPulse(isDown); }, delayMs);
+        // Auto page-turn: after every N measures, turn the page on the measure's downbeat.
+        if (_metroTurnBars > 0 && _metroBeat > 0 && (_metroBeat % (_metroTurnBars * _metroBeats)) === 0) {
+            setTimeout(() => {
+                if (_metroRunning && dotNetRef) { try { dotNetRef.invokeMethodAsync('OnGesture', 'next_page'); } catch (e) {} }
+            }, delayMs);
+        }
         _metroNextNote += 60.0 / _metroBpm;
         _metroBeat++;
     }
@@ -2293,6 +2300,7 @@ window.isMetronomeRunning = function() { return _metroRunning; };
 window.setMetronomeMuted  = function(on) { _metroMuted  = !!on; };
 window.setMetronomeAccent = function(on) { _metroAccent = (on !== false); };
 window.setMetronomeSubdiv = function(n) { _metroSubdiv = Math.max(1, Math.min(4, (n | 0) || 1)); };
+window.setMetronomeTurnBars = function(n) { _metroTurnBars = Math.max(0, Math.min(32, (n | 0) || 0)); return _metroTurnBars; };
 
 
 // ═══════════════════════════════════════════════════════════════════
