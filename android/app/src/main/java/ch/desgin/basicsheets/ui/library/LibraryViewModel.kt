@@ -9,6 +9,7 @@ import ch.desgin.basicsheets.data.Sheet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -22,7 +23,8 @@ class LibraryViewModel : ViewModel() {
     private val sortKey = MutableStateFlow("name")
 
     private val sheets = repo.observeSheets()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        .catch { emit(emptyList()) }   // a DB error shows an empty list, never a crash
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init { viewModelScope.launch { sortKey.value = settings.get("Sortierung", "name") } }
 
@@ -46,7 +48,8 @@ class LibraryViewModel : ViewModel() {
                 else -> sortSongs(r, sort)
             }
             r
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }.catch { emit(emptyList()) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private fun sortSongs(list: List<Sheet>, sort: String): List<Sheet> = when (sort) {
         "composer" -> list.sortedBy { it.composer.lowercase() }
