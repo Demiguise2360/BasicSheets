@@ -5,6 +5,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
 }
 
@@ -71,6 +72,9 @@ dependencies {
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.8.4")
+
+    // JSON for annotation blobs
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Room (SQLite) — library, setlists, bookmarks, settings, annotations
     val room = "2.6.1"

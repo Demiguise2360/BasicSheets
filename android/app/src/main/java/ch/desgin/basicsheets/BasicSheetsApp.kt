@@ -1,6 +1,7 @@
 package ch.desgin.basicsheets
 
 import android.app.Application
+import ch.desgin.basicsheets.data.AnnotationRepository
 import ch.desgin.basicsheets.data.BasicSheetsDatabase
 import ch.desgin.basicsheets.data.LibraryRepository
 import ch.desgin.basicsheets.data.SettingsRepository
@@ -16,6 +17,7 @@ class BasicSheetsApp : Application() {
 
     val library: LibraryRepository by lazy { LibraryRepository(db, sheetsDir) }
     val settings: SettingsRepository by lazy { SettingsRepository(db) }
+    val annotations: AnnotationRepository by lazy { AnnotationRepository(db) }
 
     override fun onCreate() {
         super.onCreate()
