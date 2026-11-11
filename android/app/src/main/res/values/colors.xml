@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App brand palette (the MAUI app's teal) -->
+    <color name="teal">#4D8A80</color>
+    <color name="teal_dark">#345E58</color>
+    <color name="teal_light">#6BA89E</color>
+    <color name="ink">#1E2A28</color>
+    <color name="ic_launcher_background">#1E2A28</color>
+</resources>

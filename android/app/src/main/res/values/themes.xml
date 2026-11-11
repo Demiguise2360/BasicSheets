@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window/splash theme only; the real UI theming is done in Compose (ui/theme).
+         Uses a framework parent so no extra XML-theme dependency is required. -->
+    <style name="Theme.BasicSheets" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:statusBarColor">@color/ink</item>
+        <item name="android:navigationBarColor">@color/ink</item>
+    </style>
+</resources>
