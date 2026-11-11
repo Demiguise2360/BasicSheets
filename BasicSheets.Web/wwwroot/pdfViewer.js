@@ -24,6 +24,8 @@ let _halfComposite = false;   // half-page: current view is a composite (bottom-
 let _halfSplit = 0.5;         // half-page split position (fraction of page height)
 let _halfA = null;            // cached render {c,w,h} of the composite's current page
 let _halfB = null;            // cached render {c,w,h} of the composite's next page
+let _halfNotesA = null;       // cached annotation layers {note,marker} for the current page
+let _halfNotesB = null;       // cached annotation layers {note,marker} for the next page
 let _halfBarDrag = null;      // active blue-bar drag state (composite split adjust)
 let _halfSaveTimer = null;    // debounce timer for persisting the split
 
@@ -562,7 +564,8 @@ window.renderHalfTurn = async function(pdfPage, composite, nextPdf, dispPage, sp
     if (gen !== _renderGen) return;
 
     _halfA = A; _halfB = B;
-    _drawComposite(_halfSplit, true);   // refit the whole composite to the screen
+    _buildHalfNotes(pdfPage, nextPdf, A, B);   // cache each page's annotations as layer canvases
+    _drawComposite(_halfSplit, true);          // refit the whole composite to the screen
     endPageTransition(); hideSpinner();
 };
 
@@ -589,15 +592,77 @@ function _drawComposite(split, refit) {
     ctx.fillStyle = '#1E88E5'; ctx.fillRect(0, bottomH, W, _HALF_BAR);                        // blue bar
     if (B) ctx.drawImage(B.c, 0, 0, B.w, topH, Math.round((W - B.w) / 2), bottomH + _HALF_BAR, B.w, topH);
 
-    // Milestone 1: composite shows PDF only; annotations show on the full-page views.
-    markerCtx.clearRect(0, 0, W, H);
-    noteCtx.clearRect(0, 0, W, H);
-    penCtx.clearRect(0, 0, W, H);
+    // Annotations: blit the matching half of each page's cached layers onto the composite
+    // overlays. drawImage's source rect clips at the split, so a mark never bleeds past the fold
+    // or onto the blue bar. (The .width assignments above already cleared every overlay.) The
+    // live arrays stay empty — the composite is a read-only view spanning two pages.
     penStrokes = []; markerAnnotations = []; stampAnnotations = [];
     textAnnotations = []; hairpinAnnotations = []; shapeAnnotations = [];
+    const xA = Math.round((W - A.w) / 2), xB = B ? Math.round((W - B.w) / 2) : 0;
+    if (_halfNotesA) {
+        noteCtx.drawImage(_halfNotesA.note,     0, aCut, A.w, bottomH, xA, 0, A.w, bottomH);
+        markerCtx.drawImage(_halfNotesA.marker, 0, aCut, A.w, bottomH, xA, 0, A.w, bottomH);
+    }
+    if (_halfNotesB && B) {
+        const yB = bottomH + _HALF_BAR;
+        noteCtx.drawImage(_halfNotesB.note,     0, 0, B.w, topH, xB, yB, B.w, topH);
+        markerCtx.drawImage(_halfNotesB.marker, 0, 0, B.w, topH, xB, yB, B.w, topH);
+    }
     baseWidth = W; baseHeight = H;
     if (btnCanvas) { btnCanvas.width = W; btnCanvas.height = H; btnCtx.clearRect(0, 0, W, H); }
     if (refit) _applyHalfFit(); else applyView();
+}
+
+// Load the saved annotation blob for an arbitrary page of the current doc (composite needs
+// two pages' notes, not just the live pageNum). Returns the parsed object or null.
+function _loadNotesData(n) {
+    let raw;
+    try { raw = localStorage.getItem('bsv2_' + currentPdfKey + '_p' + n); } catch (e) { return null; }
+    if (!raw) { try { raw = localStorage.getItem('notes_' + currentPdfKey + '_p' + n); } catch (e) {} }
+    if (!raw || raw.startsWith('data:image')) return null;   // skip the very old pen-bitmap format
+    try { const d = JSON.parse(raw); return (d && typeof d === 'object') ? d : null; } catch (e) { return null; }
+}
+
+// Render each composite page's saved annotations into cached {note,marker} layer canvases,
+// reusing the real draw functions by briefly pointing the layer globals at offscreen temps.
+// _drawComposite then blits the matching half of each. Note coords are rotation-0 page px, so
+// at a non-zero rotation (where the composite pages are rotated) the composite stays PDF-only.
+function _buildHalfNotes(pdfA, pdfB, A, B) {
+    _halfNotesA = _halfNotesB = null;
+    if (pageRotation !== 0) return;
+    const dataA = _loadNotesData(pdfA);
+    const dataB = (pdfB && pdfB >= 1) ? _loadNotesData(pdfB) : null;
+    if (!dataA && !dataB) return;
+    // Save the live layer refs + annotation state, point them at temps, restore in finally.
+    const R = { pc: penCanvas, px: penCtx, mc: markerCanvas, mx: markerCtx, nc: noteCanvas, nx: noteCtx,
+                ps: penStrokes, ma: markerAnnotations, sa: stampAnnotations, ta: textAnnotations,
+                ha: hairpinAnnotations, sh: shapeAnnotations,
+                ls: liveStroke, lst: liveStamp, lh: liveHairpin, lsh: liveShape };
+    try {
+        const render = (pw, ph, data) => {
+            penCanvas    = makeCanvas(pw, ph); penCtx    = penCanvas.getContext('2d');
+            markerCanvas = makeCanvas(pw, ph); markerCtx = markerCanvas.getContext('2d');
+            noteCanvas   = makeCanvas(pw, ph); noteCtx   = noteCanvas.getContext('2d');
+            penStrokes        = data.penStrokes || [];
+            markerAnnotations = data.markerData  || []; stampAnnotations = data.stampData || [];
+            textAnnotations   = data.textData    || []; hairpinAnnotations = data.hairpinData || [];
+            shapeAnnotations  = data.shapeData   || [];
+            liveStroke = liveStamp = liveHairpin = liveShape = null;
+            redrawPenLayer();      // → temp penCanvas
+            redrawMarkers(null);   // → temp markerCanvas (0.35 alpha baked in)
+            redrawVectorLayer();   // → temp noteCanvas (pen + stamps + text + hairpins + shapes)
+            return { note: noteCanvas, marker: markerCanvas };
+        };
+        if (dataA)      _halfNotesA = render(A.w, A.h, dataA);
+        if (dataB && B) _halfNotesB = render(B.w, B.h, dataB);
+    } catch (e) {
+        _halfNotesA = _halfNotesB = null;
+    } finally {
+        penCanvas = R.pc; penCtx = R.px; markerCanvas = R.mc; markerCtx = R.mx; noteCanvas = R.nc; noteCtx = R.nx;
+        penStrokes = R.ps; markerAnnotations = R.ma; stampAnnotations = R.sa; textAnnotations = R.ta;
+        hairpinAnnotations = R.ha; shapeAnnotations = R.sh;
+        liveStroke = R.ls; liveStamp = R.lst; liveHairpin = R.lh; liveShape = R.lsh;
+    }
 }
 
 // ── Blue-bar drag: set the composite split by dragging the divider up/down ──
