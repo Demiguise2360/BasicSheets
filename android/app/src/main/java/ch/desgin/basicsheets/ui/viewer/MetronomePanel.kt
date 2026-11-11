@@ -72,10 +72,10 @@ fun MetronomePanel(metro: Metronome, onClose: () -> Unit) {
                     )
                 }
                 Text("♩ = ${metro.bpm}", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                OutlinedIconButton(onClick = { metro.setBpm(metro.bpm - 5) }) {
+                OutlinedIconButton(onClick = { metro.changeBpm(metro.bpm - 5) }) {
                     Icon(Icons.Filled.Remove, contentDescription = "Langsamer")
                 }
-                OutlinedIconButton(onClick = { metro.setBpm(metro.bpm + 5) }) {
+                OutlinedIconButton(onClick = { metro.changeBpm(metro.bpm + 5) }) {
                     Icon(Icons.Filled.Add, contentDescription = "Schneller")
                 }
                 OutlinedButton(onClick = {
@@ -85,7 +85,7 @@ fun MetronomePanel(metro: Metronome, onClose: () -> Unit) {
                     while (taps.size > 6) taps.removeAt(0)
                     if (taps.size >= 2) {
                         val avg = (taps.last() - taps.first()).toDouble() / (taps.size - 1)
-                        if (avg > 0) metro.setBpm((60000.0 / avg).roundToInt())
+                        if (avg > 0) metro.changeBpm((60000.0 / avg).roundToInt())
                     }
                 }) { Text("Tap") }
             }

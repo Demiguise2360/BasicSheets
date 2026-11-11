@@ -32,7 +32,7 @@ class Metronome {
     private var job: Job? = null
     private var tone: ToneGenerator? = null
 
-    fun setBpm(v: Int) { bpm = v.coerceIn(20, 300) }
+    fun changeBpm(v: Int) { bpm = v.coerceIn(20, 300) }
 
     fun toggle() { if (running) stop() else start() }
 
