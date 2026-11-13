@@ -1,15 +1,19 @@
 package ch.desgin.basicsheets.ui.viewer
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.DropdownMenu
@@ -17,8 +21,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -55,7 +61,10 @@ import ch.desgin.basicsheets.data.Sheet
 import ch.desgin.basicsheets.pdf.OutlineEntry
 import ch.desgin.basicsheets.pdf.PdfDoc
 import ch.desgin.basicsheets.pdf.PdfOutline
+import ch.desgin.basicsheets.pdf.PdfTextIndex
+import ch.desgin.basicsheets.pdf.SearchHit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -99,6 +108,15 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
     var outline by remember { mutableStateOf<List<OutlineEntry>>(emptyList()) }
     var jumpToken by remember { mutableIntStateOf(0) }
 
+    // In-document search
+    var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<SearchHit>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var searchIdx by remember { mutableIntStateOf(-1) }
+    var showMatchNav by remember { mutableStateOf(false) }
+    val textIndex = remember { PdfTextIndex() }
+
     val renderPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() * 2f).toInt() }
 
     LaunchedEffect(sheetId) {
@@ -121,6 +139,23 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
             annotations = app.annotations.load(key, page)
             undoStack.clear()
         }
+    }
+
+    // Debounced in-document search while the search sheet is open.
+    LaunchedEffect(searchQuery, showSearch) {
+        if (!showSearch) return@LaunchedEffect
+        showMatchNav = false
+        searchIdx = -1
+        val q = searchQuery.trim()
+        if (q.length < 2) { searchResults = emptyList(); searching = false; return@LaunchedEffect }
+        searching = true
+        delay(300)
+        val s = sheet
+        if (s != null) {
+            textIndex.ensure(app.library.fileFor(s), s.filePath)
+            searchResults = textIndex.search(q)
+        }
+        searching = false
     }
 
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, pageCount - 1)) }
@@ -193,6 +228,11 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
         val key = sheet?.filePath ?: return
         scope.launch { app.bookmarks.remove(bm.id); bookmarks = app.bookmarks.forFile(key) }
     }
+    fun matchNav(delta: Int) {
+        if (searchResults.isEmpty()) return
+        searchIdx = (searchIdx + delta).coerceIn(0, searchResults.size - 1)
+        jumpToPage(searchResults[searchIdx].page)
+    }
 
     Scaffold(
         topBar = {
@@ -221,6 +261,9 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
                         }
                         TextButton(onClick = { showMetro = !showMetro }) {
                             Text(if (metro.running) "♩ ${metro.bpm} ▶" else "♩ ${metro.bpm}")
+                        }
+                        IconButton(onClick = { showSearch = true }) {
+                            Icon(Icons.Filled.Search, contentDescription = "Suchen")
                         }
                         IconButton(onClick = { showBookmarks = true }) {
                             Icon(Icons.Filled.Bookmarks, contentDescription = "Lesezeichen")
@@ -314,6 +357,32 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
                     page = page + 1,
                     onSave = { label, color -> addBookmark(label, color) },
                     onDismiss = { addingBookmark = false },
+                )
+            }
+
+            if (showMatchNav && searchResults.isNotEmpty() && !editMode && !showSearch) {
+                Surface(
+                    Modifier.align(Alignment.TopCenter).padding(8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    tonalElevation = 4.dp,
+                    shadowElevation = 6.dp,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { matchNav(-1) }, enabled = searchIdx > 0) { Text("‹") }
+                        Text("Treffer ${searchIdx + 1}/${searchResults.size}", style = MaterialTheme.typography.labelLarge)
+                        IconButton(onClick = { matchNav(1) }, enabled = searchIdx < searchResults.size - 1) { Text("›") }
+                        IconButton(onClick = { showMatchNav = false }) { Icon(Icons.Filled.Close, contentDescription = "Schließen") }
+                    }
+                }
+            }
+            if (showSearch) {
+                SearchSheet(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    searching = searching,
+                    results = searchResults,
+                    onJump = { hit, i -> searchIdx = i; showMatchNav = true; showSearch = false; jumpToPage(hit.page) },
+                    onDismiss = { showSearch = false },
                 )
             }
         }
