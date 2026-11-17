@@ -10,6 +10,7 @@ const val KEY_BG = "Viewer-Hintergrund"
 const val KEY_INVERT = "Noten invertieren"
 const val KEY_KEEP_ON = "Bildschirm wach halten"
 const val KEY_PAGE_NUMBERS = "Seitenzahlen"
+const val KEY_COMPOSER_INFO = "Komponisten-Infos"
 
 /** An immutable view of the settings, with typed accessors; provided app-wide via [LocalSettings]. */
 data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
@@ -27,6 +28,7 @@ data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
     val invert: Boolean get() = bool(KEY_INVERT, false)
     val keepScreenOn: Boolean get() = bool(KEY_KEEP_ON, false)
     val pageNumbers: Boolean get() = bool(KEY_PAGE_NUMBERS, true)
+    val composerInfo: Boolean get() = bool(KEY_COMPOSER_INFO, true)
 }
 
 val LocalSettings = compositionLocalOf { SettingsSnapshot() }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
@@ -86,6 +87,7 @@ fun LibraryScreen(
     onOpen: (Int) -> Unit,
     onOpenSetlist: (Int) -> Unit,
     onOpenCollection: (Int) -> Unit,
+    onOpenComposer: (String) -> Unit,
     vm: LibraryViewModel = viewModel(),
 ) {
     val app = BasicSheetsApp.instance
@@ -158,6 +160,7 @@ fun LibraryScreen(
         when (tabKey) {
             "setlists" -> SetlistsTab(setlists, onOpenSetlist)
             "sammlungen" -> CollectionsTab(collections, onOpenCollection)
+            "composer" -> ComposerTab(sheets, query, onOpenComposer)
             else -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) })
         }
     }
@@ -293,6 +296,46 @@ private fun CollectionsTab(collections: List<Collection>, onOpen: (Int) -> Unit)
         }
     }
 }
+
+@Composable
+private fun ComposerTab(sheets: List<Sheet>, query: String, onOpen: (String) -> Unit) {
+    val composers = remember(sheets) {
+        sheets.asSequence()
+            .map { it.composer.trim() }
+            .filter { it.isNotEmpty() }
+            .groupingBy { it }
+            .eachCount()
+            .toList()
+            .sortedBy { it.first.lowercase() }
+    }
+    if (composers.isEmpty()) {
+        EmptyTab(if (query.isBlank()) "Noch keine Komponisten. Füge Noten mit Komponist hinzu." else "Keine Treffer.")
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(composers, key = { it.first }) { (name, count) ->
+            ElevatedCard(Modifier.fillMaxWidth().clickable { onOpen(name) }) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(38.dp).clip(CircleShape).background(nameColor(name)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "$count ${if (count == 1) "Stück" else "Stücke"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun nameColor(seed: String): Color =
+    SQUARE_COLORS[seed.hashCode().absoluteValue % SQUARE_COLORS.size]
 
 private fun hexColor(hex: String?): Color =
     runCatching { Color(android.graphics.Color.parseColor(hex ?: "#387373")) }.getOrDefault(Color(0xFF387373))

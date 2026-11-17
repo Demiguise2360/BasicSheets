@@ -55,6 +55,9 @@ fun SettingsScreen() {
             ToggleRow("Noten invertieren", "Nachtmodus: kehrt die Notenfarben um", settings.invert) { set(KEY_INVERT, it.toString()) }
             ToggleRow("Bildschirm wach halten", "Display bleibt beim Lesen an", settings.keepScreenOn) { set(KEY_KEEP_ON, it.toString()) }
             ToggleRow("Seitenzahlen", "Seitennummer unten im Viewer anzeigen", settings.pageNumbers) { set(KEY_PAGE_NUMBERS, it.toString()) }
+
+            SectionHeader("Komponisten")
+            ToggleRow("Komponisten-Infos", "Porträt und Wikipedia-Text aus dem Internet laden", settings.composerInfo) { set(KEY_COMPOSER_INFO, it.toString()) }
         }
     }
 }
