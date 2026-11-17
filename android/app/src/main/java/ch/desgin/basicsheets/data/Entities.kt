@@ -93,6 +93,7 @@ data class ViewerButton(
 data class Collection(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String = "",
+    val color: String? = "#387373",   // nullable so the v1→v2 migration needs no SQL default
 )
 
 @Entity(tableName = "sheet_collections", indices = [Index("sheetId"), Index("collectionId")])

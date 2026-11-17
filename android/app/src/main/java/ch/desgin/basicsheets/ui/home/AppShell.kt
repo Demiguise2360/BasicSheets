@@ -29,7 +29,7 @@ import ch.desgin.basicsheets.ui.settings.SettingsScreen
 /** The home shell: a persistent petrol bottom nav over the Noten / Lesezeichen / Üben / Einstellungen tabs. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppShell(onOpenSheet: (Int) -> Unit, onOpenSetlist: (Int) -> Unit) {
+fun AppShell(onOpenSheet: (Int) -> Unit, onOpenSetlist: (Int) -> Unit, onOpenCollection: (Int) -> Unit) {
     var tab by remember { mutableStateOf("noten") }
 
     Scaffold(
@@ -52,7 +52,7 @@ fun AppShell(onOpenSheet: (Int) -> Unit, onOpenSetlist: (Int) -> Unit) {
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when (tab) {
-                "noten" -> LibraryScreen(onOpen = onOpenSheet, onOpenSetlist = onOpenSetlist)
+                "noten" -> LibraryScreen(onOpen = onOpenSheet, onOpenSetlist = onOpenSetlist, onOpenCollection = onOpenCollection)
                 "lesezeichen" -> BookmarksScreen(onOpen = onOpenSheet)
                 "ueben" -> PracticeScreen()
                 else -> SettingsScreen()

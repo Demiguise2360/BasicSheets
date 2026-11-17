@@ -6,6 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import ch.desgin.basicsheets.ui.collections.CollectionDetailScreen
 import ch.desgin.basicsheets.ui.home.AppShell
 import ch.desgin.basicsheets.ui.setlists.SetlistDetailScreen
 import ch.desgin.basicsheets.ui.viewer.ViewerScreen
@@ -18,6 +19,18 @@ fun AppRoot() {
             AppShell(
                 onOpenSheet = { id -> nav.navigate("viewer/$id") },
                 onOpenSetlist = { id -> nav.navigate("setlist/$id") },
+                onOpenCollection = { id -> nav.navigate("collection/$id") },
+            )
+        }
+        composable(
+            route = "collection/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.IntType }),
+        ) { backStack ->
+            val id = backStack.arguments?.getInt("id") ?: 0
+            CollectionDetailScreen(
+                collectionId = id,
+                onOpenSheet = { sheetId -> nav.navigate("viewer/$sheetId") },
+                onBack = { nav.popBackStack() },
             )
         }
         composable(

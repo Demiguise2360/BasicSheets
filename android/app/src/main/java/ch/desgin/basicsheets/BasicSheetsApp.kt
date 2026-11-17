@@ -4,6 +4,7 @@ import android.app.Application
 import ch.desgin.basicsheets.data.AnnotationRepository
 import ch.desgin.basicsheets.data.BasicSheetsDatabase
 import ch.desgin.basicsheets.data.BookmarkRepository
+import ch.desgin.basicsheets.data.CollectionRepository
 import ch.desgin.basicsheets.data.LibraryRepository
 import ch.desgin.basicsheets.data.SetlistRepository
 import ch.desgin.basicsheets.data.SettingsRepository
@@ -22,6 +23,7 @@ class BasicSheetsApp : Application() {
     val settings: SettingsRepository by lazy { SettingsRepository(db) }
     val annotations: AnnotationRepository by lazy { AnnotationRepository(db) }
     val bookmarks: BookmarkRepository by lazy { BookmarkRepository(db) }
+    val collections: CollectionRepository by lazy { CollectionRepository(db) }
     val setlists: SetlistRepository by lazy { SetlistRepository(db) }
 
     override fun onCreate() {

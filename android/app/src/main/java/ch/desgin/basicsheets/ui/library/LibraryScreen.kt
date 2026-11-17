@@ -61,10 +61,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.desgin.basicsheets.BasicSheetsApp
+import ch.desgin.basicsheets.data.Collection
 import ch.desgin.basicsheets.data.Setlist
 import ch.desgin.basicsheets.data.Sheet
+import ch.desgin.basicsheets.ui.collections.CollectionDialog
 import ch.desgin.basicsheets.ui.setlists.NameDialog
 import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.viewer.BOOKMARK_COLORS
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
@@ -79,16 +82,23 @@ private val SONG_TABS = setOf("songs", "favorites", "composer")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(onOpen: (Int) -> Unit, onOpenSetlist: (Int) -> Unit, vm: LibraryViewModel = viewModel()) {
+fun LibraryScreen(
+    onOpen: (Int) -> Unit,
+    onOpenSetlist: (Int) -> Unit,
+    onOpenCollection: (Int) -> Unit,
+    vm: LibraryViewModel = viewModel(),
+) {
     val app = BasicSheetsApp.instance
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheets by vm.shown.collectAsState()
     val query by vm.search.collectAsState()
     val setlists by app.setlists.observeAll().collectAsState(initial = emptyList())
+    val collections by app.collections.observeAll().collectAsState(initial = emptyList())
 
     var tabKey by remember { mutableStateOf("songs") }
     var creatingSetlist by remember { mutableStateOf(false) }
+    var creatingCollection by remember { mutableStateOf(false) }
 
     LaunchedEffect(tabKey) { if (tabKey in SONG_TABS) vm.setTab(tabKey) }
 
@@ -98,7 +108,7 @@ fun LibraryScreen(onOpen: (Int) -> Unit, onOpenSetlist: (Int) -> Unit, vm: Libra
     fun onPlus() {
         when (tabKey) {
             "setlists" -> creatingSetlist = true
-            "sammlungen" -> {}
+            "sammlungen" -> creatingCollection = true
             else -> picker.launch(arrayOf("application/pdf"))
         }
     }
@@ -147,7 +157,7 @@ fun LibraryScreen(onOpen: (Int) -> Unit, onOpenSetlist: (Int) -> Unit, vm: Libra
 
         when (tabKey) {
             "setlists" -> SetlistsTab(setlists, onOpenSetlist)
-            "sammlungen" -> EmptyTab("Sammlungen kommen bald.")
+            "sammlungen" -> CollectionsTab(collections, onOpenCollection)
             else -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) })
         }
     }
@@ -158,6 +168,15 @@ fun LibraryScreen(onOpen: (Int) -> Unit, onOpenSetlist: (Int) -> Unit, vm: Libra
             initial = "",
             onSave = { name -> scope.launch { app.setlists.create(name) }; creatingSetlist = false },
             onDismiss = { creatingSetlist = false },
+        )
+    }
+    if (creatingCollection) {
+        CollectionDialog(
+            title = "Neue Sammlung",
+            initialName = "",
+            initialColor = BOOKMARK_COLORS.first(),
+            onSave = { name, color -> scope.launch { app.collections.create(name, color) }; creatingCollection = false },
+            onDismiss = { creatingCollection = false },
         )
     }
 }
@@ -250,6 +269,33 @@ private fun SetlistsTab(setlists: List<Setlist>, onOpen: (Int) -> Unit) {
         }
     }
 }
+
+@Composable
+private fun CollectionsTab(collections: List<Collection>, onOpen: (Int) -> Unit) {
+    if (collections.isEmpty()) {
+        EmptyTab("Noch keine Sammlungen. Tippe + um eine zu erstellen.")
+        return
+    }
+    val app = BasicSheetsApp.instance
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(collections, key = { it.id }) { c ->
+            val count by produceState(-1, c.id) { value = runCatching { app.collections.count(c.id) }.getOrDefault(0) }
+            ElevatedCard(Modifier.fillMaxWidth().clickable { onOpen(c.id) }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(hexColor(c.color)))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(c.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (count < 0) "…" else "$count Stücke", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun hexColor(hex: String?): Color =
+    runCatching { Color(android.graphics.Color.parseColor(hex ?: "#387373")) }.getOrDefault(Color(0xFF387373))
 
 @Composable
 private fun EmptyTab(text: String) {

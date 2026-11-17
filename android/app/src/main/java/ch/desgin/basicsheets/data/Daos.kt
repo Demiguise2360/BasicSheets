@@ -94,16 +94,36 @@ interface ViewerButtonDao {
 interface CollectionDao {
     @Query("SELECT * FROM collections ORDER BY name COLLATE NOCASE")
     suspend fun all(): List<Collection>
+
+    @Query("SELECT * FROM collections ORDER BY name COLLATE NOCASE")
+    fun observeAll(): Flow<List<Collection>>
+
+    @Query("SELECT * FROM collections WHERE id = :id")
+    suspend fun byId(id: Int): Collection?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(collection: Collection): Long
+    @Update suspend fun update(collection: Collection)
     @Delete suspend fun delete(collection: Collection)
 
     @Query("SELECT collectionId FROM sheet_collections WHERE sheetId = :sheetId")
     suspend fun collectionIdsFor(sheetId: Int): List<Int>
+
+    @Query(
+        "SELECT s.* FROM sheets s JOIN sheet_collections c ON c.sheetId = s.id " +
+            "WHERE c.collectionId = :id ORDER BY s.name COLLATE NOCASE"
+    )
+    suspend fun sheets(id: Int): List<Sheet>
+
+    @Query("SELECT COUNT(*) FROM sheet_collections WHERE collectionId = :id")
+    suspend fun count(id: Int): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun link(link: SheetCollectionLink)
     @Query("DELETE FROM sheet_collections WHERE sheetId = :sheetId AND collectionId = :collectionId")
     suspend fun unlink(sheetId: Int, collectionId: Int)
+    @Query("DELETE FROM sheet_collections WHERE collectionId = :id")
+    suspend fun clearLinks(id: Int)
 }
 
 @Dao

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -11,7 +13,7 @@ import androidx.room.RoomDatabase
         ViewerButton::class, Collection::class, SheetCollectionLink::class,
         SheetFile::class, Crop::class, SettingRow::class, AnnotationRow::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class BasicSheetsDatabase : RoomDatabase() {
@@ -34,7 +36,13 @@ abstract class BasicSheetsDatabase : RoomDatabase() {
                     context.applicationContext,
                     BasicSheetsDatabase::class.java,
                     "basicsheets.db",
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE collections ADD COLUMN color TEXT")
+            }
+        }
     }
 }
