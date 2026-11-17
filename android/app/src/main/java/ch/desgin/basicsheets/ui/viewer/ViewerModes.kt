@@ -78,6 +78,12 @@ enum class DisplayMode(val key: String, val label: String) {
     }
 }
 
+/*
+ * The reading views navigate by DISPLAY slot, not PDF page: `pages` is the ordered list of 0-based
+ * PDF page indices to show (natural order, or a custom reorder/hide/duplicate). `page`/`startPage`
+ * index into it; the PDF page rendered for slot d is `pages[d]`.
+ */
+
 /** Lazily render a page to a bitmap, re-rendering when the page/width/doc changes. */
 @Composable
 fun pageBitmap(doc: PdfDoc?, index: Int, widthPx: Int): Bitmap? =
@@ -89,7 +95,7 @@ fun pageBitmap(doc: PdfDoc?, index: Int, widthPx: Int): Bitmap? =
 @Composable
 fun rememberPageAnnotations(repo: AnnotationRepository?, pdfKey: String?, page: Int, version: Int): PageAnnotations =
     produceState(PageAnnotations(), repo, pdfKey, page, version) {
-        value = if (repo != null && !pdfKey.isNullOrEmpty())
+        value = if (repo != null && !pdfKey.isNullOrEmpty() && page >= 0)
             runCatching { repo.load(pdfKey, page) }.getOrDefault(PageAnnotations())
         else PageAnnotations()
     }.value
@@ -119,13 +125,14 @@ private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Mod
 fun SinglePageView(
     doc: PdfDoc?,
     page: Int,
-    pageCount: Int,
+    pages: List<Int>,
     renderPx: Int,
     annoRepo: AnnotationRepository? = null,
     pdfKey: String? = null,
     annoVersion: Int = 0,
     onTurn: (Int) -> Unit,
 ) {
+    val pdf = pages.getOrElse(page) { 0 }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     LaunchedEffect(page) { scale = 1f; offset = Offset.Zero }
@@ -134,14 +141,14 @@ fun SinglePageView(
         scale = (scale * zoom).coerceIn(1f, 5f)
         offset = if (scale > 1f) offset + pan else Offset.Zero
     }
-    val bmp = pageBitmap(doc, page, renderPx)
-    val anno = rememberPageAnnotations(annoRepo, pdfKey, page, annoVersion)
+    val bmp = pageBitmap(doc, pdf, renderPx)
+    val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
 
     Box(
         Modifier
             .fillMaxSize()
             .transformable(transform)
-            .pointerInput(pageCount) {
+            .pointerInput(pages.size) {
                 detectTapGestures { pos ->
                     if (scale <= 1.05f) {
                         val third = size.width / 3f
@@ -179,7 +186,7 @@ fun SinglePageView(
 fun TwoPageView(
     doc: PdfDoc?,
     page: Int,
-    pageCount: Int,
+    pages: List<Int>,
     renderPx: Int,
     annoRepo: AnnotationRepository? = null,
     pdfKey: String? = null,
@@ -187,15 +194,17 @@ fun TwoPageView(
     onTurn: (Int) -> Unit,
 ) {
     val half = renderPx / 2
-    val left = pageBitmap(doc, page, half)
-    val right = if (page + 1 < pageCount) pageBitmap(doc, page + 1, half) else null
-    val leftAnno = rememberPageAnnotations(annoRepo, pdfKey, page, annoVersion)
-    val rightAnno = rememberPageAnnotations(annoRepo, pdfKey, page + 1, annoVersion)
+    val leftIdx = pages.getOrElse(page) { -1 }
+    val rightIdx = pages.getOrElse(page + 1) { -1 }
+    val left = pageBitmap(doc, leftIdx, half)
+    val right = pageBitmap(doc, rightIdx, half)
+    val leftAnno = rememberPageAnnotations(annoRepo, pdfKey, leftIdx, annoVersion)
+    val rightAnno = rememberPageAnnotations(annoRepo, pdfKey, rightIdx, annoVersion)
 
     Box(
         Modifier
             .fillMaxSize()
-            .pointerInput(pageCount) {
+            .pointerInput(pages.size) {
                 detectTapGestures { pos ->
                     val third = size.width / 3f
                     if (pos.x < third) onTurn(-2) else if (pos.x > size.width - third) onTurn(2)
@@ -213,7 +222,7 @@ fun TwoPageView(
 @Composable
 fun VerticalScrollView(
     doc: PdfDoc?,
-    pageCount: Int,
+    pages: List<Int>,
     renderPx: Int,
     startPage: Int,
     annoRepo: AnnotationRepository? = null,
@@ -222,12 +231,13 @@ fun VerticalScrollView(
     jumpToken: Int = 0,
 ) {
     val state = remember(jumpToken) {
-        LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)))
+        LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
     }
     LazyColumn(Modifier.fillMaxSize(), state = state) {
-        items(pageCount) { i ->
-            val bmp = pageBitmap(doc, i, renderPx)
-            val anno = rememberPageAnnotations(annoRepo, pdfKey, i, annoVersion)
+        items(pages.size) { i ->
+            val pdf = pages[i]
+            val bmp = pageBitmap(doc, pdf, renderPx)
+            val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
                 AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth())
             } else {
@@ -243,7 +253,7 @@ fun VerticalScrollView(
 @Composable
 fun HorizontalScrollView(
     doc: PdfDoc?,
-    pageCount: Int,
+    pages: List<Int>,
     renderPx: Int,
     startPage: Int,
     annoRepo: AnnotationRepository? = null,
@@ -252,16 +262,17 @@ fun HorizontalScrollView(
     jumpToken: Int = 0,
 ) {
     val state = remember(jumpToken) {
-        LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pageCount - 1)))
+        LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
     }
     LazyRow(
         Modifier.fillMaxSize(),
         state = state,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(pageCount) { i ->
-            val bmp = pageBitmap(doc, i, renderPx)
-            val anno = rememberPageAnnotations(annoRepo, pdfKey, i, annoVersion)
+        items(pages.size) { i ->
+            val pdf = pages[i]
+            val bmp = pageBitmap(doc, pdf, renderPx)
+            val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
                 AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight())
             } else {
@@ -278,28 +289,27 @@ fun HorizontalScrollView(
  * faint fold indicator at the split); odd slots show a COMPOSITE — the next page's top half, a blue
  * fold bar, then the current page's bottom half — so the music flows across the page boundary and
  * each tap-turn advances half a page. The whole view fits the screen. The fold position is dragged
- * with the blue bar and remembered per song (Sheet.halfSplit). PDF-only for now; annotation
- * compositing arrives with the remaining annotation tools.
+ * with the blue bar and remembered per song (Sheet.halfSplit).
  */
 @Composable
 fun HalfTurnView(
     doc: PdfDoc?,
     page: Int,
-    pageCount: Int,
+    pages: List<Int>,
     renderPx: Int,
     initialSplit: Float,
     jumpToken: Int = 0,
     onSplitChange: (Float) -> Unit,
 ) {
-    val total = maxOf(1, 2 * pageCount - 1)
+    val total = maxOf(1, 2 * pages.size - 1)
     var slot by remember(jumpToken) { mutableIntStateOf((page * 2).coerceIn(0, total - 1)) }
     var split by remember { mutableFloatStateOf(initialSplit.coerceIn(0.15f, 0.85f)) }
 
     val composite = slot % 2 == 1
     val curIdx = slot / 2
     val nextIdx = curIdx + 1
-    val cur = pageBitmap(doc, curIdx, renderPx)
-    val next = if (composite && nextIdx < pageCount) pageBitmap(doc, nextIdx, renderPx) else null
+    val cur = pageBitmap(doc, pages.getOrElse(curIdx) { 0 }, renderPx)
+    val next = if (composite && nextIdx < pages.size) pageBitmap(doc, pages[nextIdx], renderPx) else null
 
     val bar = 6   // blue fold-bar thickness, in composite (bitmap) px
 

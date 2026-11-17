@@ -41,12 +41,12 @@ import ch.desgin.basicsheets.pdf.PdfDoc
 @Composable
 fun PageGrid(
     doc: PdfDoc?,
-    pageCount: Int,
-    currentPage: Int,
+    pages: List<Int>,            // ordered PDF page indices (display order)
+    currentDisplay: Int,
     thumbPx: Int,
-    bookmarkColors: Map<Int, String>,   // 0-based page → hex color
-    annotatedPages: Set<Int>,            // 0-based
-    onJump: (Int) -> Unit,
+    bookmarkColors: Map<Int, String>,   // PDF page (0-based) → hex color
+    annotatedPages: Set<Int>,            // PDF pages (0-based)
+    onJump: (Int) -> Unit,               // display slot index
     onClose: () -> Unit,
 ) {
     Surface(Modifier.fillMaxSize()) {
@@ -55,7 +55,7 @@ fun PageGrid(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Seitenübersicht · $pageCount Seiten", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Text("Seitenübersicht · ${pages.size} Seiten", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 TextButton(onClick = onClose) { Text("Schließen") }
             }
             HorizontalDivider()
@@ -66,8 +66,9 @@ fun PageGrid(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(pageCount) { i ->
-                    PageGridCell(doc, i, thumbPx, i == currentPage, bookmarkColors[i], i in annotatedPages) { onJump(i) }
+                items(pages.size) { i ->
+                    val pdf = pages[i]
+                    PageGridCell(doc, pdf, i + 1, thumbPx, i == currentDisplay, bookmarkColors[pdf], pdf in annotatedPages) { onJump(i) }
                 }
             }
         }
@@ -77,7 +78,8 @@ fun PageGrid(
 @Composable
 private fun PageGridCell(
     doc: PdfDoc?,
-    index: Int,
+    pdfIndex: Int,
+    label: Int,
     thumbPx: Int,
     isCurrent: Boolean,
     bookmarkColor: String?,
@@ -96,7 +98,7 @@ private fun PageGridCell(
                 .background(Color.White),
             contentAlignment = Alignment.Center,
         ) {
-            val bmp = pageBitmap(doc, index, thumbPx)
+            val bmp = pageBitmap(doc, pdfIndex, thumbPx)
             if (bmp != null) {
                 Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
             } else {
@@ -115,7 +117,7 @@ private fun PageGridCell(
             }
         }
         Text(
-            "${index + 1}",
+            "$label",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
             color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,

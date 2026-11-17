@@ -141,6 +141,11 @@ fun ViewerScreen(
     var showGrid by remember { mutableStateOf(false) }
     var annotatedPages by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
+    // Custom page order (0-based PDF indices in display order; natural when no override)
+    var order by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var showPageOrder by remember { mutableStateOf(false) }
+    val pdfPage = order.getOrElse(page) { page }
+
     // Setlist playback context (song-to-song navigation)
     var setlistSheets by remember { mutableStateOf<List<Sheet>>(emptyList()) }
     val songIdx = if (setlistId >= 0) setlistSheets.indexOfFirst { it.id == sheetId } else -1
@@ -172,6 +177,7 @@ fun ViewerScreen(
         val d = withContext(Dispatchers.IO) { PdfDoc.open(app.library.fileFor(s)) }
         doc = d
         pageCount = d?.pageCount ?: 0
+        order = parsePageOrder(s.pageOrder, pageCount)
         page = 0
         outline = PdfOutline.extract(app.library.fileFor(s))
     }
@@ -181,7 +187,7 @@ fun ViewerScreen(
     LaunchedEffect(editMode, page, sheet?.filePath) {
         val key = sheet?.filePath
         if (editMode && !key.isNullOrEmpty()) {
-            annotations = app.annotations.load(key, page)
+            annotations = app.annotations.load(key, order.getOrElse(page) { page })
             undoStack.clear()
         }
     }
@@ -220,7 +226,7 @@ fun ViewerScreen(
         if (showGrid && !key.isNullOrEmpty()) annotatedPages = app.annotations.annotatedPages(key)
     }
 
-    fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, pageCount - 1)) }
+    fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, order.size - 1)) }
     fun chooseMode(m: DisplayMode) {
         mode = m
         sheet?.let { s -> scope.launch { app.library.update(s.copy(pageMode = m.key)) } }
@@ -228,7 +234,7 @@ fun ViewerScreen(
     fun exitEdit() { editMode = false; annoVersion++ }
     fun saveAnn() {
         val key = sheet?.filePath ?: return
-        val p = page
+        val p = order.getOrElse(page) { page }
         val data = annotations
         scope.launch { app.annotations.save(key, p, data) }
     }
@@ -272,16 +278,20 @@ fun ViewerScreen(
     fun undoAnn() {
         if (undoStack.isNotEmpty()) { annotations = undoStack.removeAt(undoStack.size - 1); saveAnn() }
     }
-    fun jumpToPage(target: Int) {
-        page = target.coerceIn(0, maxOf(0, pageCount - 1))
+    fun jumpToDisplay(target: Int) {
+        page = target.coerceIn(0, maxOf(0, order.size - 1))
         jumpToken++
         showBookmarks = false
+    }
+    fun jumpToPdf(pdf: Int) {
+        val d = order.indexOf(pdf)
+        jumpToDisplay(if (d >= 0) d else 0)
     }
     fun addBookmark(label: String, color: String) {
         val key = sheet?.filePath ?: return
         val bm = Bookmark(
             id = java.util.UUID.randomUUID().toString(),
-            pdfFile = key, sheetName = sheet?.name ?: key, page = page + 1, label = label, color = color,
+            pdfFile = key, sheetName = sheet?.name ?: key, page = pdfPage + 1, label = label, color = color,
         )
         scope.launch { app.bookmarks.put(bm); bookmarks = app.bookmarks.forFile(key) }
         addingBookmark = false
@@ -293,7 +303,7 @@ fun ViewerScreen(
     fun matchNav(delta: Int) {
         if (searchResults.isEmpty()) return
         searchIdx = (searchIdx + delta).coerceIn(0, searchResults.size - 1)
-        jumpToPage(searchResults[searchIdx].page)
+        jumpToPdf(searchResults[searchIdx].page)
     }
     fun toggleTone() {
         if (tonePlaying) { tone.stop(); tonePlaying = false }
@@ -332,6 +342,10 @@ fun ViewerScreen(
                                     text = { Text("Seitenübersicht") },
                                     onClick = { showModeMenu = false; showGrid = true },
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Seitenreihenfolge") },
+                                    onClick = { showModeMenu = false; showPageOrder = true },
+                                )
                             }
                         }
                         TextButton(onClick = { showMetro = !showMetro; showAudio = false }) {
@@ -355,7 +369,7 @@ fun ViewerScreen(
         },
         bottomBar = {
             val inSetlist = setlistId >= 0 && songIdx >= 0
-            val showPageNav = (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && pageCount > 1
+            val showPageNav = (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && order.size > 1
             if (!editMode && (inSetlist || showPageNav)) {
                 val step = if (mode == DisplayMode.TWO) 2 else 1
                 BottomAppBar {
@@ -365,8 +379,8 @@ fun ViewerScreen(
                     Spacer(Modifier.weight(1f))
                     if (showPageNav) {
                         TextButton(onClick = { turn(-step) }, enabled = page > 0) { Text("‹") }
-                        if (settings.pageNumbers) Text("${page + 1} / $pageCount", Modifier.align(Alignment.CenterVertically))
-                        TextButton(onClick = { turn(step) }, enabled = page < pageCount - 1) { Text("›") }
+                        if (settings.pageNumbers) Text("${page + 1} / ${order.size}", Modifier.align(Alignment.CenterVertically))
+                        TextButton(onClick = { turn(step) }, enabled = page < order.size - 1) { Text("›") }
                     } else if (inSetlist) {
                         Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
                     }
@@ -381,7 +395,7 @@ fun ViewerScreen(
         Box(Modifier.fillMaxSize().background(viewerBgColor(settings.viewerBg)).padding(pad)) {
             if (editMode) {
                 EditablePage(
-                    doc = doc, page = page, renderPx = renderPx,
+                    doc = doc, page = pdfPage, renderPx = renderPx,
                     data = annotations, tool = tool, color = inkColor,
                     sizeFrac = sizeFracFor(tool, sizeLevel), fill = fill,
                     onBeginStroke = { pushUndo() },
@@ -417,13 +431,13 @@ fun ViewerScreen(
             } else {
                 val key = sheet?.filePath
                 when (mode) {
-                    DisplayMode.SINGLE -> SinglePageView(doc, page, pageCount, renderPx, app.annotations, key, annoVersion) { turn(it) }
-                    DisplayMode.TWO -> TwoPageView(doc, page, pageCount, renderPx, app.annotations, key, annoVersion) { turn(it) }
+                    DisplayMode.SINGLE -> SinglePageView(doc, page, order, renderPx, app.annotations, key, annoVersion) { turn(it) }
+                    DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
-                        doc, page, pageCount, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
+                        doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
-                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, pageCount, renderPx, page, app.annotations, key, annoVersion, jumpToken)
-                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, pageCount, renderPx, page, app.annotations, key, annoVersion, jumpToken)
+                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken)
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken)
                 }
                 if (showMetro) {
                     Box(Modifier.align(Alignment.BottomCenter)) {
@@ -436,7 +450,7 @@ fun ViewerScreen(
                 BookmarkSheet(
                     outline = outline,
                     bookmarks = bookmarks,
-                    onJump = { jumpToPage(it) },
+                    onJump = { jumpToPdf(it) },
                     onDelete = { deleteBookmark(it) },
                     onAddHere = { showBookmarks = false; addingBookmark = true },
                     onDismiss = { showBookmarks = false },
@@ -471,7 +485,7 @@ fun ViewerScreen(
                     onQueryChange = { searchQuery = it },
                     searching = searching,
                     results = searchResults,
-                    onJump = { hit, i -> searchIdx = i; showMatchNav = true; showSearch = false; jumpToPage(hit.page) },
+                    onJump = { hit, i -> searchIdx = i; showMatchNav = true; showSearch = false; jumpToPdf(hit.page) },
                     onDismiss = { showSearch = false },
                 )
             }
@@ -497,13 +511,37 @@ fun ViewerScreen(
                 ) {
                     PageGrid(
                         doc = doc,
-                        pageCount = pageCount,
-                        currentPage = page,
+                        pages = order,
+                        currentDisplay = page,
                         thumbPx = 320,
                         bookmarkColors = bookmarks.associate { it.page - 1 to it.color },
                         annotatedPages = annotatedPages,
-                        onJump = { showGrid = false; jumpToPage(it) },
+                        onJump = { showGrid = false; jumpToDisplay(it) },
                         onClose = { showGrid = false },
+                    )
+                }
+            }
+            if (showPageOrder) {
+                Dialog(
+                    onDismissRequest = { showPageOrder = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false),
+                ) {
+                    PageOrderEditor(
+                        doc = doc,
+                        initialOrder = order,
+                        pageCount = pageCount,
+                        onSave = { newOrder ->
+                            order = newOrder
+                            page = page.coerceIn(0, maxOf(0, newOrder.size - 1))
+                            jumpToken++
+                            sheet?.let { s ->
+                                val updated = s.copy(pageOrder = encodePageOrder(newOrder, pageCount))
+                                sheet = updated
+                                scope.launch { app.library.update(updated) }
+                            }
+                            showPageOrder = false
+                        },
+                        onDismiss = { showPageOrder = false },
                     )
                 }
             }
@@ -543,4 +581,18 @@ private fun viewerBgColor(bg: String): Color = when (bg) {
     "white" -> Color(0xFFFFFFFF)
     "gray" -> Color(0xFF4A4A4A)
     else -> Color(0xFF121212)
+}
+
+/** Parse a per-song page order (CSV of 1-based PDF pages) to 0-based display indices; natural if empty/invalid. */
+private fun parsePageOrder(csv: String, pageCount: Int): List<Int> {
+    val natural = (0 until pageCount).toList()
+    if (csv.isBlank() || pageCount <= 0) return natural
+    val parsed = csv.split(',').mapNotNull { it.trim().toIntOrNull() }.map { it - 1 }.filter { it in 0 until pageCount }
+    return parsed.ifEmpty { natural }
+}
+
+/** Encode a display order (0-based) back to the stored CSV; empty string means natural order. */
+private fun encodePageOrder(order: List<Int>, pageCount: Int): String {
+    val natural = (0 until pageCount).toList()
+    return if (order == natural) "" else order.joinToString(",") { (it + 1).toString() }
 }
