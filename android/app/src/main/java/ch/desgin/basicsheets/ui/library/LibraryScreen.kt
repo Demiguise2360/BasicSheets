@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -82,10 +83,11 @@ private val TABS = listOf(
     "recent" to "Zuletzt",
     "favorites" to "Favoriten",
     "composer" to "Komponisten",
+    "genre" to "Genres",
     "sammlungen" to "Sammlungen",
     "setlists" to "Setlists",
 )
-private val SONG_TABS = setOf("songs", "recent", "favorites", "composer")
+private val SONG_TABS = setOf("songs", "recent", "favorites", "composer", "genre")
 
 private val FIELD_OPTIONS = listOf(
     "all" to "Alle", "Name" to "Name", "Composer" to "Komponist",
@@ -103,6 +105,7 @@ fun LibraryScreen(
     onOpenSetlist: (Int) -> Unit,
     onOpenCollection: (Int) -> Unit,
     onOpenComposer: (String) -> Unit,
+    onOpenGenre: (String) -> Unit,
     vm: LibraryViewModel = viewModel(),
 ) {
     val app = BasicSheetsApp.instance
@@ -190,6 +193,7 @@ fun LibraryScreen(
             "setlists" -> SetlistsTab(setlists, onOpenSetlist)
             "sammlungen" -> CollectionsTab(collections, onOpenCollection)
             "composer" -> ComposerTab(sheets, query, onOpenComposer)
+            "genre" -> GenreTab(sheets, query, onOpenGenre)
             "recent" -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) }, emptyHint = "Noch nichts geöffnet. Öffne eine Note, um sie hier zu sehen.")
             else -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) })
         }
@@ -384,6 +388,43 @@ private fun ComposerTab(sheets: List<Sheet>, query: String, onOpen: (String) -> 
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(38.dp).clip(CircleShape).background(nameColor(name)), contentAlignment = Alignment.Center) {
                         Icon(Icons.Filled.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "$count ${if (count == 1) "Stück" else "Stücke"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GenreTab(sheets: List<Sheet>, query: String, onOpen: (String) -> Unit) {
+    val genres = remember(sheets) {
+        sheets.asSequence()
+            .map { it.genre.trim() }
+            .filter { it.isNotEmpty() }
+            .groupingBy { it }
+            .eachCount()
+            .toList()
+            .sortedBy { it.first.lowercase() }
+    }
+    if (genres.isEmpty()) {
+        EmptyTab(if (query.isBlank()) "Noch keine Genres. Füge Noten mit Genre hinzu." else "Keine Treffer.")
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(genres, key = { it.first }) { (name, count) ->
+            ElevatedCard(Modifier.fillMaxWidth().clickable { onOpen(name) }) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(nameColor(name)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Category, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {

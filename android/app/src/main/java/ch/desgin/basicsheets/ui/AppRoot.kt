@@ -9,6 +9,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ch.desgin.basicsheets.ui.collections.CollectionDetailScreen
 import ch.desgin.basicsheets.ui.composer.ComposerDetailScreen
+import ch.desgin.basicsheets.ui.genre.GenreDetailScreen
 import ch.desgin.basicsheets.ui.home.AppShell
 import ch.desgin.basicsheets.ui.setlists.SetlistDetailScreen
 import ch.desgin.basicsheets.ui.viewer.ViewerScreen
@@ -23,6 +24,7 @@ fun AppRoot() {
                 onOpenSetlist = { id -> nav.navigate("setlist/$id") },
                 onOpenCollection = { id -> nav.navigate("collection/$id") },
                 onOpenComposer = { name -> nav.navigate("composer/${Uri.encode(name)}") },
+                onOpenGenre = { name -> nav.navigate("genre/${Uri.encode(name)}") },
             )
         }
         composable(
@@ -32,6 +34,17 @@ fun AppRoot() {
             val name = backStack.arguments?.getString("name").orEmpty()
             ComposerDetailScreen(
                 composer = name,
+                onOpenSheet = { sheetId -> nav.navigate("viewer/$sheetId") },
+                onBack = { nav.popBackStack() },
+            )
+        }
+        composable(
+            route = "genre/{name}",
+            arguments = listOf(navArgument("name") { type = NavType.StringType }),
+        ) { backStack ->
+            val name = backStack.arguments?.getString("name").orEmpty()
+            GenreDetailScreen(
+                genre = name,
                 onOpenSheet = { sheetId -> nav.navigate("viewer/$sheetId") },
                 onBack = { nav.popBackStack() },
             )
