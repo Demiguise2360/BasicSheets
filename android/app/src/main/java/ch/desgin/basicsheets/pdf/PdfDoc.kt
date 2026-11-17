@@ -26,8 +26,10 @@ class PdfDoc private constructor(
 
     suspend fun render(index: Int, widthPx: Int): Bitmap? = lock.withLock {
         withContext(Dispatchers.IO) {
-            if (index < 0 || index >= renderer.pageCount || widthPx <= 0) return@withContext null
+            // Fully guarded: a page may be requested just as the doc is closed (navigation) —
+            // return null rather than crashing with "Document already closed".
             runCatching {
+                if (index < 0 || widthPx <= 0 || index >= renderer.pageCount) return@runCatching null
                 renderer.openPage(index).use { page ->
                     val w = widthPx
                     val h = (w.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)

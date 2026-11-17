@@ -181,7 +181,10 @@ fun ViewerScreen(
         page = 0
         outline = PdfOutline.extract(app.library.fileFor(s))
     }
-    DisposableEffect(doc) { onDispose { doc?.close() } }
+    DisposableEffect(doc) {
+        val current = doc   // capture: close THIS doc on dispose, not whatever `doc` is later
+        onDispose { current?.close() }
+    }
 
     // Load the page's annotations when entering edit mode or turning pages while editing.
     LaunchedEffect(editMode, page, sheet?.filePath) {
