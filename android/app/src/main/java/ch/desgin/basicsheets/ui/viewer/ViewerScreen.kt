@@ -23,6 +23,7 @@ import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.annot.Hairpin
 import ch.desgin.basicsheets.annot.MarkerStroke
@@ -134,6 +137,10 @@ fun ViewerScreen(
     var showMatchNav by remember { mutableStateOf(false) }
     val textIndex = remember { PdfTextIndex() }
 
+    // Page-grid overview
+    var showGrid by remember { mutableStateOf(false) }
+    var annotatedPages by remember { mutableStateOf<Set<Int>>(emptySet()) }
+
     // Setlist playback context (song-to-song navigation)
     var setlistSheets by remember { mutableStateOf<List<Sheet>>(emptyList()) }
     val songIdx = if (setlistId >= 0) setlistSheets.indexOfFirst { it.id == sheetId } else -1
@@ -206,6 +213,11 @@ fun ViewerScreen(
     }
     LaunchedEffect(audioCtl.isPlaying) {
         while (audioCtl.isPlaying) { audioCtl.tick(); delay(200) }
+    }
+
+    LaunchedEffect(showGrid, sheet?.filePath) {
+        val key = sheet?.filePath
+        if (showGrid && !key.isNullOrEmpty()) annotatedPages = app.annotations.annotatedPages(key)
     }
 
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, pageCount - 1)) }
@@ -315,6 +327,11 @@ fun ViewerScreen(
                                         leadingIcon = { if (m == mode) Icon(Icons.Filled.Check, contentDescription = null) },
                                     )
                                 }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Seitenübersicht") },
+                                    onClick = { showModeMenu = false; showGrid = true },
+                                )
                             }
                         }
                         TextButton(onClick = { showMetro = !showMetro; showAudio = false }) {
@@ -470,6 +487,23 @@ fun ViewerScreen(
                         onAttachAudio = { audioPicker.launch(arrayOf("audio/*")) },
                         onRemoveAudio = { scope.launch { sheet?.let { s -> sheet = app.library.removeAudio(s) } } },
                         onClose = { showAudio = false },
+                    )
+                }
+            }
+            if (showGrid) {
+                Dialog(
+                    onDismissRequest = { showGrid = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false),
+                ) {
+                    PageGrid(
+                        doc = doc,
+                        pageCount = pageCount,
+                        currentPage = page,
+                        thumbPx = 320,
+                        bookmarkColors = bookmarks.associate { it.page - 1 to it.color },
+                        annotatedPages = annotatedPages,
+                        onJump = { showGrid = false; jumpToPage(it) },
+                        onClose = { showGrid = false },
                     )
                 }
             }
