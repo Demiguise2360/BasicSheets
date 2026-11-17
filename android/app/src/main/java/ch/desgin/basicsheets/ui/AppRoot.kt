@@ -6,30 +6,18 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import ch.desgin.basicsheets.ui.library.LibraryScreen
+import ch.desgin.basicsheets.ui.home.AppShell
 import ch.desgin.basicsheets.ui.setlists.SetlistDetailScreen
-import ch.desgin.basicsheets.ui.setlists.SetlistsScreen
-import ch.desgin.basicsheets.ui.settings.SettingsScreen
 import ch.desgin.basicsheets.ui.viewer.ViewerScreen
 
 @Composable
 fun AppRoot() {
     val nav = rememberNavController()
-    NavHost(navController = nav, startDestination = "library") {
-        composable("library") {
-            LibraryScreen(
-                onOpen = { id -> nav.navigate("viewer/$id") },
-                onOpenSetlists = { nav.navigate("setlists") },
-                onOpenSettings = { nav.navigate("settings") },
-            )
-        }
-        composable("settings") {
-            SettingsScreen(onBack = { nav.popBackStack() })
-        }
-        composable("setlists") {
-            SetlistsScreen(
-                onOpen = { id -> nav.navigate("setlist/$id") },
-                onBack = { nav.popBackStack() },
+    NavHost(navController = nav, startDestination = "home") {
+        composable("home") {
+            AppShell(
+                onOpenSheet = { id -> nav.navigate("viewer/$id") },
+                onOpenSetlist = { id -> nav.navigate("setlist/$id") },
             )
         }
         composable(

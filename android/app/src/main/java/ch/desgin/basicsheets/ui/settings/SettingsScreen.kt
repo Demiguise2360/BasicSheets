@@ -37,24 +37,15 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen() {
     val app = BasicSheetsApp.instance
     val scope = rememberCoroutineScope()
     val settings = LocalSettings.current
     fun set(key: String, value: String) { scope.launch { app.settings.set(key, value) } }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Einstellungen") },
-                colors = appTopBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
-                },
-            )
-        },
-    ) { pad ->
-        Column(Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(title = { Text("Einstellungen") }, colors = appTopBarColors())
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             SectionHeader("Anzeige")
             SelectRow("Seitenansicht", "Standardansicht für Noten ohne eigene Einstellung", PAGE_MODE_OPTIONS, settings.pageMode) { set(KEY_PAGE_MODE, it) }
             ToggleRow("Dunkles Design", "App im dunklen Farbschema", settings.darkTheme) { set(KEY_DARK, it.toString()) }
