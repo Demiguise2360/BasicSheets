@@ -1,34 +1,57 @@
 package ch.desgin.basicsheets.ui.theme
 
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBarColors
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Brand palette (the MAUI app's teal).
-val Teal = Color(0xFF4D8A80)
-val TealDark = Color(0xFF345E58)
-val TealLight = Color(0xFF6BA89E)
-val Ink = Color(0xFF1E2A28)
+// Brand palette — petrol/teal (the Figma redesign): dark bars over a light content area.
+val Petrol = Color(0xFF1B5E70)
+val PetrolDark = Color(0xFF0F4350)
+val PetrolLight = Color(0xFF3E8296)
+val Ink = Color(0xFF16262B)
 
 private val LightColors = lightColorScheme(
-    primary = Teal,
+    primary = Petrol,
     onPrimary = Color.White,
-    secondary = TealDark,
-    tertiary = TealLight,
-    background = Color(0xFFF7F7F5),
+    primaryContainer = Color(0xFFBFE3EC),
+    onPrimaryContainer = Color(0xFF06333D),
+    secondary = Color(0xFF4A7682),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFCDE7EE),
+    onSecondaryContainer = Color(0xFF06333D),
+    tertiary = PetrolLight,
+    onTertiary = Color.White,
+    background = Color(0xFFF3F5F4),
+    onBackground = Ink,
     surface = Color.White,
+    onSurface = Ink,
+    surfaceVariant = Color(0xFFE4EAEA),
+    onSurfaceVariant = Color(0xFF53676C),
+    outline = Color(0xFF8CA0A4),
+    outlineVariant = Color(0xFFCFD8D9),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = TealLight,
-    onPrimary = Ink,
-    secondary = Teal,
-    tertiary = TealLight,
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
+    primary = Color(0xFF53A0B2),
+    onPrimary = Color(0xFF00272F),
+    primaryContainer = Color(0xFF123F4B),
+    onPrimaryContainer = Color(0xFFBFE3EC),
+    secondary = Color(0xFF7FB0BD),
+    onSecondary = Color(0xFF002B36),
+    tertiary = Color(0xFF6FAEBE),
+    background = Color(0xFF0E1416),
+    onBackground = Color(0xFFE1E7E7),
+    surface = Color(0xFF151D20),
+    onSurface = Color(0xFFE1E7E7),
+    surfaceVariant = Color(0xFF3A484C),
+    onSurfaceVariant = Color(0xFFBEC9CB),
+    outlineVariant = Color(0xFF34464B),
 )
 
 @Composable
@@ -39,3 +62,14 @@ fun BasicSheetsTheme(darkTheme: Boolean = false, content: @Composable () -> Unit
         content = content,
     )
 }
+
+/** The dark petrol top bar used across the app (white title/icons), matching the Figma. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun appTopBarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors(
+    containerColor = MaterialTheme.colorScheme.primary,
+    scrolledContainerColor = MaterialTheme.colorScheme.primary,
+    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
+)

@@ -49,6 +49,8 @@ import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Setlist
 import ch.desgin.basicsheets.data.SetlistItem
 import ch.desgin.basicsheets.data.Sheet
+import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import androidx.compose.material3.ButtonDefaults
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,11 +77,16 @@ fun SetlistDetailScreen(setlistId: Int, onOpenSong: (Int) -> Unit, onBack: () ->
         topBar = {
             TopAppBar(
                 title = { Text(setlist?.name ?: "Setlist") },
+                colors = appTopBarColors(),
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                 },
                 actions = {
-                    TextButton(onClick = { rows.firstOrNull()?.let { onOpenSong(it.second.id) } }, enabled = rows.isNotEmpty()) {
+                    TextButton(
+                        onClick = { rows.firstOrNull()?.let { onOpenSong(it.second.id) } },
+                        enabled = rows.isNotEmpty(),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
+                    ) {
                         Text("Abspielen")
                     }
                     IconButton(onClick = { renaming = true }) { Icon(Icons.Filled.Edit, contentDescription = "Umbenennen") }

@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ch.desgin.basicsheets.data.Sheet
+import ch.desgin.basicsheets.ui.theme.appTopBarColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +73,7 @@ fun LibraryScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Meine Noten") },
+                colors = appTopBarColors(),
                 actions = {
                     IconButton(onClick = onOpenSetlists) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Setlists")
