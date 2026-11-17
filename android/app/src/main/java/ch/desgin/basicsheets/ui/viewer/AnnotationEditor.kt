@@ -26,8 +26,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -216,7 +218,13 @@ fun AnnotationToolbar(
     onUndo: () -> Unit,
     onDone: () -> Unit,
 ) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        val btn = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary)
         Column(Modifier.fillMaxWidth().padding(8.dp)) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -243,19 +251,19 @@ fun AnnotationToolbar(
                 for (c in PEN_COLORS) {
                     Box(
                         Modifier.size(26.dp).clip(CircleShape).background(c)
-                            .then(if (c == color) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
+                            .then(if (c == color) Modifier.border(2.dp, MaterialTheme.colorScheme.onPrimary, CircleShape) else Modifier)
                             .clickable { onColor(c) },
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { onSize((sizeLevel - 1).coerceAtLeast(1)) }) { Text("–") }
+                TextButton(onClick = { onSize((sizeLevel - 1).coerceAtLeast(1)) }, colors = btn) { Text("–") }
                 Text("$sizeLevel")
-                TextButton(onClick = { onSize((sizeLevel + 1).coerceAtMost(10)) }) { Text("+") }
+                TextButton(onClick = { onSize((sizeLevel + 1).coerceAtMost(10)) }, colors = btn) { Text("+") }
                 if (tool == Tool.RECT || tool == Tool.ELLIPSE) {
-                    FilterChip(selected = fill, onClick = { onFill(!fill) }, label = { Text("Füllen") })
+                    FilterChip(selected = fill, onClick = { onFill(!fill) }, label = { Text("Füllen") }, colors = petrolChipColors(), border = null)
                 }
-                TextButton(onClick = onUndo) { Text("↶") }
-                TextButton(onClick = onDone) { Text("Fertig") }
+                TextButton(onClick = onUndo, colors = btn) { Text("↶") }
+                TextButton(onClick = onDone, colors = btn) { Text("Fertig") }
             }
         }
     }
@@ -264,8 +272,18 @@ fun AnnotationToolbar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) }, colors = petrolChipColors(), border = null)
 }
+
+/** FilterChip colors that read on the petrol toolbar: white label; white fill + petrol label when selected. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun petrolChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = Color.Transparent,
+    labelColor = MaterialTheme.colorScheme.onPrimary,
+    selectedContainerColor = MaterialTheme.colorScheme.onPrimary,
+    selectedLabelColor = MaterialTheme.colorScheme.primary,
+)
 
 /** Grid of all musical stamps; picking one selects the stamp tool with that symbol. */
 @Composable
