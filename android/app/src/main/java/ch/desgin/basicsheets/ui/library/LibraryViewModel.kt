@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.text.Normalizer
 
 class LibraryViewModel : ViewModel() {
     private val repo = BasicSheetsApp.instance.library
@@ -20,23 +21,33 @@ class LibraryViewModel : ViewModel() {
 
     val tab = MutableStateFlow("songs")        // songs | recent | favorites | composer | genre
     val search = MutableStateFlow("")
-    private val sortKey = MutableStateFlow("name")
+    val searchField = MutableStateFlow("all")  // all | Name | Composer | Part | Genre | Tags
+    val sortOrder = MutableStateFlow("name")   // name | date | composer | rating | difficulty
 
     private val sheets = repo.observeSheets()
         .catch { emit(emptyList()) }   // a DB error shows an empty list, never a crash
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    init { viewModelScope.launch { sortKey.value = settings.get("Sortierung", "name") } }
+    init { viewModelScope.launch { sortOrder.value = settings.get("Sortierung", "name") } }
 
-    /** The songs to show for the current tab + search + sort. */
+    /** The songs to show for the current tab + search (field-scoped) + sort. */
     val shown: StateFlow<List<Sheet>> =
-        combine(sheets, tab, search, sortKey) { list, tab, query, sort ->
+        combine(sheets, tab, search, sortOrder, searchField) { list, tab, query, sort, field ->
             var r = list
             if (query.isNotBlank()) {
-                r = r.filter {
-                    it.name.contains(query, true) ||
-                        it.composer.contains(query, true) ||
-                        it.genre.contains(query, true)
+                val term = normDia(query)
+                fun m(f: String?) = normDia(f).contains(term)   // diacritic- + case-insensitive
+                r = r.filter { s ->
+                    if (field == "all") {
+                        m(s.name) || m(s.composer) || m(s.part) || m(s.genre) || m(s.tags)
+                    } else when (field) {
+                        "Name" -> m(s.name)
+                        "Composer" -> m(s.composer)
+                        "Part" -> m(s.part)
+                        "Genre" -> m(s.genre)
+                        "Tags" -> m(s.tags)
+                        else -> true
+                    }
                 }
             }
             if (tab == "favorites") r = r.filter { it.rating > 0 }
@@ -52,9 +63,10 @@ class LibraryViewModel : ViewModel() {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private fun sortSongs(list: List<Sheet>, sort: String): List<Sheet> = when (sort) {
-        "composer" -> list.sortedBy { it.composer.lowercase() }
-        "date" -> list.sortedByDescending { it.created }
-        "difficulty" -> list.sortedBy { difficultyRank(it.difficulty) }
+        "composer" -> list.sortedWith(compareBy<Sheet> { it.composer.lowercase() }.thenBy { it.name.lowercase() })
+        "date" -> list.sortedByDescending { it.updated }
+        "rating" -> list.sortedWith(compareByDescending<Sheet> { it.rating }.thenBy { it.name.lowercase() })
+        "difficulty" -> list.sortedWith(compareBy<Sheet> { difficultyRank(it.difficulty) }.thenBy { it.name.lowercase() })
         else -> list.sortedBy { it.name.lowercase() }
     }
 
@@ -62,11 +74,24 @@ class LibraryViewModel : ViewModel() {
         "beginner" -> 1; "intermediate" -> 2; "advanced" -> 3; "expert" -> 4; else -> 9
     }
 
+    /** Diacritic- + case-insensitive normalize (ä→a, ř→r …) so "Dvorak" finds "Dvořák". */
+    private fun normDia(s: String?): String =
+        Normalizer.normalize(s ?: "", Normalizer.Form.NFD).replace(DIACRITICS, "").lowercase()
+
     fun setTab(t: String) { tab.value = t }
     fun setSearch(q: String) { search.value = q }
+    fun setSearchField(field: String) { searchField.value = field }
+    fun setSortOrder(key: String) {
+        sortOrder.value = key
+        viewModelScope.launch { settings.set("Sortierung", key) }
+    }
 
     fun importPdf(context: Context, uri: Uri) = viewModelScope.launch { repo.importPdf(context, uri) }
     fun delete(sheet: Sheet) = viewModelScope.launch { repo.delete(sheet) }
     fun rate(sheet: Sheet, stars: Int) = viewModelScope.launch { repo.update(sheet.copy(rating = stars)) }
     fun togglePractice(sheet: Sheet) = viewModelScope.launch { repo.setPractice(sheet, !sheet.inPractice) }
+
+    companion object {
+        private val DIACRITICS = Regex("\\p{Mn}+")
+    }
 }
