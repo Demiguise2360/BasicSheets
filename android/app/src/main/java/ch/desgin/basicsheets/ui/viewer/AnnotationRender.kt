@@ -19,6 +19,7 @@ import ch.desgin.basicsheets.annot.Pt
 import ch.desgin.basicsheets.annot.ShapeAnnot
 import ch.desgin.basicsheets.annot.Stamp
 import ch.desgin.basicsheets.annot.TextAnnot
+import ch.desgin.basicsheets.pdf.MatchBox
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -144,6 +145,22 @@ fun DrawScope.drawTextAnnot(t: TextAnnot, w: Float, h: Float) {
     val x = t.x * w
     val y = t.y * h - paint.ascent()   // top-aligned baseline
     drawContext.canvas.nativeCanvas.drawText(t.text, x, y, paint)
+}
+
+/**
+ * Draw translucent highlight rectangles for in-document search matches, in normalized [0,1]
+ * page coordinates. Painted under the annotations so pen/marker strokes stay on top.
+ */
+fun DrawScope.drawSearchHighlight(boxes: List<MatchBox>, w: Float, h: Float) {
+    if (boxes.isEmpty()) return
+    val color = Color(0x66FFD200)   // translucent yellow, matching the MAUI viewer's search tint
+    for (b in boxes) {
+        drawRect(
+            color,
+            topLeft = Offset(b.left * w, b.top * h),
+            size = Size((b.right - b.left) * w, (b.bottom - b.top) * h),
+        )
+    }
 }
 
 /** Draw a whole page's saved annotations in reading order (marker under, text on top). */

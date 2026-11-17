@@ -71,6 +71,7 @@ import ch.desgin.basicsheets.audio.Metronome
 import ch.desgin.basicsheets.audio.TuningTone
 import ch.desgin.basicsheets.data.Bookmark
 import ch.desgin.basicsheets.data.Sheet
+import ch.desgin.basicsheets.pdf.MatchBox
 import ch.desgin.basicsheets.pdf.OutlineEntry
 import ch.desgin.basicsheets.pdf.PdfDoc
 import ch.desgin.basicsheets.pdf.PdfOutline
@@ -137,6 +138,7 @@ fun ViewerScreen(
     var searching by remember { mutableStateOf(false) }
     var searchIdx by remember { mutableIntStateOf(-1) }
     var showMatchNav by remember { mutableStateOf(false) }
+    var searchBoxes by remember { mutableStateOf<Map<Int, List<MatchBox>>>(emptyMap()) }
     val textIndex = remember { PdfTextIndex() }
 
     // Page-grid overview
@@ -204,13 +206,15 @@ fun ViewerScreen(
         showMatchNav = false
         searchIdx = -1
         val q = searchQuery.trim()
-        if (q.length < 2) { searchResults = emptyList(); searching = false; return@LaunchedEffect }
+        if (q.length < 2) { searchResults = emptyList(); searchBoxes = emptyMap(); searching = false; return@LaunchedEffect }
         searching = true
         delay(300)
         val s = sheet
         if (s != null) {
             textIndex.ensure(app.library.fileFor(s), s.filePath)
-            searchResults = textIndex.search(q)
+            val hits = textIndex.search(q)
+            searchResults = hits
+            searchBoxes = textIndex.locateAll(q, hits.map { it.page }.toSet())
         }
         searching = false
     }
@@ -447,15 +451,17 @@ fun ViewerScreen(
                 }
             } else {
                 val key = sheet?.filePath
+                val hlPage = if (showMatchNav && searchIdx in searchResults.indices) searchResults[searchIdx].page else -1
+                val hlBoxes = if (hlPage >= 0) searchBoxes[hlPage].orEmpty() else emptyList()
                 when (mode) {
-                    DisplayMode.SINGLE -> SinglePageView(doc, page, order, renderPx, app.annotations, key, annoVersion) { turn(it) }
-                    DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion) { turn(it) }
+                    DisplayMode.SINGLE -> SinglePageView(doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes) { turn(it) }
+                    DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
-                        app.annotations, key, annoVersion,
+                        app.annotations, key, annoVersion, hlPage, hlBoxes,
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
-                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken)
-                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken)
+                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes)
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes)
                 }
                 if (showMetro) {
                     Box(Modifier.align(Alignment.BottomCenter)) {

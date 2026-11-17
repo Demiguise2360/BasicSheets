@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.annot.PageAnnotations
 import ch.desgin.basicsheets.data.AnnotationRepository
+import ch.desgin.basicsheets.pdf.MatchBox
 import ch.desgin.basicsheets.pdf.PdfDoc
 import ch.desgin.basicsheets.ui.settings.LocalSettings
 import kotlin.math.roundToInt
@@ -107,7 +108,7 @@ fun rememberPageAnnotations(repo: AnnotationRepository?, pdfKey: String?, page: 
  * sizes one axis (fillMaxWidth / fillMaxHeight / weight); the page aspect fixes the other.
  */
 @Composable
-private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Modifier) {
+private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Modifier, highlight: List<MatchBox> = emptyList()) {
     if (bmp == null) return
     Box(modifier.aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())) {
         Image(
@@ -117,8 +118,11 @@ private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Mod
             contentScale = ContentScale.Fit,
             colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
         )
-        if (!anno.isEmpty()) {
-            Canvas(Modifier.matchParentSize()) { drawPageAnnotations(anno, size.width, size.height) }
+        if (!anno.isEmpty() || highlight.isNotEmpty()) {
+            Canvas(Modifier.matchParentSize()) {
+                if (highlight.isNotEmpty()) drawSearchHighlight(highlight, size.width, size.height)
+                if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
+            }
         }
     }
 }
@@ -132,9 +136,12 @@ fun SinglePageView(
     annoRepo: AnnotationRepository? = null,
     pdfKey: String? = null,
     annoVersion: Int = 0,
+    highlightPage: Int = -1,
+    highlightBoxes: List<MatchBox> = emptyList(),
     onTurn: (Int) -> Unit,
 ) {
     val pdf = pages.getOrElse(page) { 0 }
+    val hl = if (pdf == highlightPage) highlightBoxes else emptyList()
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     LaunchedEffect(page) { scale = 1f; offset = Offset.Zero }
@@ -174,8 +181,11 @@ fun SinglePageView(
                     contentScale = ContentScale.FillWidth,
                     colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
                 )
-                if (!anno.isEmpty()) {
-                    Canvas(Modifier.matchParentSize()) { drawPageAnnotations(anno, size.width, size.height) }
+                if (!anno.isEmpty() || hl.isNotEmpty()) {
+                    Canvas(Modifier.matchParentSize()) {
+                        if (hl.isNotEmpty()) drawSearchHighlight(hl, size.width, size.height)
+                        if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
+                    }
                 }
             }
         } else {
@@ -193,6 +203,8 @@ fun TwoPageView(
     annoRepo: AnnotationRepository? = null,
     pdfKey: String? = null,
     annoVersion: Int = 0,
+    highlightPage: Int = -1,
+    highlightBoxes: List<MatchBox> = emptyList(),
     onTurn: (Int) -> Unit,
 ) {
     val half = renderPx / 2
@@ -215,8 +227,8 @@ fun TwoPageView(
         contentAlignment = Alignment.Center,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f))
-            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f))
+            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f), if (leftIdx == highlightPage) highlightBoxes else emptyList())
+            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f), if (rightIdx == highlightPage) highlightBoxes else emptyList())
         }
     }
 }
@@ -231,6 +243,8 @@ fun VerticalScrollView(
     pdfKey: String? = null,
     annoVersion: Int = 0,
     jumpToken: Int = 0,
+    highlightPage: Int = -1,
+    highlightBoxes: List<MatchBox> = emptyList(),
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -241,7 +255,7 @@ fun VerticalScrollView(
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth())
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth(), if (pdf == highlightPage) highlightBoxes else emptyList())
             } else {
                 Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
@@ -262,6 +276,8 @@ fun HorizontalScrollView(
     pdfKey: String? = null,
     annoVersion: Int = 0,
     jumpToken: Int = 0,
+    highlightPage: Int = -1,
+    highlightBoxes: List<MatchBox> = emptyList(),
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -276,7 +292,7 @@ fun HorizontalScrollView(
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight())
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight(), if (pdf == highlightPage) highlightBoxes else emptyList())
             } else {
                 Box(Modifier.fillMaxHeight().aspectRatio(0.7f), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
@@ -304,6 +320,8 @@ fun HalfTurnView(
     annoRepo: AnnotationRepository? = null,
     pdfKey: String? = null,
     annoVersion: Int = 0,
+    highlightPage: Int = -1,
+    highlightBoxes: List<MatchBox> = emptyList(),
     onSplitChange: (Float) -> Unit,
 ) {
     val total = maxOf(1, 2 * pages.size - 1)
@@ -319,6 +337,10 @@ fun HalfTurnView(
     val nextAnno = rememberPageAnnotations(
         annoRepo, pdfKey, if (composite && nextIdx < pages.size) pages[nextIdx] else -1, annoVersion,
     )
+    val curPdf = pages.getOrElse(curIdx) { -1 }
+    val nextPdf = if (composite && nextIdx < pages.size) pages[nextIdx] else -1
+    val curHl = if (curPdf == highlightPage) highlightBoxes else emptyList()
+    val nextHl = if (nextPdf == highlightPage) highlightBoxes else emptyList()
 
     val bar = 6   // blue fold-bar thickness, in composite (bitmap) px
 
@@ -391,11 +413,14 @@ fun HalfTurnView(
                     dstSize = IntSize((wB * scale).roundToInt(), (topH * scale).roundToInt()),
                     colorFilter = filter,
                 )
-                // next page's annotations, clipped to the visible top half
-                if (!nextAnno.isEmpty()) {
+                // next page's search highlight + annotations, clipped to the visible top half
+                if (!nextAnno.isEmpty() || nextHl.isNotEmpty()) {
                     val tx = dx + xB * scale
                     clipRect(tx, dy, tx + wB * scale, dy + topH * scale) {
-                        translate(tx, dy) { drawPageAnnotations(nextAnno, wB * scale, hB * scale) }
+                        translate(tx, dy) {
+                            if (nextHl.isNotEmpty()) drawSearchHighlight(nextHl, wB * scale, hB * scale)
+                            if (!nextAnno.isEmpty()) drawPageAnnotations(nextAnno, wB * scale, hB * scale)
+                        }
                     }
                 }
                 // blue fold bar
@@ -408,12 +433,15 @@ fun HalfTurnView(
                     dstSize = IntSize((wA * scale).roundToInt(), (bottomH * scale).roundToInt()),
                     colorFilter = filter,
                 )
-                // current page's annotations, clipped to the visible bottom half
-                if (!curAnno.isEmpty()) {
+                // current page's search highlight + annotations, clipped to the visible bottom half
+                if (!curAnno.isEmpty() || curHl.isNotEmpty()) {
                     val bx = dx + xA * scale
                     val by = dy + (topH + bar) * scale
                     clipRect(bx, by, bx + wA * scale, by + bottomH * scale) {
-                        translate(bx, by - aCut * scale) { drawPageAnnotations(curAnno, wA * scale, hA * scale) }
+                        translate(bx, by - aCut * scale) {
+                            if (curHl.isNotEmpty()) drawSearchHighlight(curHl, wA * scale, hA * scale)
+                            if (!curAnno.isEmpty()) drawPageAnnotations(curAnno, wA * scale, hA * scale)
+                        }
                     }
                 }
             } else {
@@ -425,8 +453,11 @@ fun HalfTurnView(
                     dstSize = IntSize((wA * scale).roundToInt(), (hA * scale).roundToInt()),
                     colorFilter = filter,
                 )
-                if (!curAnno.isEmpty()) {
-                    translate(dx, dy) { drawPageAnnotations(curAnno, wA * scale, hA * scale) }
+                if (!curAnno.isEmpty() || curHl.isNotEmpty()) {
+                    translate(dx, dy) {
+                        if (curHl.isNotEmpty()) drawSearchHighlight(curHl, wA * scale, hA * scale)
+                        if (!curAnno.isEmpty()) drawPageAnnotations(curAnno, wA * scale, hA * scale)
+                    }
                 }
                 drawRect(
                     Color(0x4D1E88E5),
