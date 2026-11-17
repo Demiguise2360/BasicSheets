@@ -35,10 +35,12 @@ data class Sheet(
     val scrollSpeed: Int = 0,           // per-song auto-scroll px/s (0 = global default)
     val halfSplit: Double = 0.5,        // per-song half-page fold position (was localStorage in MAUI)
     val pageMode: String? = null,       // null = global; single | two | half-turn | scroll-v | scroll-h
+    val practiceMarkedAt: Long? = null, // null = not marked "zum Üben"; else when it was marked (Üben tab)
     val created: Long = System.currentTimeMillis(),
     val updated: Long = System.currentTimeMillis(),
 ) {
     val hasRange: Boolean get() = pageStart > 0 && pageEnd >= pageStart
+    val inPractice: Boolean get() = practiceMarkedAt != null
     fun information(): String =
         listOf(composer, part, genre, year).filter { it.isNotBlank() }.joinToString(" · ")
 }

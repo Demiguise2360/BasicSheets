@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ViewerButton::class, Collection::class, SheetCollectionLink::class,
         SheetFile::class, Crop::class, SettingRow::class, AnnotationRow::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class BasicSheetsDatabase : RoomDatabase() {
@@ -36,12 +36,18 @@ abstract class BasicSheetsDatabase : RoomDatabase() {
                     context.applicationContext,
                     BasicSheetsDatabase::class.java,
                     "basicsheets.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE collections ADD COLUMN color TEXT")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sheets ADD COLUMN practiceMarkedAt INTEGER")
             }
         }
     }

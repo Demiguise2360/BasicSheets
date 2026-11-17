@@ -68,4 +68,5 @@ class LibraryViewModel : ViewModel() {
     fun importPdf(context: Context, uri: Uri) = viewModelScope.launch { repo.importPdf(context, uri) }
     fun delete(sheet: Sheet) = viewModelScope.launch { repo.delete(sheet) }
     fun rate(sheet: Sheet, stars: Int) = viewModelScope.launch { repo.update(sheet.copy(rating = stars)) }
+    fun togglePractice(sheet: Sheet) = viewModelScope.launch { repo.setPractice(sheet, !sheet.inPractice) }
 }

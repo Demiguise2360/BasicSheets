@@ -16,6 +16,10 @@ interface SheetDao {
     @Query("SELECT * FROM sheets ORDER BY name COLLATE NOCASE")
     suspend fun all(): List<Sheet>
 
+    /** Sheets marked "zum Üben", most recently marked first. */
+    @Query("SELECT * FROM sheets WHERE practiceMarkedAt IS NOT NULL ORDER BY practiceMarkedAt DESC")
+    fun observePractice(): Flow<List<Sheet>>
+
     @Query("SELECT * FROM sheets WHERE id = :id")
     suspend fun byId(id: Int): Sheet?
 

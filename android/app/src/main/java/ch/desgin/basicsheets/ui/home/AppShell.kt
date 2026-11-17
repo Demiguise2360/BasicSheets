@@ -59,7 +59,7 @@ fun AppShell(
             when (tab) {
                 "noten" -> LibraryScreen(onOpen = onOpenSheet, onOpenSetlist = onOpenSetlist, onOpenCollection = onOpenCollection, onOpenComposer = onOpenComposer)
                 "lesezeichen" -> BookmarksScreen(onOpen = onOpenSheet)
-                "ueben" -> PracticeScreen()
+                "ueben" -> PracticeScreen(onOpen = onOpenSheet)
                 else -> SettingsScreen()
             }
         }

@@ -12,8 +12,18 @@ class LibraryRepository(
     private val sheetsDir: File,
 ) {
     fun observeSheets(): Flow<List<Sheet>> = db.sheets().observeAll()
+    fun observePractice(): Flow<List<Sheet>> = db.sheets().observePractice()
     suspend fun all(): List<Sheet> = db.sheets().all()
     suspend fun byId(id: Int): Sheet? = db.sheets().byId(id)
+
+    /** Mark / unmark a sheet "zum Üben" (shown in the Üben tab). */
+    suspend fun setPractice(sheet: Sheet, on: Boolean) =
+        db.sheets().update(
+            sheet.copy(
+                practiceMarkedAt = if (on) System.currentTimeMillis() else null,
+                updated = System.currentTimeMillis(),
+            )
+        )
     suspend fun byFile(file: String): Sheet? = db.sheets().byFile(file)
 
     suspend fun update(sheet: Sheet) =
