@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -51,7 +52,7 @@ import ch.desgin.basicsheets.data.Sheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(onOpen: (Int) -> Unit, vm: LibraryViewModel = viewModel()) {
+fun LibraryScreen(onOpen: (Int) -> Unit, onOpenSetlists: () -> Unit, vm: LibraryViewModel = viewModel()) {
     val context = LocalContext.current
     val sheets by vm.shown.collectAsState()
     val tab by vm.tab.collectAsState()
@@ -62,7 +63,16 @@ fun LibraryScreen(onOpen: (Int) -> Unit, vm: LibraryViewModel = viewModel()) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Meine Noten") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Meine Noten") },
+                actions = {
+                    IconButton(onClick = onOpenSetlists) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Setlists")
+                    }
+                },
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { picker.launch(arrayOf("application/pdf")) }) {
                 Icon(Icons.Filled.Add, contentDescription = "Noten hinzufügen")

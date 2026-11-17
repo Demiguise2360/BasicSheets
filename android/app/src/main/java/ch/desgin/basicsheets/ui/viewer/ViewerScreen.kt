@@ -72,7 +72,12 @@ import kotlin.math.hypot
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
+fun ViewerScreen(
+    sheetId: Int,
+    onBack: () -> Unit,
+    setlistId: Int = -1,
+    onOpenSong: (Int) -> Unit = {},
+) {
     val app = BasicSheetsApp.instance
     val scope = rememberCoroutineScope()
 
@@ -117,6 +122,10 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
     var showMatchNav by remember { mutableStateOf(false) }
     val textIndex = remember { PdfTextIndex() }
 
+    // Setlist playback context (song-to-song navigation)
+    var setlistSheets by remember { mutableStateOf<List<Sheet>>(emptyList()) }
+    val songIdx = if (setlistId >= 0) setlistSheets.indexOfFirst { it.id == sheetId } else -1
+
     val renderPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() * 2f).toInt() }
 
     LaunchedEffect(sheetId) {
@@ -156,6 +165,10 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
             searchResults = textIndex.search(q)
         }
         searching = false
+    }
+
+    LaunchedEffect(setlistId) {
+        setlistSheets = if (setlistId >= 0) app.setlists.sheets(setlistId) else emptyList()
     }
 
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, pageCount - 1)) }
@@ -276,14 +289,26 @@ fun ViewerScreen(sheetId: Int, onBack: () -> Unit) {
             )
         },
         bottomBar = {
-            if (!editMode && (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && pageCount > 1) {
+            val inSetlist = setlistId >= 0 && songIdx >= 0
+            val showPageNav = (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && pageCount > 1
+            if (!editMode && (inSetlist || showPageNav)) {
                 val step = if (mode == DisplayMode.TWO) 2 else 1
                 BottomAppBar {
-                    TextButton(onClick = { turn(-step) }, enabled = page > 0) { Text("‹") }
+                    if (inSetlist) {
+                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx - 1].id) }, enabled = songIdx > 0) { Text("⏮") }
+                    }
                     Spacer(Modifier.weight(1f))
-                    Text("${page + 1} / $pageCount", Modifier.align(Alignment.CenterVertically))
+                    if (showPageNav) {
+                        TextButton(onClick = { turn(-step) }, enabled = page > 0) { Text("‹") }
+                        Text("${page + 1} / $pageCount", Modifier.align(Alignment.CenterVertically))
+                        TextButton(onClick = { turn(step) }, enabled = page < pageCount - 1) { Text("›") }
+                    } else if (inSetlist) {
+                        Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
+                    }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { turn(step) }, enabled = page < pageCount - 1) { Text("›") }
+                    if (inSetlist) {
+                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx + 1].id) }, enabled = songIdx < setlistSheets.size - 1) { Text("⏭") }
+                    }
                 }
             }
         },
