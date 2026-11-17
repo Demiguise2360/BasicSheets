@@ -174,6 +174,7 @@ fun ViewerScreen(
     LaunchedEffect(sheetId) {
         val s = app.library.byId(sheetId) ?: return@LaunchedEffect
         sheet = s
+        app.library.markOpened(sheetId)   // record for the Zuletzt tab (doesn't touch `updated`)
         bookmarks = app.bookmarks.forFile(s.filePath)
         mode = DisplayMode.from(s.pageMode ?: settings.pageMode)
         val d = withContext(Dispatchers.IO) { PdfDoc.open(app.library.fileFor(s)) }

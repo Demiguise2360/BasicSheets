@@ -26,6 +26,10 @@ interface SheetDao {
     @Query("SELECT * FROM sheets WHERE filePath = :file LIMIT 1")
     suspend fun byFile(file: String): Sheet?
 
+    /** Record that a sheet was opened (for the Zuletzt tab) without touching `updated`. */
+    @Query("UPDATE sheets SET lastOpenedAt = :t WHERE id = :id")
+    suspend fun markOpened(id: Int, t: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(sheet: Sheet): Long
 

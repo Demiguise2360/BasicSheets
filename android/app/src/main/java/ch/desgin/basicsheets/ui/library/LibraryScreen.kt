@@ -79,12 +79,13 @@ import kotlin.math.absoluteValue
 
 private val TABS = listOf(
     "songs" to "Songs",
+    "recent" to "Zuletzt",
     "favorites" to "Favoriten",
     "composer" to "Komponisten",
     "sammlungen" to "Sammlungen",
     "setlists" to "Setlists",
 )
-private val SONG_TABS = setOf("songs", "favorites", "composer")
+private val SONG_TABS = setOf("songs", "recent", "favorites", "composer")
 
 private val FIELD_OPTIONS = listOf(
     "all" to "Alle", "Name" to "Name", "Composer" to "Komponist",
@@ -189,6 +190,7 @@ fun LibraryScreen(
             "setlists" -> SetlistsTab(setlists, onOpenSetlist)
             "sammlungen" -> CollectionsTab(collections, onOpenCollection)
             "composer" -> ComposerTab(sheets, query, onOpenComposer)
+            "recent" -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) }, emptyHint = "Noch nichts geöffnet. Öffne eine Note, um sie hier zu sehen.")
             else -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) })
         }
     }
@@ -220,9 +222,10 @@ private fun SongList(
     onDelete: (Sheet) -> Unit,
     onRate: (Sheet, Int) -> Unit,
     onTogglePractice: (Sheet) -> Unit,
+    emptyHint: String = "Noch keine Noten. Tippe + um eine PDF hinzuzufügen.",
 ) {
     if (sheets.isEmpty()) {
-        EmptyTab(if (query.isBlank()) "Noch keine Noten. Tippe + um eine PDF hinzuzufügen." else "Keine Treffer.")
+        EmptyTab(if (query.isBlank()) emptyHint else "Keine Treffer.")
         return
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -52,7 +52,7 @@ class LibraryViewModel : ViewModel() {
             }
             if (tab == "favorites") r = r.filter { it.rating > 0 }
             r = when (tab) {
-                "recent" -> r.sortedByDescending { it.updated }
+                "recent" -> r.filter { it.lastOpenedAt != null }.sortedByDescending { it.lastOpenedAt ?: 0L }
                 "favorites" -> r.sortedByDescending { it.rating }
                 "composer" -> r.sortedBy { it.composer.lowercase() }
                 "genre" -> r.sortedBy { it.genre.lowercase() }

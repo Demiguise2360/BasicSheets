@@ -16,6 +16,9 @@ class LibraryRepository(
     suspend fun all(): List<Sheet> = db.sheets().all()
     suspend fun byId(id: Int): Sheet? = db.sheets().byId(id)
 
+    /** Record that a sheet was just opened (for the Zuletzt tab). */
+    suspend fun markOpened(id: Int) = db.sheets().markOpened(id, System.currentTimeMillis())
+
     /** Mark / unmark a sheet "zum Üben" (shown in the Üben tab). */
     suspend fun setPractice(sheet: Sheet, on: Boolean) =
         db.sheets().update(

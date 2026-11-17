@@ -36,6 +36,7 @@ data class Sheet(
     val halfSplit: Double = 0.5,        // per-song half-page fold position (was localStorage in MAUI)
     val pageMode: String? = null,       // null = global; single | two | half-turn | scroll-v | scroll-h
     val practiceMarkedAt: Long? = null, // null = not marked "zum Üben"; else when it was marked (Üben tab)
+    val lastOpenedAt: Long? = null,     // null = never opened; else when last opened (Zuletzt tab)
     val created: Long = System.currentTimeMillis(),
     val updated: Long = System.currentTimeMillis(),
 ) {
