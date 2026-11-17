@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -299,6 +301,9 @@ fun HalfTurnView(
     renderPx: Int,
     initialSplit: Float,
     jumpToken: Int = 0,
+    annoRepo: AnnotationRepository? = null,
+    pdfKey: String? = null,
+    annoVersion: Int = 0,
     onSplitChange: (Float) -> Unit,
 ) {
     val total = maxOf(1, 2 * pages.size - 1)
@@ -310,6 +315,10 @@ fun HalfTurnView(
     val nextIdx = curIdx + 1
     val cur = pageBitmap(doc, pages.getOrElse(curIdx) { 0 }, renderPx)
     val next = if (composite && nextIdx < pages.size) pageBitmap(doc, pages[nextIdx], renderPx) else null
+    val curAnno = rememberPageAnnotations(annoRepo, pdfKey, pages.getOrElse(curIdx) { -1 }, annoVersion)
+    val nextAnno = rememberPageAnnotations(
+        annoRepo, pdfKey, if (composite && nextIdx < pages.size) pages[nextIdx] else -1, annoVersion,
+    )
 
     val bar = 6   // blue fold-bar thickness, in composite (bitmap) px
 
@@ -382,6 +391,13 @@ fun HalfTurnView(
                     dstSize = IntSize((wB * scale).roundToInt(), (topH * scale).roundToInt()),
                     colorFilter = filter,
                 )
+                // next page's annotations, clipped to the visible top half
+                if (!nextAnno.isEmpty()) {
+                    val tx = dx + xB * scale
+                    clipRect(tx, dy, tx + wB * scale, dy + topH * scale) {
+                        translate(tx, dy) { drawPageAnnotations(nextAnno, wB * scale, hB * scale) }
+                    }
+                }
                 // blue fold bar
                 drawRect(Color(0xFF1E88E5), topLeft = Offset(dx, dy + topH * scale), size = Size(w * scale, bar * scale))
                 // current page bottom → BOTTOM
@@ -392,6 +408,14 @@ fun HalfTurnView(
                     dstSize = IntSize((wA * scale).roundToInt(), (bottomH * scale).roundToInt()),
                     colorFilter = filter,
                 )
+                // current page's annotations, clipped to the visible bottom half
+                if (!curAnno.isEmpty()) {
+                    val bx = dx + xA * scale
+                    val by = dy + (topH + bar) * scale
+                    clipRect(bx, by, bx + wA * scale, by + bottomH * scale) {
+                        translate(bx, by - aCut * scale) { drawPageAnnotations(curAnno, wA * scale, hA * scale) }
+                    }
+                }
             } else {
                 // Whole page + a faint fold cue at the split.
                 drawImage(
@@ -401,6 +425,9 @@ fun HalfTurnView(
                     dstSize = IntSize((wA * scale).roundToInt(), (hA * scale).roundToInt()),
                     colorFilter = filter,
                 )
+                if (!curAnno.isEmpty()) {
+                    translate(dx, dy) { drawPageAnnotations(curAnno, wA * scale, hA * scale) }
+                }
                 drawRect(
                     Color(0x4D1E88E5),
                     topLeft = Offset(dx, dy + (hA * split - bar / 2f) * scale),

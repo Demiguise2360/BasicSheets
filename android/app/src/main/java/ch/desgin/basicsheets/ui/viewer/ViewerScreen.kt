@@ -451,6 +451,7 @@ fun ViewerScreen(
                     DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
+                        app.annotations, key, annoVersion,
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
                     DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken)
                     DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken)
