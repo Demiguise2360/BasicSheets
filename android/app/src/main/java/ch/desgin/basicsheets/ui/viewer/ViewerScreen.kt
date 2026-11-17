@@ -2,6 +2,7 @@ package ch.desgin.basicsheets.ui.viewer
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +50,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.annot.Hairpin
@@ -69,6 +71,7 @@ import ch.desgin.basicsheets.pdf.PdfDoc
 import ch.desgin.basicsheets.pdf.PdfOutline
 import ch.desgin.basicsheets.pdf.PdfTextIndex
 import ch.desgin.basicsheets.pdf.SearchHit
+import ch.desgin.basicsheets.ui.settings.LocalSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -87,6 +90,8 @@ fun ViewerScreen(
 ) {
     val app = BasicSheetsApp.instance
     val scope = rememberCoroutineScope()
+    val settings = LocalSettings.current
+    val view = LocalView.current
 
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     var doc by remember { mutableStateOf<PdfDoc?>(null) }
@@ -145,6 +150,10 @@ fun ViewerScreen(
         if (uri != null) scope.launch { sheet?.let { s -> app.library.attachAudio(context, uri, s)?.let { sheet = it } } }
     }
     DisposableEffect(Unit) { onDispose { audioCtl.release(); tone.release() } }
+    DisposableEffect(settings.keepScreenOn) {
+        view.keepScreenOn = settings.keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
 
     val renderPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() * 2f).toInt() }
 
@@ -152,7 +161,7 @@ fun ViewerScreen(
         val s = app.library.byId(sheetId) ?: return@LaunchedEffect
         sheet = s
         bookmarks = app.bookmarks.forFile(s.filePath)
-        mode = DisplayMode.from(s.pageMode)
+        mode = DisplayMode.from(s.pageMode ?: settings.pageMode)
         val d = withContext(Dispatchers.IO) { PdfDoc.open(app.library.fileFor(s)) }
         doc = d
         pageCount = d?.pageCount ?: 0
@@ -339,7 +348,7 @@ fun ViewerScreen(
                     Spacer(Modifier.weight(1f))
                     if (showPageNav) {
                         TextButton(onClick = { turn(-step) }, enabled = page > 0) { Text("‹") }
-                        Text("${page + 1} / $pageCount", Modifier.align(Alignment.CenterVertically))
+                        if (settings.pageNumbers) Text("${page + 1} / $pageCount", Modifier.align(Alignment.CenterVertically))
                         TextButton(onClick = { turn(step) }, enabled = page < pageCount - 1) { Text("›") }
                     } else if (inSetlist) {
                         Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
@@ -352,7 +361,7 @@ fun ViewerScreen(
             }
         },
     ) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad)) {
+        Box(Modifier.fillMaxSize().background(viewerBgColor(settings.viewerBg)).padding(pad)) {
             if (editMode) {
                 EditablePage(
                     doc = doc, page = page, renderPx = renderPx,
@@ -495,3 +504,9 @@ private val NOTE_NAMES = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"
 private fun toneFreq(midi: Int): Double = 440.0 * 2.0.pow((midi - 69) / 12.0)
 
 private fun noteLabel(midi: Int): String = NOTE_NAMES[midi % 12] + (midi / 12 - 1)
+
+private fun viewerBgColor(bg: String): Color = when (bg) {
+    "white" -> Color(0xFFFFFFFF)
+    "gray" -> Color(0xFF4A4A4A)
+    else -> Color(0xFF121212)
+}

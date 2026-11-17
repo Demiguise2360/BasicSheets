@@ -1,5 +1,8 @@
 package ch.desgin.basicsheets.data
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
 /**
  * Thin accessor over the settings_kv table. The MAUI app rebuilds the full Setting definitions
  * (name/description/type/options) in code and persists only the chosen value; the complete
@@ -12,6 +15,10 @@ class SettingsRepository(private val db: BasicSheetsDatabase) {
         db.settings().value(name) ?: DEFAULTS[name] ?: default
 
     suspend fun set(name: String, value: String) = db.settings().put(SettingRow(name, value))
+
+    /** All settings as a live name→value map (missing keys fall back to DEFAULTS at read time). */
+    fun observe(): Flow<Map<String, String>> =
+        db.settings().observeAll().map { rows -> rows.associate { it.name to it.value } }
 
     suspend fun bool(name: String, default: Boolean): Boolean =
         when (db.settings().value(name) ?: DEFAULTS[name]) {
@@ -26,6 +33,7 @@ class SettingsRepository(private val db: BasicSheetsDatabase) {
     companion object {
         /** Known default values (mirrors SettingsService.cs; completed in the Settings phase). */
         val DEFAULTS: Map<String, String> = mapOf(
+            "Seitenansicht" to "single",
             "Sortierung" to "name",
             "Dunkles Design" to "false",
             "Start und End Hinweis" to "true",

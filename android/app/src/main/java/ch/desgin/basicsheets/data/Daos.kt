@@ -130,6 +130,9 @@ interface SheetFileDao {
 interface SettingDao {
     @Query("SELECT * FROM settings_kv")
     suspend fun all(): List<SettingRow>
+
+    @Query("SELECT * FROM settings_kv")
+    fun observeAll(): Flow<List<SettingRow>>
     @Query("SELECT value FROM settings_kv WHERE name = :name LIMIT 1")
     suspend fun value(name: String): String?
     @Insert(onConflict = OnConflictStrategy.REPLACE)

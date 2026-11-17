@@ -37,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -47,7 +49,20 @@ import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.annot.PageAnnotations
 import ch.desgin.basicsheets.data.AnnotationRepository
 import ch.desgin.basicsheets.pdf.PdfDoc
+import ch.desgin.basicsheets.ui.settings.LocalSettings
 import kotlin.math.roundToInt
+
+/** Color-inverting filter for night mode, applied to page bitmaps. */
+private val INVERT_FILTER = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f,
+        ),
+    ),
+)
 
 /** Display modes, keyed by the same strings the MAUI app stores in Sheet.pageMode. */
 enum class DisplayMode(val key: String, val label: String) {
@@ -87,7 +102,13 @@ fun rememberPageAnnotations(repo: AnnotationRepository?, pdfKey: String?, page: 
 private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Modifier) {
     if (bmp == null) return
     Box(modifier.aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())) {
-        Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        Image(
+            bmp.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+            colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
+        )
         if (!anno.isEmpty()) {
             Canvas(Modifier.matchParentSize()) { drawPageAnnotations(anno, size.width, size.height) }
         }
@@ -137,7 +158,13 @@ fun SinglePageView(
                     .aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())
                     .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
             ) {
-                Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillWidth)
+                Image(
+                    bmp.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillWidth,
+                    colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
+                )
                 if (!anno.isEmpty()) {
                     Canvas(Modifier.matchParentSize()) { drawPageAnnotations(anno, size.width, size.height) }
                 }
@@ -307,6 +334,8 @@ fun HalfTurnView(
 
         val curImg = cur.asImageBitmap()
         val nextImg = next?.asImageBitmap()
+        val invert = LocalSettings.current.invert
+        val filter = if (invert) INVERT_FILTER else null
 
         Canvas(
             Modifier
@@ -341,6 +370,7 @@ fun HalfTurnView(
                     srcOffset = IntOffset(0, 0), srcSize = IntSize(wB, topH),
                     dstOffset = IntOffset((dx + xB * scale).roundToInt(), dy.roundToInt()),
                     dstSize = IntSize((wB * scale).roundToInt(), (topH * scale).roundToInt()),
+                    colorFilter = filter,
                 )
                 // blue fold bar
                 drawRect(Color(0xFF1E88E5), topLeft = Offset(dx, dy + topH * scale), size = Size(w * scale, bar * scale))
@@ -350,6 +380,7 @@ fun HalfTurnView(
                     srcOffset = IntOffset(0, aCut), srcSize = IntSize(wA, bottomH),
                     dstOffset = IntOffset((dx + xA * scale).roundToInt(), (dy + (topH + bar) * scale).roundToInt()),
                     dstSize = IntSize((wA * scale).roundToInt(), (bottomH * scale).roundToInt()),
+                    colorFilter = filter,
                 )
             } else {
                 // Whole page + a faint fold cue at the split.
@@ -358,6 +389,7 @@ fun HalfTurnView(
                     srcOffset = IntOffset(0, 0), srcSize = IntSize(wA, hA),
                     dstOffset = IntOffset(dx.roundToInt(), dy.roundToInt()),
                     dstSize = IntSize((wA * scale).roundToInt(), (hA * scale).roundToInt()),
+                    colorFilter = filter,
                 )
                 drawRect(
                     Color(0x4D1E88E5),

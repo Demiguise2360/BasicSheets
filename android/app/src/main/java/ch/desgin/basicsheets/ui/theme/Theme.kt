@@ -2,6 +2,7 @@ package ch.desgin.basicsheets.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -21,12 +22,19 @@ private val LightColors = lightColorScheme(
     surface = Color.White,
 )
 
+private val DarkColors = darkColorScheme(
+    primary = TealLight,
+    onPrimary = Ink,
+    secondary = Teal,
+    tertiary = TealLight,
+    background = Color(0xFF121212),
+    surface = Color(0xFF1E1E1E),
+)
+
 @Composable
-fun BasicSheetsTheme(content: @Composable () -> Unit) {
-    // The library/settings chrome is light with teal accents (like "Meine Noten"); the PDF
-    // viewer manages its own dark/night rendering later.
+fun BasicSheetsTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = LightColors,
+        colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = Typography(),
         content = content,
     )

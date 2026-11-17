@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import ch.desgin.basicsheets.ui.library.LibraryScreen
 import ch.desgin.basicsheets.ui.setlists.SetlistDetailScreen
 import ch.desgin.basicsheets.ui.setlists.SetlistsScreen
+import ch.desgin.basicsheets.ui.settings.SettingsScreen
 import ch.desgin.basicsheets.ui.viewer.ViewerScreen
 
 @Composable
@@ -19,7 +20,11 @@ fun AppRoot() {
             LibraryScreen(
                 onOpen = { id -> nav.navigate("viewer/$id") },
                 onOpenSetlists = { nav.navigate("setlists") },
+                onOpenSettings = { nav.navigate("settings") },
             )
+        }
+        composable("settings") {
+            SettingsScreen(onBack = { nav.popBackStack() })
         }
         composable("setlists") {
             SetlistsScreen(

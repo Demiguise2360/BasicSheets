@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -52,7 +53,12 @@ import ch.desgin.basicsheets.data.Sheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(onOpen: (Int) -> Unit, onOpenSetlists: () -> Unit, vm: LibraryViewModel = viewModel()) {
+fun LibraryScreen(
+    onOpen: (Int) -> Unit,
+    onOpenSetlists: () -> Unit,
+    onOpenSettings: () -> Unit,
+    vm: LibraryViewModel = viewModel(),
+) {
     val context = LocalContext.current
     val sheets by vm.shown.collectAsState()
     val tab by vm.tab.collectAsState()
@@ -69,6 +75,9 @@ fun LibraryScreen(onOpen: (Int) -> Unit, onOpenSetlists: () -> Unit, vm: Library
                 actions = {
                     IconButton(onClick = onOpenSetlists) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Setlists")
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Einstellungen")
                     }
                 },
             )
