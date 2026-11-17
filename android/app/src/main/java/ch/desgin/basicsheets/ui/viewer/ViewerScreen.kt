@@ -1,5 +1,7 @@
 package ch.desgin.basicsheets.ui.viewer
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +15,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
@@ -44,6 +47,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
@@ -55,7 +59,9 @@ import ch.desgin.basicsheets.annot.ShapeAnnot
 import ch.desgin.basicsheets.annot.Stamp
 import ch.desgin.basicsheets.annot.TextAnnot
 import ch.desgin.basicsheets.annot.Tool
+import ch.desgin.basicsheets.audio.AudioController
 import ch.desgin.basicsheets.audio.Metronome
+import ch.desgin.basicsheets.audio.TuningTone
 import ch.desgin.basicsheets.data.Bookmark
 import ch.desgin.basicsheets.data.Sheet
 import ch.desgin.basicsheets.pdf.OutlineEntry
@@ -69,6 +75,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.pow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +133,19 @@ fun ViewerScreen(
     var setlistSheets by remember { mutableStateOf<List<Sheet>>(emptyList()) }
     val songIdx = if (setlistId >= 0) setlistSheets.indexOfFirst { it.id == sheetId } else -1
 
+    // Backing track + tuning tone
+    val context = LocalContext.current
+    val audioCtl = remember { AudioController(context) }
+    val tone = remember { TuningTone() }
+    var showAudio by remember { mutableStateOf(false) }
+    var tonePlaying by remember { mutableStateOf(false) }
+    var toneMidi by remember { mutableIntStateOf(69) }   // A4 = 440 Hz
+    val audioFile = sheet?.let { app.library.audioFileFor(it) }
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch { sheet?.let { s -> app.library.attachAudio(context, uri, s)?.let { sheet = it } } }
+    }
+    DisposableEffect(Unit) { onDispose { audioCtl.release(); tone.release() } }
+
     val renderPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() * 2f).toInt() }
 
     LaunchedEffect(sheetId) {
@@ -169,6 +189,14 @@ fun ViewerScreen(
 
     LaunchedEffect(setlistId) {
         setlistSheets = if (setlistId >= 0) app.setlists.sheets(setlistId) else emptyList()
+    }
+
+    LaunchedEffect(sheet?.audioPath) {
+        val f = sheet?.let { app.library.audioFileFor(it) }
+        if (f != null) audioCtl.load(f) else audioCtl.clear()
+    }
+    LaunchedEffect(audioCtl.isPlaying) {
+        while (audioCtl.isPlaying) { audioCtl.tick(); delay(200) }
     }
 
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, pageCount - 1)) }
@@ -246,6 +274,14 @@ fun ViewerScreen(
         searchIdx = (searchIdx + delta).coerceIn(0, searchResults.size - 1)
         jumpToPage(searchResults[searchIdx].page)
     }
+    fun toggleTone() {
+        if (tonePlaying) { tone.stop(); tonePlaying = false }
+        else { tone.start(toneFreq(toneMidi)); tonePlaying = true }
+    }
+    fun shiftTone(d: Int) {
+        toneMidi = (toneMidi + d).coerceIn(33, 96)
+        if (tonePlaying) tone.setFreq(toneFreq(toneMidi))
+    }
 
     Scaffold(
         topBar = {
@@ -272,8 +308,11 @@ fun ViewerScreen(
                                 }
                             }
                         }
-                        TextButton(onClick = { showMetro = !showMetro }) {
-                            Text(if (metro.running) "♩ ${metro.bpm} ▶" else "♩ ${metro.bpm}")
+                        TextButton(onClick = { showMetro = !showMetro; showAudio = false }) {
+                            Text(if (metro.running) "♩▶" else "♩")
+                        }
+                        IconButton(onClick = { showAudio = true; showMetro = false }) {
+                            Icon(Icons.Filled.MusicNote, contentDescription = "Ton & Audio")
                         }
                         IconButton(onClick = { showSearch = true }) {
                             Icon(Icons.Filled.Search, contentDescription = "Suchen")
@@ -410,6 +449,21 @@ fun ViewerScreen(
                     onDismiss = { showSearch = false },
                 )
             }
+            if (showAudio && !editMode) {
+                Box(Modifier.align(Alignment.BottomCenter)) {
+                    AudioTuningPanel(
+                        tonePlaying = tonePlaying,
+                        toneLabel = noteLabel(toneMidi),
+                        onToneToggle = { toggleTone() },
+                        onToneShift = { shiftTone(it) },
+                        controller = audioCtl,
+                        hasAudio = audioFile != null,
+                        onAttachAudio = { audioPicker.launch(arrayOf("audio/*")) },
+                        onRemoveAudio = { scope.launch { sheet?.let { s -> sheet = app.library.removeAudio(s) } } },
+                        onClose = { showAudio = false },
+                    )
+                }
+            }
         }
     }
 }
@@ -434,3 +488,10 @@ private fun distToSeg(px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2:
     val t = (((px - x1) * dx + (py - y1) * dy) / len2).coerceIn(0f, 1f)
     return hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 }
+
+private val NOTE_NAMES = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+/** Equal-tempered frequency of a MIDI note (A4 = 69 = 440 Hz). */
+private fun toneFreq(midi: Int): Double = 440.0 * 2.0.pow((midi - 69) / 12.0)
+
+private fun noteLabel(midi: Int): String = NOTE_NAMES[midi % 12] + (midi / 12 - 1)

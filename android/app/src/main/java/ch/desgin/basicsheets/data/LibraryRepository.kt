@@ -30,6 +30,39 @@ class LibraryRepository(
     /** The on-disk file for a sheet's primary PDF. */
     fun fileFor(sheet: Sheet): File = File(sheetsDir, sheet.filePath)
 
+    /** The on-disk backing-track audio file for a sheet, or null if none attached. */
+    fun audioFileFor(sheet: Sheet): File? =
+        sheet.audioPath.takeIf { it.isNotBlank() }?.let { File(sheetsDir, it) }
+
+    /** Copy a picked audio file into app storage and set it as the sheet's backing track. */
+    suspend fun attachAudio(context: Context, uri: Uri, sheet: Sheet): Sheet? {
+        val display = queryDisplayName(context, uri) ?: "audio.mp3"
+        val ext = display.substringAfterLast('.', "mp3").ifBlank { "mp3" }
+        val fileName = "audio-${System.currentTimeMillis()}.$ext"
+        val dest = File(sheetsDir, fileName)
+        val ok = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+                true
+            } ?: false
+        }.getOrDefault(false)
+        if (!ok) {
+            runCatching { dest.delete() }
+            return null
+        }
+        val updated = sheet.copy(audioPath = fileName, updated = System.currentTimeMillis())
+        db.sheets().update(updated)
+        return updated
+    }
+
+    /** Detach + delete the sheet's backing track. */
+    suspend fun removeAudio(sheet: Sheet): Sheet {
+        sheet.audioPath.takeIf { it.isNotBlank() }?.let { runCatching { File(sheetsDir, it).delete() } }
+        val updated = sheet.copy(audioPath = "", updated = System.currentTimeMillis())
+        db.sheets().update(updated)
+        return updated
+    }
+
     /** Copy a picked PDF into app storage and create a Sheet. Returns the new row id, or null. */
     suspend fun importPdf(context: Context, uri: Uri): Long? {
         val display = queryDisplayName(context, uri) ?: "Noten.pdf"
