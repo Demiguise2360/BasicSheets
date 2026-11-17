@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ch.desgin.basicsheets.BasicSheetsApp
+import ch.desgin.basicsheets.ui.theme.appTopBarColors
 import ch.desgin.basicsheets.annot.Hairpin
 import ch.desgin.basicsheets.annot.MarkerStroke
 import ch.desgin.basicsheets.annot.PageAnnotations
@@ -351,7 +353,10 @@ fun ViewerScreen(
                                 )
                             }
                         }
-                        TextButton(onClick = { showMetro = !showMetro; showAudio = false }) {
+                        TextButton(
+                            onClick = { showMetro = !showMetro; showAudio = false },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
+                        ) {
                             Text(if (metro.running) "♩▶" else "♩")
                         }
                         IconButton(onClick = { showAudio = true; showMetro = false }) {
@@ -368,6 +373,7 @@ fun ViewerScreen(
                         Icon(Icons.Filled.Edit, contentDescription = "Annotieren")
                     }
                 },
+                colors = appTopBarColors(),
             )
         },
         bottomBar = {
@@ -375,21 +381,28 @@ fun ViewerScreen(
             val showPageNav = (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && order.size > 1
             if (!editMode && (inSetlist || showPageNav)) {
                 val step = if (mode == DisplayMode.TWO) 2 else 1
-                BottomAppBar {
+                val navBtn = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.38f),
+                )
+                BottomAppBar(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
                     if (inSetlist) {
-                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx - 1].id) }, enabled = songIdx > 0) { Text("⏮") }
+                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx - 1].id) }, enabled = songIdx > 0, colors = navBtn) { Text("⏮") }
                     }
                     Spacer(Modifier.weight(1f))
                     if (showPageNav) {
-                        TextButton(onClick = { turn(-step) }, enabled = page > 0) { Text("‹") }
+                        TextButton(onClick = { turn(-step) }, enabled = page > 0, colors = navBtn) { Text("‹") }
                         if (settings.pageNumbers) Text("${page + 1} / ${order.size}", Modifier.align(Alignment.CenterVertically))
-                        TextButton(onClick = { turn(step) }, enabled = page < order.size - 1) { Text("›") }
+                        TextButton(onClick = { turn(step) }, enabled = page < order.size - 1, colors = navBtn) { Text("›") }
                     } else if (inSetlist) {
                         Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
                     }
                     Spacer(Modifier.weight(1f))
                     if (inSetlist) {
-                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx + 1].id) }, enabled = songIdx < setlistSheets.size - 1) { Text("⏭") }
+                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx + 1].id) }, enabled = songIdx < setlistSheets.size - 1, colors = navBtn) { Text("⏭") }
                     }
                 }
             }
