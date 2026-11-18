@@ -6,8 +6,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.focusable
@@ -35,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ch.desgin.basicsheets.BasicSheetsApp
+import ch.desgin.basicsheets.data.Crop
 import ch.desgin.basicsheets.data.ViewerButton
 import ch.desgin.basicsheets.ui.theme.appTopBarColors
 import ch.desgin.basicsheets.annot.Hairpin
@@ -125,6 +130,11 @@ fun ViewerScreen(
     var editLinks by remember { mutableStateOf(false) }
     var pendingLink by remember { mutableStateOf<Offset?>(null) }
     var linkTargetInput by remember { mutableStateOf("") }
+    var cropL by remember { mutableFloatStateOf(0f) }
+    var cropT by remember { mutableFloatStateOf(0f) }
+    var cropR by remember { mutableFloatStateOf(1f) }
+    var cropB by remember { mutableFloatStateOf(1f) }
+    var showCrop by remember { mutableStateOf(false) }
 
     val metro = remember { Metronome() }
     var showMetro by remember { mutableStateOf(false) }
@@ -274,6 +284,13 @@ fun ViewerScreen(
         val key = sheet?.filePath
         linkPoints = if (!key.isNullOrEmpty()) runCatching { app.db.viewerButtons().forFile(key) }.getOrDefault(emptyList()) else emptyList()
     }
+    LaunchedEffect(sheet?.id) {
+        val c = sheet?.id?.let { runCatching { app.db.crops().forSheet(it).firstOrNull() }.getOrNull() }
+        cropL = c?.l?.toFloat() ?: 0f
+        cropT = c?.t?.toFloat() ?: 0f
+        cropR = c?.r?.toFloat() ?: 1f
+        cropB = c?.b?.toFloat() ?: 1f
+    }
 
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, order.size - 1)) }
     fun chooseMode(m: DisplayMode) {
@@ -384,6 +401,15 @@ fun ViewerScreen(
         scope.launch { app.db.viewerButtons().remove(vb.id); linkPoints = app.db.viewerButtons().forFile(key) }
     }
     fun jumpLink(vb: ViewerButton) { jumpToPdf((vb.targetPage - 1).coerceAtLeast(0)) }
+    fun saveCrop() {
+        val id = sheet?.id ?: return
+        val isCropped = cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f
+        scope.launch {
+            app.db.crops().clear(id, 0)
+            if (isCropped) app.db.crops().insert(Crop(sheetId = id, page = 0, l = cropL.toDouble(), t = cropT.toDouble(), r = cropR.toDouble(), b = cropB.toDouble()))
+        }
+        showCrop = false
+    }
     fun matchNav(delta: Int) {
         if (searchResults.isEmpty()) return
         searchIdx = (searchIdx + delta).coerceIn(0, searchResults.size - 1)
@@ -465,6 +491,10 @@ fun ViewerScreen(
                                 DropdownMenuItem(
                                     text = { Text(if (editLinks) "Sprungpunkte fertig" else "Sprungpunkte bearbeiten") },
                                     onClick = { showModeMenu = false; editLinks = !editLinks; if (editLinks && mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Zuschneiden") },
+                                    onClick = { showModeMenu = false; if (mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE); showCrop = true },
                                 )
                             }
                         }
@@ -581,6 +611,7 @@ fun ViewerScreen(
                         editLinks,
                         onMarkerTap = { vb -> if (editLinks) deleteLink(vb) else jumpLink(vb) },
                         onEmptyTap = { nx, ny -> pendingLink = Offset(nx, ny); linkTargetInput = "${pdfPage + 1}" },
+                        cropL = cropL, cropT = cropT, cropR = cropR, cropB = cropB,
                     ) { turn(it) }
                     DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
@@ -631,6 +662,27 @@ fun ViewerScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Tippen: Sprungpunkt setzen/löschen", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.labelLarge)
                             TextButton(onClick = { editLinks = false }) { Text("Fertig") }
+                        }
+                    }
+                }
+                if (showCrop && mode == DisplayMode.SINGLE) {
+                    Surface(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp,
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text("Zuschneiden", style = MaterialTheme.typography.titleSmall)
+                            CropSlider("Links", cropL, 0f, (cropR - 0.1f).coerceAtLeast(0f)) { cropL = it }
+                            CropSlider("Oben", cropT, 0f, (cropB - 0.1f).coerceAtLeast(0f)) { cropT = it }
+                            CropSlider("Rechts", cropR, (cropL + 0.1f).coerceAtMost(1f), 1f) { cropR = it }
+                            CropSlider("Unten", cropB, (cropT + 0.1f).coerceAtMost(1f), 1f) { cropB = it }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { cropL = 0f; cropT = 0f; cropR = 1f; cropB = 1f }) { Text("Zurücksetzen") }
+                                Spacer(Modifier.weight(1f))
+                                TextButton(onClick = { showCrop = false }) { Text("Abbrechen") }
+                                TextButton(onClick = { saveCrop() }) { Text("Speichern") }
+                            }
                         }
                     }
                 }
@@ -809,6 +861,19 @@ private fun AutoScrollPill(
             Text("$speed", style = MaterialTheme.typography.labelLarge)
             TextButton(onClick = { onSpeed(10) }) { Text("+") }
         }
+    }
+}
+
+@Composable
+private fun CropSlider(label: String, value: Float, min: Float, max: Float, onChange: (Float) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(0.3f), style = MaterialTheme.typography.bodySmall)
+        Slider(
+            value = value.coerceIn(min, max),
+            onValueChange = { onChange(it.coerceIn(min, max)) },
+            valueRange = 0f..1f,
+            modifier = Modifier.weight(0.7f),
+        )
     }
 }
 

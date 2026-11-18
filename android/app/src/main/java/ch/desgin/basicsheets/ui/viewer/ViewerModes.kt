@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -73,6 +74,15 @@ private val INVERT_FILTER = ColorFilter.colorMatrix(
         ),
     ),
 )
+
+/** Crop [src] to the normalized [l,t,r,b] sub-rectangle; returns [src] on any failure. */
+private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bitmap {
+    val x = (l * src.width).toInt().coerceIn(0, src.width - 1)
+    val y = (t * src.height).toInt().coerceIn(0, src.height - 1)
+    val w = ((r - l) * src.width).toInt().coerceIn(1, src.width - x)
+    val h = ((b - t) * src.height).toInt().coerceIn(1, src.height - y)
+    return runCatching { Bitmap.createBitmap(src, x, y, w, h) }.getOrDefault(src)
+}
 
 /** Display modes, keyed by the same strings the MAUI app stores in Sheet.pageMode. */
 enum class DisplayMode(val key: String, val label: String) {
@@ -149,6 +159,10 @@ fun SinglePageView(
     editLinks: Boolean = false,
     onMarkerTap: (ViewerButton) -> Unit = {},
     onEmptyTap: (Float, Float) -> Unit = { _, _ -> },
+    cropL: Float = 0f,
+    cropT: Float = 0f,
+    cropR: Float = 1f,
+    cropB: Float = 1f,
     onTurn: (Int) -> Unit,
 ) {
     val pdf = pages.getOrElse(page) { 0 }
@@ -161,7 +175,9 @@ fun SinglePageView(
         scale = (scale * zoom).coerceIn(1f, 5f)
         offset = if (scale > 1f) offset + pan else Offset.Zero
     }
-    val bmp = pageBitmap(doc, pdf, renderPx)
+    val full = pageBitmap(doc, pdf, renderPx)
+    val cropped = full != null && (cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f)
+    val bmp = if (cropped && full != null) remember(full, cropL, cropT, cropR, cropB) { cropBitmap(full, cropL, cropT, cropR, cropB) } else full
     val bmpState = rememberUpdatedState(bmp)
     val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
 
@@ -209,14 +225,21 @@ fun SinglePageView(
                 )
                 if (!anno.isEmpty() || hl.isNotEmpty() || linkPoints.isNotEmpty()) {
                     Canvas(Modifier.matchParentSize()) {
-                        if (hl.isNotEmpty()) drawSearchHighlight(hl, size.width, size.height)
-                        if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
-                        for (lp in linkPoints) {
-                            if (lp.sourceNx < 0) continue
-                            val center = Offset(lp.sourceNx.toFloat() * size.width, lp.sourceNy.toFloat() * size.height)
-                            val rad = size.width * 0.022f
-                            drawCircle(Color(0xFF1565C0).copy(alpha = 0.22f), rad, center)
-                            drawCircle(Color(0xFF1565C0), rad, center, style = Stroke(width = size.width * 0.006f))
+                        // Annotations/highlight/markers are full-page normalized; when cropped, map
+                        // them into the cropped display (identity when not cropped).
+                        withTransform({
+                            translate(-cropL * size.width / (cropR - cropL), -cropT * size.height / (cropB - cropT))
+                            scale(1f / (cropR - cropL), 1f / (cropB - cropT), pivot = Offset.Zero)
+                        }) {
+                            if (hl.isNotEmpty()) drawSearchHighlight(hl, size.width, size.height)
+                            if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
+                            for (lp in linkPoints) {
+                                if (lp.sourceNx < 0) continue
+                                val center = Offset(lp.sourceNx.toFloat() * size.width, lp.sourceNy.toFloat() * size.height)
+                                val rad = size.width * 0.022f
+                                drawCircle(Color(0xFF1565C0).copy(alpha = 0.22f), rad, center)
+                                drawCircle(Color(0xFF1565C0), rad, center, style = Stroke(width = size.width * 0.006f))
+                            }
                         }
                     }
                 }
