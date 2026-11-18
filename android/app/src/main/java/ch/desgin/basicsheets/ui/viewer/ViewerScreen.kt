@@ -118,6 +118,8 @@ fun ViewerScreen(
     var page by remember { mutableIntStateOf(0) }
     var mode by remember { mutableStateOf(DisplayMode.SINGLE) }
     var autoScroll by remember { mutableStateOf(false) }
+    var autoTurn by remember { mutableStateOf(false) }
+    var turnInterval by remember { mutableIntStateOf(20) }
     val focusRequester = remember { FocusRequester() }
     var linkPoints by remember { mutableStateOf<List<ViewerButton>>(emptyList()) }
     var editLinks by remember { mutableStateOf(false) }
@@ -277,6 +279,7 @@ fun ViewerScreen(
     fun chooseMode(m: DisplayMode) {
         mode = m
         autoScroll = false
+        autoTurn = false
         sheet?.let { s -> scope.launch { app.library.update(s.copy(pageMode = m.key)) } }
     }
     fun setAutoSpeed(delta: Int) {
@@ -399,6 +402,16 @@ fun ViewerScreen(
     // whenever we return to plain reading (so an open search/text field keeps its own keys).
     LaunchedEffect(showSearch, pendingText, editMode) {
         if (!showSearch && pendingText == null && !editMode) runCatching { focusRequester.requestFocus() }
+    }
+    // Timed hands-free page turning in the paged modes (auto-scroll covers the scroll modes).
+    LaunchedEffect(autoTurn, turnInterval, mode) {
+        if (!autoTurn || mode == DisplayMode.SCROLL_V || mode == DisplayMode.SCROLL_H) return@LaunchedEffect
+        val step = if (mode == DisplayMode.TWO) 2 else 1
+        while (true) {
+            delay(turnInterval * 1000L)
+            if (page >= order.size - 1) { autoTurn = false; break }
+            turn(step)
+        }
     }
 
     Scaffold(
@@ -596,6 +609,15 @@ fun ViewerScreen(
                         speed = (sheet?.scrollSpeed ?: 0).let { if (it > 0) it else 50 },
                         onToggle = { autoScroll = !autoScroll },
                         onSpeed = { setAutoSpeed(it) },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                    )
+                }
+                if (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO || mode == DisplayMode.HALF) {
+                    AutoScrollPill(
+                        playing = autoTurn,
+                        speed = turnInterval,
+                        onToggle = { autoTurn = !autoTurn },
+                        onSpeed = { turnInterval = (turnInterval + it).coerceIn(5, 120) },
                         modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
                     )
                 }
