@@ -55,6 +55,8 @@ fun SettingsScreen() {
             ToggleRow("Noten invertieren", "Nachtmodus: kehrt die Notenfarben um", settings.invert) { set(KEY_INVERT, it.toString()) }
             ToggleRow("Bildschirm wach halten", "Display bleibt beim Lesen an", settings.keepScreenOn) { set(KEY_KEEP_ON, it.toString()) }
             ToggleRow("Seitenzahlen", "Seitennummer unten im Viewer anzeigen", settings.pageNumbers) { set(KEY_PAGE_NUMBERS, it.toString()) }
+            ToggleRow("Warmer Lesemodus", "Wärmerer Farbton über den Noten", settings.warmTint) { set(KEY_WARM, it.toString()) }
+            SelectRow("Abdunkeln", "Dunkler Schleier für dunkle Räume", DIM_OPTIONS, settings.dimLevelKey) { set(KEY_DIM, it) }
 
             SectionHeader("Notizen")
             ToggleRow("Schwebende Werkzeug-Palette", "Runde, verschiebbare Palette statt der unteren Leiste beim Annotieren", settings.floatingAnnotTools) { set(KEY_ANNOT_PALETTE, it.toString()) }
@@ -73,6 +75,7 @@ private val PAGE_MODE_OPTIONS = listOf(
     "scroll-h" to "Horizontal scrollen",
 )
 private val BG_OPTIONS = listOf("dark" to "Dunkel", "gray" to "Grau", "white" to "Hell")
+private val DIM_OPTIONS = listOf("0" to "Aus", "0.25" to "Leicht", "0.5" to "Mittel", "0.75" to "Stark")
 
 @Composable
 private fun SectionHeader(text: String) {

@@ -472,6 +472,14 @@ fun ViewerScreen(
                     DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes)
                     DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes)
                 }
+                // Reading-comfort overlays over the page; drawn before the panels so chrome stays bright,
+                // and with no pointer input so page-turn taps pass straight through.
+                if (settings.warmTint) {
+                    Box(Modifier.fillMaxSize().background(Color(0xFFFF8F00).copy(alpha = 0.16f)))
+                }
+                if (settings.dimLevel > 0f) {
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = settings.dimLevel)))
+                }
                 if (showMetro) {
                     Box(Modifier.align(Alignment.BottomCenter)) {
                         MetronomePanel(metro, onClose = { showMetro = false })

@@ -12,6 +12,8 @@ const val KEY_KEEP_ON = "Bildschirm wach halten"
 const val KEY_PAGE_NUMBERS = "Seitenzahlen"
 const val KEY_COMPOSER_INFO = "Komponisten-Infos"
 const val KEY_ANNOT_PALETTE = "Schwebende Palette"
+const val KEY_WARM = "Warmer Lesemodus"
+const val KEY_DIM = "Abdunkeln"
 
 /** An immutable view of the settings, with typed accessors; provided app-wide via [LocalSettings]. */
 data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
@@ -33,6 +35,12 @@ data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
 
     /** Use the floating round tool palette instead of the bottom bar when annotating. */
     val floatingAnnotTools: Boolean get() = bool(KEY_ANNOT_PALETTE, false)
+
+    /** Warm (amber) reading tint over the page — less blue light. */
+    val warmTint: Boolean get() = bool(KEY_WARM, false)
+    /** Screen-dim overlay strength, stored as its key ("0".."0.75"). */
+    val dimLevelKey: String get() = str(KEY_DIM, "0")
+    val dimLevel: Float get() = dimLevelKey.toFloatOrNull() ?: 0f
 }
 
 val LocalSettings = compositionLocalOf { SettingsSnapshot() }
