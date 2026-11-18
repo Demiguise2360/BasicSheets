@@ -197,7 +197,14 @@ private fun AnnotationCanvas(
             tool.isStroke && livePts.size > 1 -> {
                 val path = Path().apply {
                     moveTo(livePts[0].x, livePts[0].y)
-                    for (i in 1 until livePts.size) lineTo(livePts[i].x, livePts[i].y)
+                    if (livePts.size < 3) {
+                        for (i in 1 until livePts.size) lineTo(livePts[i].x, livePts[i].y)
+                    } else {
+                        for (i in 1 until livePts.size - 1) {
+                            quadraticTo(livePts[i].x, livePts[i].y, (livePts[i].x + livePts[i + 1].x) / 2f, (livePts[i].y + livePts[i + 1].y) / 2f)
+                        }
+                        lineTo(livePts.last().x, livePts.last().y)
+                    }
                 }
                 val c = if (tool == Tool.MARKER) color.copy(alpha = 0.35f) else color
                 drawPath(path, c, style = Stroke(width = max(1f, sizeFrac * w), cap = StrokeCap.Round, join = StrokeJoin.Round))

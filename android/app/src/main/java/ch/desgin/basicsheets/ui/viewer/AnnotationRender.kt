@@ -61,7 +61,19 @@ private fun pointPath(points: List<Pt>, w: Float, h: Float): Path =
     Path().apply {
         if (points.isEmpty()) return@apply
         moveTo(points[0].x * w, points[0].y * h)
-        for (i in 1 until points.size) lineTo(points[i].x * w, points[i].y * h)
+        if (points.size < 3) {
+            for (i in 1 until points.size) lineTo(points[i].x * w, points[i].y * h)
+            return@apply
+        }
+        // Quadratic Béziers through segment midpoints → smooth curves, not faceted polylines.
+        for (i in 1 until points.size - 1) {
+            val cx = points[i].x * w; val cy = points[i].y * h
+            val mx = (points[i].x + points[i + 1].x) / 2f * w
+            val my = (points[i].y + points[i + 1].y) / 2f * h
+            quadraticTo(cx, cy, mx, my)
+        }
+        val last = points[points.size - 1]
+        lineTo(last.x * w, last.y * h)
     }
 
 fun DrawScope.drawPenStroke(s: PenStroke, w: Float, h: Float) {
