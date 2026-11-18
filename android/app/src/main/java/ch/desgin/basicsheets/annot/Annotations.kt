@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  */
 
 @Serializable
-data class Pt(val x: Float, val y: Float)
+data class Pt(val x: Float, val y: Float, val p: Float = 1f)
 
 @Serializable
 data class PenStroke(val points: List<Pt>, val color: Int, val size: Float, val eraser: Boolean = false)

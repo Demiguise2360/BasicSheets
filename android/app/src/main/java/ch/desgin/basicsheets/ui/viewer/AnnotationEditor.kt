@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -133,6 +134,7 @@ private fun AnnotationCanvas(
     modifier: Modifier,
 ) {
     var livePts by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    var livePressures by remember { mutableStateOf<List<Float>>(emptyList()) }
     var liveStart by remember { mutableStateOf<Offset?>(null) }
     var liveEnd by remember { mutableStateOf<Offset?>(null) }
 
@@ -148,7 +150,7 @@ private fun AnnotationCanvas(
                     onDragStart = { pos ->
                         if (!tool.isTap) onBeginStroke()
                         when {
-                            tool.isStroke -> livePts = listOf(pos)
+                            tool.isStroke -> { livePts = listOf(pos); livePressures = listOf(1f) }
                             tool.isTwoPoint -> { liveStart = pos; liveEnd = pos }
                             tool == Tool.ERASER -> if (eraserBox) { liveStart = pos; liveEnd = pos } else onEraseAt(pos.x / size.width, pos.y / size.height)
                             else -> {}
@@ -156,7 +158,7 @@ private fun AnnotationCanvas(
                     },
                     onDrag = { change, _ ->
                         when {
-                            tool.isStroke -> livePts = livePts + change.position
+                            tool.isStroke -> { livePts = livePts + change.position; livePressures = livePressures + if (change.type == PointerType.Stylus && change.pressure in 0.02f..1f) change.pressure else 1f }
                             tool.isTwoPoint -> liveEnd = change.position
                             tool == Tool.ERASER -> if (eraserBox) liveEnd = change.position else onEraseAt(change.position.x / size.width, change.position.y / size.height)
                             else -> {}
@@ -169,7 +171,7 @@ private fun AnnotationCanvas(
                         val e = liveEnd
                         when {
                             tool == Tool.PEN && livePts.size > 1 ->
-                                onAddPen(PenStroke(livePts.map { Pt(it.x / w, it.y / h) }, color.toArgb(), sizeFrac))
+                                onAddPen(PenStroke(livePts.mapIndexed { i, o -> Pt(o.x / w, o.y / h, livePressures.getOrElse(i) { 1f }) }, color.toArgb(), sizeFrac))
                             tool == Tool.MARKER && livePts.size > 1 ->
                                 onAddMarker(MarkerStroke(livePts.map { Pt(it.x / w, it.y / h) }, color.toArgb(), sizeFrac))
                             tool.isTwoPoint && s != null && e != null ->
@@ -180,9 +182,9 @@ private fun AnnotationCanvas(
                             tool == Tool.ERASER && eraserBox && s != null && e != null ->
                                 onEraseBox(s.x / w, s.y / h, e.x / w, e.y / h)
                         }
-                        livePts = emptyList(); liveStart = null; liveEnd = null
+                        livePts = emptyList(); livePressures = emptyList(); liveStart = null; liveEnd = null
                     },
-                    onDragCancel = { livePts = emptyList(); liveStart = null; liveEnd = null },
+                    onDragCancel = { livePts = emptyList(); livePressures = emptyList(); liveStart = null; liveEnd = null },
                 )
             },
     ) {

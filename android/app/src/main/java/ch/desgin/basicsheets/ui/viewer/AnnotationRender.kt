@@ -78,10 +78,22 @@ private fun pointPath(points: List<Pt>, w: Float, h: Float): Path =
 
 fun DrawScope.drawPenStroke(s: PenStroke, w: Float, h: Float) {
     if (s.points.size < 2) return
-    drawPath(
-        pointPath(s.points, w, h), Color(s.color),
-        style = Stroke(width = max(1f, s.size * w), cap = StrokeCap.Round, join = StrokeJoin.Round),
-    )
+    val baseW = max(1f, s.size * w)
+    if (s.points.any { it.p != 1f }) {
+        // Pressure stroke (stylus): per-segment width from pen pressure; no smoothing.
+        for (i in 0 until s.points.size - 1) {
+            val a = s.points[i]; val b = s.points[i + 1]
+            drawLine(
+                Color(s.color), Offset(a.x * w, a.y * h), Offset(b.x * w, b.y * h),
+                strokeWidth = baseW * (0.35f + 0.9f * (a.p + b.p) / 2f), cap = StrokeCap.Round,
+            )
+        }
+    } else {
+        drawPath(
+            pointPath(s.points, w, h), Color(s.color),
+            style = Stroke(width = baseW, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+    }
 }
 
 fun DrawScope.drawMarkerStroke(m: MarkerStroke, w: Float, h: Float) {
