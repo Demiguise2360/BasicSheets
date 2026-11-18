@@ -117,6 +117,7 @@ fun ViewerScreen(
     var inkColor by remember { mutableStateOf(Color.Red) }
     var sizeLevel by remember { mutableIntStateOf(4) }
     var fill by remember { mutableStateOf(false) }
+    var eraserBox by remember { mutableStateOf(false) }
     var stampType by remember { mutableStateOf("flat") }
     var showStamps by remember { mutableStateOf(false) }
     var pendingText by remember { mutableStateOf<Offset?>(null) }
@@ -285,6 +286,21 @@ fun ViewerScreen(
         )
         if (next != before) { annotations = next; saveAnn() }
     }
+    fun eraseInBox(l: Float, t: Float, rr: Float, bb: Float) {
+        val x0 = minOf(l, rr); val x1 = maxOf(l, rr); val y0 = minOf(t, bb); val y1 = maxOf(t, bb)
+        fun inBox(x: Float, y: Float) = x in x0..x1 && y in y0..y1
+        fun anyIn(pts: List<ch.desgin.basicsheets.annot.Pt>) = pts.any { inBox(it.x, it.y) }
+        val before = annotations
+        val next = annotations.copy(
+            penStrokes = annotations.penStrokes.filterNot { anyIn(it.points) },
+            markerData = annotations.markerData.filterNot { anyIn(it.points) },
+            shapeData = annotations.shapeData.filterNot { inBox(it.x1, it.y1) || inBox(it.x2, it.y2) },
+            hairpinData = annotations.hairpinData.filterNot { inBox(it.x1, it.y1) || inBox(it.x2, it.y2) },
+            stampData = annotations.stampData.filterNot { inBox(it.x, it.y) },
+            textData = annotations.textData.filterNot { inBox(it.x, it.y) },
+        )
+        if (next != before) { annotations = next; saveAnn() }
+    }
     fun undoAnn() {
         if (undoStack.isNotEmpty()) { annotations = undoStack.removeAt(undoStack.size - 1); saveAnn() }
     }
@@ -425,20 +441,22 @@ fun ViewerScreen(
                     onAddShape = { addShape(it) },
                     onAddHairpin = { addHairpin(it) },
                     onEraseAt = { x, y -> eraseAt(x, y) },
+                    eraserBox = eraserBox,
+                    onEraseBox = { l, t, r, b -> eraseInBox(l, t, r, b) },
                     onTapAt = { x, y -> onTapAt(x, y) },
                 )
                 if (settings.floatingAnnotTools) {
                     AnnotationPalette(
-                        tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill,
-                        onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it },
+                        tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill, eraserBox = eraserBox,
+                        onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it }, onEraserBox = { eraserBox = it },
                         onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onDone = { exitEdit() },
                         modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
                     )
                 } else {
                     Box(Modifier.align(Alignment.BottomCenter)) {
                         AnnotationToolbar(
-                            tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill, stampType = stampType,
-                            onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it },
+                            tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill, eraserBox = eraserBox, stampType = stampType,
+                            onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it }, onEraserBox = { eraserBox = it },
                             onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onDone = { exitEdit() },
                         )
                     }

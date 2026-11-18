@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -66,7 +67,9 @@ import ch.desgin.basicsheets.annot.isTap
 import ch.desgin.basicsheets.annot.isTwoPoint
 import ch.desgin.basicsheets.annot.shapeKind
 import ch.desgin.basicsheets.pdf.PdfDoc
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 /** The current page shown fit-to-width with a draw overlay matching its bounds. */
 @Composable
@@ -85,6 +88,8 @@ fun EditablePage(
     onAddShape: (ShapeAnnot) -> Unit,
     onAddHairpin: (Hairpin) -> Unit,
     onEraseAt: (Float, Float) -> Unit,
+    eraserBox: Boolean,
+    onEraseBox: (Float, Float, Float, Float) -> Unit,
     onTapAt: (Float, Float) -> Unit,
 ) {
     val bmp = pageBitmap(doc, page, renderPx)
@@ -99,7 +104,7 @@ fun EditablePage(
                 )
                 AnnotationCanvas(
                     data, tool, color, sizeFrac, fill,
-                    onBeginStroke, onAddPen, onAddMarker, onAddShape, onAddHairpin, onEraseAt, onTapAt,
+                    onBeginStroke, onAddPen, onAddMarker, onAddShape, onAddHairpin, onEraseAt, eraserBox, onEraseBox, onTapAt,
                     Modifier.matchParentSize(),
                 )
             }
@@ -122,6 +127,8 @@ private fun AnnotationCanvas(
     onAddShape: (ShapeAnnot) -> Unit,
     onAddHairpin: (Hairpin) -> Unit,
     onEraseAt: (Float, Float) -> Unit,
+    eraserBox: Boolean,
+    onEraseBox: (Float, Float, Float, Float) -> Unit,
     onTapAt: (Float, Float) -> Unit,
     modifier: Modifier,
 ) {
@@ -136,14 +143,14 @@ private fun AnnotationCanvas(
                     if (tool.isTap) onTapAt(pos.x / size.width, pos.y / size.height)
                 }
             }
-            .pointerInput(tool, color, sizeFrac, fill) {
+            .pointerInput(tool, color, sizeFrac, fill, eraserBox) {
                 detectDragGestures(
                     onDragStart = { pos ->
                         if (!tool.isTap) onBeginStroke()
                         when {
                             tool.isStroke -> livePts = listOf(pos)
                             tool.isTwoPoint -> { liveStart = pos; liveEnd = pos }
-                            tool == Tool.ERASER -> onEraseAt(pos.x / size.width, pos.y / size.height)
+                            tool == Tool.ERASER -> if (eraserBox) { liveStart = pos; liveEnd = pos } else onEraseAt(pos.x / size.width, pos.y / size.height)
                             else -> {}
                         }
                     },
@@ -151,7 +158,7 @@ private fun AnnotationCanvas(
                         when {
                             tool.isStroke -> livePts = livePts + change.position
                             tool.isTwoPoint -> liveEnd = change.position
-                            tool == Tool.ERASER -> onEraseAt(change.position.x / size.width, change.position.y / size.height)
+                            tool == Tool.ERASER -> if (eraserBox) liveEnd = change.position else onEraseAt(change.position.x / size.width, change.position.y / size.height)
                             else -> {}
                         }
                     },
@@ -170,6 +177,8 @@ private fun AnnotationCanvas(
                                     onAddHairpin(Hairpin(s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, tool == Tool.CRESCENDO))
                                 else
                                     onAddShape(ShapeAnnot(tool.shapeKind, s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, fill))
+                            tool == Tool.ERASER && eraserBox && s != null && e != null ->
+                                onEraseBox(s.x / w, s.y / h, e.x / w, e.y / h)
                         }
                         livePts = emptyList(); liveStart = null; liveEnd = null
                     },
@@ -198,6 +207,12 @@ private fun AnnotationCanvas(
                     drawHairpin(Hairpin(s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, tool == Tool.CRESCENDO), w, h)
                 else
                     drawShapeAnnot(ShapeAnnot(tool.shapeKind, s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, fill), w, h, alpha = 0.75f)
+            tool == Tool.ERASER && eraserBox && s != null && e != null -> {
+                val l = min(s.x, e.x); val t = min(s.y, e.y)
+                val bw = abs(e.x - s.x); val bh = abs(e.y - s.y)
+                drawRect(Color.Red.copy(alpha = 0.10f), topLeft = Offset(l, t), size = Size(bw, bh))
+                drawRect(Color.Red, topLeft = Offset(l, t), size = Size(bw, bh), style = Stroke(width = 2f))
+            }
         }
     }
 }
@@ -209,11 +224,13 @@ fun AnnotationToolbar(
     color: Color,
     sizeLevel: Int,
     fill: Boolean,
+    eraserBox: Boolean,
     stampType: String,
     onTool: (Tool) -> Unit,
     onColor: (Color) -> Unit,
     onSize: (Int) -> Unit,
     onFill: (Boolean) -> Unit,
+    onEraserBox: (Boolean) -> Unit,
     onOpenStamps: () -> Unit,
     onUndo: () -> Unit,
     onDone: () -> Unit,
@@ -261,6 +278,9 @@ fun AnnotationToolbar(
                 TextButton(onClick = { onSize((sizeLevel + 1).coerceAtMost(10)) }, colors = btn) { Text("+") }
                 if (tool == Tool.RECT || tool == Tool.ELLIPSE) {
                     FilterChip(selected = fill, onClick = { onFill(!fill) }, label = { Text("Füllen") }, colors = petrolChipColors(), border = null)
+                }
+                if (tool == Tool.ERASER) {
+                    FilterChip(selected = eraserBox, onClick = { onEraserBox(!eraserBox) }, label = { Text("Kasten") }, colors = petrolChipColors(), border = null)
                 }
                 TextButton(onClick = onUndo, colors = btn) { Text("↶") }
                 TextButton(onClick = onDone, colors = btn) { Text("Fertig") }

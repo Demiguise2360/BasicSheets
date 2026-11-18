@@ -70,10 +70,12 @@ fun AnnotationPalette(
     color: Color,
     sizeLevel: Int,
     fill: Boolean,
+    eraserBox: Boolean,
     onTool: (Tool) -> Unit,
     onColor: (Color) -> Unit,
     onSize: (Int) -> Unit,
     onFill: (Boolean) -> Unit,
+    onEraserBox: (Boolean) -> Unit,
     onOpenStamps: () -> Unit,
     onUndo: () -> Unit,
     onDone: () -> Unit,
@@ -146,6 +148,14 @@ fun AnnotationPalette(
                             Icon(Icons.Filled.FormatColorFill, contentDescription = "Füllen", modifier = Modifier.size(20.dp))
                         }
                         Text("Füllen", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                if (tool == Tool.ERASER) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RoundBtn(selected = eraserBox, onClick = { onEraserBox(!eraserBox) }) {
+                            Icon(Icons.Filled.CropSquare, contentDescription = "Kasten-Radierer", modifier = Modifier.size(20.dp))
+                        }
+                        Text("Kasten", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
 
