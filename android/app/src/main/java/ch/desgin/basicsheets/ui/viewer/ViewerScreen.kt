@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
@@ -104,6 +106,7 @@ fun ViewerScreen(
     var pageCount by remember { mutableIntStateOf(0) }
     var page by remember { mutableIntStateOf(0) }
     var mode by remember { mutableStateOf(DisplayMode.SINGLE) }
+    var autoScroll by remember { mutableStateOf(false) }
 
     val metro = remember { Metronome() }
     var showMetro by remember { mutableStateOf(false) }
@@ -240,7 +243,13 @@ fun ViewerScreen(
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, order.size - 1)) }
     fun chooseMode(m: DisplayMode) {
         mode = m
+        autoScroll = false
         sheet?.let { s -> scope.launch { app.library.update(s.copy(pageMode = m.key)) } }
+    }
+    fun setAutoSpeed(delta: Int) {
+        val cur = (sheet?.scrollSpeed ?: 0).let { if (it > 0) it else 50 }
+        val next = (cur + delta).coerceIn(10, 400)
+        sheet?.let { s -> sheet = s.copy(scrollSpeed = next); scope.launch { app.library.update(s.copy(scrollSpeed = next)) } }
     }
     fun exitEdit() { editMode = false; annoVersion++ }
     fun saveAnn() {
@@ -487,8 +496,8 @@ fun ViewerScreen(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
                         app.annotations, key, annoVersion, hlPage, hlBoxes,
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
-                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes)
-                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes)
+                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0)
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0)
                 }
                 // Reading-comfort overlays over the page; drawn before the panels so chrome stays bright,
                 // and with no pointer input so page-turn taps pass straight through.
@@ -502,6 +511,15 @@ fun ViewerScreen(
                     Box(Modifier.align(Alignment.BottomCenter)) {
                         MetronomePanel(metro, onClose = { showMetro = false })
                     }
+                }
+                if (mode == DisplayMode.SCROLL_V || mode == DisplayMode.SCROLL_H) {
+                    AutoScrollPill(
+                        playing = autoScroll,
+                        speed = (sheet?.scrollSpeed ?: 0).let { if (it > 0) it else 50 },
+                        onToggle = { autoScroll = !autoScroll },
+                        onSpeed = { setAutoSpeed(it) },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                    )
                 }
             }
 
@@ -635,6 +653,29 @@ private val NOTE_NAMES = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"
 private fun toneFreq(midi: Int): Double = 440.0 * 2.0.pow((midi - 69) / 12.0)
 
 private fun noteLabel(midi: Int): String = NOTE_NAMES[midi % 12] + (midi / 12 - 1)
+
+@Composable
+private fun AutoScrollPill(
+    playing: Boolean,
+    speed: Int,
+    onToggle: () -> Unit,
+    onSpeed: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(modifier, shape = RoundedCornerShape(24.dp), tonalElevation = 4.dp, shadowElevation = 6.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+            IconButton(onClick = onToggle) {
+                Icon(
+                    if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (playing) "Auto-Scroll pausieren" else "Auto-Scroll starten",
+                )
+            }
+            TextButton(onClick = { onSpeed(-10) }) { Text("–") }
+            Text("$speed", style = MaterialTheme.typography.labelLarge)
+            TextButton(onClick = { onSpeed(10) }) { Text("+") }
+        }
+    }
+}
 
 private fun viewerBgColor(bg: String): Color = when (bg) {
     "white" -> Color(0xFFFFFFFF)

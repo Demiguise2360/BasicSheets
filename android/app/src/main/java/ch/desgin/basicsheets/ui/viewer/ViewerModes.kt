@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -53,6 +55,8 @@ import ch.desgin.basicsheets.data.AnnotationRepository
 import ch.desgin.basicsheets.pdf.MatchBox
 import ch.desgin.basicsheets.pdf.PdfDoc
 import ch.desgin.basicsheets.ui.settings.LocalSettings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlin.math.roundToInt
 
 /** Color-inverting filter for night mode, applied to page bitmaps. */
@@ -233,6 +237,27 @@ fun TwoPageView(
     }
 }
 
+/** Drives [state] forward at `scrollSpeed` px/s while [autoScroll] is on; survives user scroll nudges. */
+@Composable
+private fun AutoScrollEffect(state: LazyListState, autoScroll: Boolean, scrollSpeed: Int) {
+    val speed = if (scrollSpeed > 0) scrollSpeed.toFloat() else 50f
+    LaunchedEffect(autoScroll, speed, state) {
+        if (!autoScroll) return@LaunchedEffect
+        var last = 0L
+        while (true) {
+            val now = withFrameNanos { it }
+            if (last != 0L && state.canScrollForward) {
+                try {
+                    state.scrollBy(speed * (now - last) / 1_000_000_000f)
+                } catch (e: CancellationException) {
+                    ensureActive()   // real cancellation → rethrow; a user scroll nudge → keep going
+                }
+            }
+            last = now
+        }
+    }
+}
+
 @Composable
 fun VerticalScrollView(
     doc: PdfDoc?,
@@ -245,10 +270,13 @@ fun VerticalScrollView(
     jumpToken: Int = 0,
     highlightPage: Int = -1,
     highlightBoxes: List<MatchBox> = emptyList(),
+    autoScroll: Boolean = false,
+    scrollSpeed: Int = 0,
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
     }
+    AutoScrollEffect(state, autoScroll, scrollSpeed)
     LazyColumn(Modifier.fillMaxSize(), state = state) {
         items(pages.size) { i ->
             val pdf = pages[i]
@@ -278,10 +306,13 @@ fun HorizontalScrollView(
     jumpToken: Int = 0,
     highlightPage: Int = -1,
     highlightBoxes: List<MatchBox> = emptyList(),
+    autoScroll: Boolean = false,
+    scrollSpeed: Int = 0,
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
     }
+    AutoScrollEffect(state, autoScroll, scrollSpeed)
     LazyRow(
         Modifier.fillMaxSize(),
         state = state,
