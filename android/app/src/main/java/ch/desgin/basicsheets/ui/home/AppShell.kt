@@ -35,6 +35,7 @@ fun AppShell(
     onOpenCollection: (Int) -> Unit,
     onOpenComposer: (String) -> Unit,
     onOpenGenre: (String) -> Unit,
+    onEditSheet: (Int) -> Unit,
 ) {
     var tab by remember { mutableStateOf("noten") }
 
@@ -58,7 +59,7 @@ fun AppShell(
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when (tab) {
-                "noten" -> LibraryScreen(onOpen = onOpenSheet, onOpenSetlist = onOpenSetlist, onOpenCollection = onOpenCollection, onOpenComposer = onOpenComposer, onOpenGenre = onOpenGenre)
+                "noten" -> LibraryScreen(onOpen = onOpenSheet, onOpenSetlist = onOpenSetlist, onOpenCollection = onOpenCollection, onOpenComposer = onOpenComposer, onOpenGenre = onOpenGenre, onEdit = onEditSheet)
                 "lesezeichen" -> BookmarksScreen(onOpen = onOpenSheet)
                 "ueben" -> PracticeScreen(onOpen = onOpenSheet)
                 else -> SettingsScreen()

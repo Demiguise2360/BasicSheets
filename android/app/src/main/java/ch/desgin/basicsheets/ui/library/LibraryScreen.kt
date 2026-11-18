@@ -106,6 +106,7 @@ fun LibraryScreen(
     onOpenCollection: (Int) -> Unit,
     onOpenComposer: (String) -> Unit,
     onOpenGenre: (String) -> Unit,
+    onEdit: (Int) -> Unit,
     vm: LibraryViewModel = viewModel(),
 ) {
     val app = BasicSheetsApp.instance
@@ -194,8 +195,8 @@ fun LibraryScreen(
             "sammlungen" -> CollectionsTab(collections, onOpenCollection)
             "composer" -> ComposerTab(sheets, query, onOpenComposer)
             "genre" -> GenreTab(sheets, query, onOpenGenre)
-            "recent" -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) }, emptyHint = "Noch nichts geöffnet. Öffne eine Note, um sie hier zu sehen.")
-            else -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) })
+            "recent" -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) }, onEdit = onEdit, emptyHint = "Noch nichts geöffnet. Öffne eine Note, um sie hier zu sehen.")
+            else -> SongList(sheets, query, onOpen, onDelete = { vm.delete(it) }, onRate = { s, n -> vm.rate(s, n) }, onTogglePractice = { vm.togglePractice(it) }, onEdit = onEdit)
         }
     }
 
@@ -226,6 +227,7 @@ private fun SongList(
     onDelete: (Sheet) -> Unit,
     onRate: (Sheet, Int) -> Unit,
     onTogglePractice: (Sheet) -> Unit,
+    onEdit: (Int) -> Unit,
     emptyHint: String = "Noch keine Noten. Tippe + um eine PDF hinzuzufügen.",
 ) {
     if (sheets.isEmpty()) {
@@ -234,14 +236,14 @@ private fun SongList(
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(sheets, key = { it.id }) { s ->
-            SheetCard(s, onOpen = { onOpen(s.id) }, onDelete = { onDelete(s) }, onRate = { onRate(s, it) }, onTogglePractice = { onTogglePractice(s) })
+            SheetCard(s, onOpen = { onOpen(s.id) }, onDelete = { onDelete(s) }, onRate = { onRate(s, it) }, onTogglePractice = { onTogglePractice(s) }, onEdit = { onEdit(s.id) })
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
-private fun SheetCard(sheet: Sheet, onOpen: () -> Unit, onDelete: () -> Unit, onRate: (Int) -> Unit, onTogglePractice: () -> Unit) {
+private fun SheetCard(sheet: Sheet, onOpen: () -> Unit, onDelete: () -> Unit, onRate: (Int) -> Unit, onTogglePractice: () -> Unit, onEdit: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Box {
         ElevatedCard(Modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = { menu = true })) {
@@ -281,6 +283,7 @@ private fun SheetCard(sheet: Sheet, onOpen: () -> Unit, onDelete: () -> Unit, on
             }
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text("Bearbeiten") }, onClick = { menu = false; onEdit() })
             DropdownMenuItem(
                 text = { Text(if (sheet.inPractice) "Üben-Markierung entfernen" else "Zum Üben markieren") },
                 onClick = { menu = false; onTogglePractice() },

@@ -11,6 +11,7 @@ import ch.desgin.basicsheets.ui.collections.CollectionDetailScreen
 import ch.desgin.basicsheets.ui.composer.ComposerDetailScreen
 import ch.desgin.basicsheets.ui.genre.GenreDetailScreen
 import ch.desgin.basicsheets.ui.home.AppShell
+import ch.desgin.basicsheets.ui.library.SheetEditorScreen
 import ch.desgin.basicsheets.ui.setlists.SetlistDetailScreen
 import ch.desgin.basicsheets.ui.viewer.ViewerScreen
 
@@ -25,6 +26,7 @@ fun AppRoot() {
                 onOpenCollection = { id -> nav.navigate("collection/$id") },
                 onOpenComposer = { name -> nav.navigate("composer/${Uri.encode(name)}") },
                 onOpenGenre = { name -> nav.navigate("genre/${Uri.encode(name)}") },
+                onEditSheet = { id -> nav.navigate("edit/$id") },
             )
         }
         composable(
@@ -90,6 +92,13 @@ fun AppRoot() {
                     }
                 },
             )
+        }
+        composable(
+            route = "edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.IntType }),
+        ) { backStack ->
+            val id = backStack.arguments?.getInt("id") ?: 0
+            SheetEditorScreen(sheetId = id, onBack = { nav.popBackStack() })
         }
     }
 }
