@@ -1,5 +1,7 @@
 package ch.desgin.basicsheets.ui.viewer
 
+import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -169,6 +171,19 @@ fun ViewerScreen(
 
     // Backing track + tuning tone
     val context = LocalContext.current
+    val pageExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
+        if (uri != null) scope.launch {
+            val key = sheet?.filePath
+            val anno = if (key != null) app.annotations.load(key, pdfPage) else PageAnnotations()
+            val bmp = renderPageForExport(doc, pdfPage, anno)
+            val ok = bmp?.let { b ->
+                withContext(Dispatchers.IO) {
+                    runCatching { context.contentResolver.openOutputStream(uri)?.use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }; true }.getOrDefault(false)
+                }
+            } ?: false
+            Toast.makeText(context, if (ok) "Seite gespeichert" else "Export fehlgeschlagen", Toast.LENGTH_SHORT).show()
+        }
+    }
     val audioCtl = remember { AudioController(context) }
     val tone = remember { TuningTone() }
     var showAudio by remember { mutableStateOf(false) }
@@ -407,6 +422,10 @@ fun ViewerScreen(
                                 DropdownMenuItem(
                                     text = { Text("Seitenreihenfolge") },
                                     onClick = { showModeMenu = false; showPageOrder = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Seite als Bild") },
+                                    onClick = { showModeMenu = false; pageExport.launch("${(sheet?.name ?: "Seite").replace("/", "_")}_S${pdfPage + 1}.png") },
                                 )
                             }
                         }

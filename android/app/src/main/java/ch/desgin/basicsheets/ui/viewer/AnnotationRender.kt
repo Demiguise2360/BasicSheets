@@ -11,6 +11,13 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import android.graphics.Bitmap
+import ch.desgin.basicsheets.pdf.PdfDoc
 import ch.desgin.basicsheets.annot.Hairpin
 import ch.desgin.basicsheets.annot.MarkerStroke
 import ch.desgin.basicsheets.annot.PageAnnotations
@@ -171,4 +178,18 @@ fun DrawScope.drawPageAnnotations(data: PageAnnotations, w: Float, h: Float) {
     for (hp in data.hairpinData) drawHairpin(hp, w, h)
     for (st in data.stampData) drawStampAnnot(st, w, h)
     for (t in data.textData) drawTextAnnot(t, w, h)
+}
+
+/**
+ * Render a page to a bitmap with its saved annotations drawn on top (for "Seite als Bild" export).
+ * Reuses [drawPageAnnotations] through a CanvasDrawScope over the rendered page bitmap; off-main via
+ * [PdfDoc.render]. Returns null if the page can't be rendered.
+ */
+suspend fun renderPageForExport(doc: PdfDoc?, pdfPage: Int, anno: PageAnnotations, widthPx: Int = 1600): Bitmap? {
+    val bmp = doc?.render(pdfPage, widthPx) ?: return null
+    val canvas = Canvas(bmp.asImageBitmap())
+    CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, canvas, Size(bmp.width.toFloat(), bmp.height.toFloat())) {
+        drawPageAnnotations(anno, size.width, size.height)
+    }
+    return bmp
 }
