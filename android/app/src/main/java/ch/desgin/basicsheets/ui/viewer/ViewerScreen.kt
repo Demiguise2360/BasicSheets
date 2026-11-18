@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -48,9 +49,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -107,6 +115,7 @@ fun ViewerScreen(
     var page by remember { mutableIntStateOf(0) }
     var mode by remember { mutableStateOf(DisplayMode.SINGLE) }
     var autoScroll by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
 
     val metro = remember { Metronome() }
     var showMetro by remember { mutableStateOf(false) }
@@ -349,7 +358,25 @@ fun ViewerScreen(
         if (tonePlaying) tone.setFreq(toneFreq(toneMidi))
     }
 
+    // Grab focus for hardware page-turn keys (keyboards, Bluetooth page pedals), re-grabbing it
+    // whenever we return to plain reading (so an open search/text field keeps its own keys).
+    LaunchedEffect(showSearch, pendingText, editMode) {
+        if (!showSearch && pendingText == null && !editMode) runCatching { focusRequester.requestFocus() }
+    }
+
     Scaffold(
+        modifier = Modifier
+            .focusRequester(focusRequester)
+            .focusable()
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown || editMode) return@onKeyEvent false
+                val step = if (mode == DisplayMode.TWO) 2 else 1
+                when (ev.key) {
+                    Key.PageDown, Key.DirectionRight, Key.MediaNext, Key.Spacebar -> { turn(step); true }
+                    Key.PageUp, Key.DirectionLeft, Key.MediaPrevious -> { turn(-step); true }
+                    else -> false
+                }
+            },
         topBar = {
             TopAppBar(
                 title = { Text(sheet?.name ?: "") },
