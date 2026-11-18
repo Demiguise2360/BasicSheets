@@ -31,9 +31,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,7 +47,26 @@ fun SettingsScreen() {
     val app = BasicSheetsApp.instance
     val scope = rememberCoroutineScope()
     val settings = LocalSettings.current
+    val context = LocalContext.current
     fun set(key: String, value: String) { scope.launch { app.settings.set(key, value) } }
+    val backupSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) scope.launch {
+            val text = app.annotations.exportAllJson()
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }; true }.getOrDefault(false)
+            }
+            Toast.makeText(context, if (ok) "Notizen gesichert" else "Sichern fehlgeschlagen", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val backupLoad = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }.getOrNull()
+            }
+            val n = if (text != null) app.annotations.importJson(text) else -1
+            Toast.makeText(context, if (n >= 0) "$n Seiten geladen" else "Laden fehlgeschlagen", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = { Text("Einstellungen") }, colors = appTopBarColors())
@@ -60,6 +85,8 @@ fun SettingsScreen() {
 
             SectionHeader("Notizen")
             ToggleRow("Schwebende Werkzeug-Palette", "Runde, verschiebbare Palette statt der unteren Leiste beim Annotieren", settings.floatingAnnotTools) { set(KEY_ANNOT_PALETTE, it.toString()) }
+            ActionRow("Notizen sichern", "Alle Anmerkungen in eine Datei exportieren") { backupSave.launch("BasicSheets-Notizen.json") }
+            ActionRow("Notizen laden", "Anmerkungen aus einer Sicherung importieren (überschreibt)") { backupLoad.launch(arrayOf("application/json")) }
 
             SectionHeader("Komponisten")
             ToggleRow("Komponisten-Infos", "Porträt und Wikipedia-Text aus dem Internet laden", settings.composerInfo) { set(KEY_COMPOSER_INFO, it.toString()) }
@@ -98,6 +125,19 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
         }
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun ActionRow(title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        }
     }
 }
 

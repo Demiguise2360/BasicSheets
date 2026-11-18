@@ -175,6 +175,9 @@ interface AnnotationDao {
     @Query("SELECT page FROM annotations WHERE pdfKey = :pdfKey")
     suspend fun annotatedPages(pdfKey: String): List<Int>
 
+    @Query("SELECT * FROM annotations")
+    suspend fun all(): List<AnnotationRow>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(row: AnnotationRow)
 
