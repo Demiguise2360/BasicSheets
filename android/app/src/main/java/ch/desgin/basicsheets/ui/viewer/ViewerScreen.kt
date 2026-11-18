@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ch.desgin.basicsheets.BasicSheetsApp
+import ch.desgin.basicsheets.data.ViewerButton
 import ch.desgin.basicsheets.ui.theme.appTopBarColors
 import ch.desgin.basicsheets.annot.Hairpin
 import ch.desgin.basicsheets.annot.MarkerStroke
@@ -118,6 +119,10 @@ fun ViewerScreen(
     var mode by remember { mutableStateOf(DisplayMode.SINGLE) }
     var autoScroll by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+    var linkPoints by remember { mutableStateOf<List<ViewerButton>>(emptyList()) }
+    var editLinks by remember { mutableStateOf(false) }
+    var pendingLink by remember { mutableStateOf<Offset?>(null) }
+    var linkTargetInput by remember { mutableStateOf("") }
 
     val metro = remember { Metronome() }
     var showMetro by remember { mutableStateOf(false) }
@@ -263,6 +268,10 @@ fun ViewerScreen(
         val key = sheet?.filePath
         if (showGrid && !key.isNullOrEmpty()) annotatedPages = app.annotations.annotatedPages(key)
     }
+    LaunchedEffect(sheet?.filePath) {
+        val key = sheet?.filePath
+        linkPoints = if (!key.isNullOrEmpty()) runCatching { app.db.viewerButtons().forFile(key) }.getOrDefault(emptyList()) else emptyList()
+    }
 
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, order.size - 1)) }
     fun chooseMode(m: DisplayMode) {
@@ -359,6 +368,19 @@ fun ViewerScreen(
         val key = sheet?.filePath ?: return
         scope.launch { app.bookmarks.remove(bm.id); bookmarks = app.bookmarks.forFile(key) }
     }
+    fun saveLink(nx: Float, ny: Float, targetPage: Int) {
+        val key = sheet?.filePath ?: return
+        val vb = ViewerButton(
+            id = java.util.UUID.randomUUID().toString(), action = "jump", pdfFile = key,
+            sourcePage = pdfPage + 1, sourceNx = nx.toDouble(), sourceNy = ny.toDouble(), targetPage = targetPage,
+        )
+        scope.launch { app.db.viewerButtons().insert(vb); linkPoints = app.db.viewerButtons().forFile(key) }
+    }
+    fun deleteLink(vb: ViewerButton) {
+        val key = sheet?.filePath ?: return
+        scope.launch { app.db.viewerButtons().remove(vb.id); linkPoints = app.db.viewerButtons().forFile(key) }
+    }
+    fun jumpLink(vb: ViewerButton) { jumpToPdf((vb.targetPage - 1).coerceAtLeast(0)) }
     fun matchNav(delta: Int) {
         if (searchResults.isEmpty()) return
         searchIdx = (searchIdx + delta).coerceIn(0, searchResults.size - 1)
@@ -426,6 +448,10 @@ fun ViewerScreen(
                                 DropdownMenuItem(
                                     text = { Text("Seite als Bild") },
                                     onClick = { showModeMenu = false; pageExport.launch("${(sheet?.name ?: "Seite").replace("/", "_")}_S${pdfPage + 1}.png") },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (editLinks) "Sprungpunkte fertig" else "Sprungpunkte bearbeiten") },
+                                    onClick = { showModeMenu = false; editLinks = !editLinks; if (editLinks && mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE) },
                                 )
                             }
                         }
@@ -536,7 +562,13 @@ fun ViewerScreen(
                 val hlPage = if (showMatchNav && searchIdx in searchResults.indices) searchResults[searchIdx].page else -1
                 val hlBoxes = if (hlPage >= 0) searchBoxes[hlPage].orEmpty() else emptyList()
                 when (mode) {
-                    DisplayMode.SINGLE -> SinglePageView(doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes) { turn(it) }
+                    DisplayMode.SINGLE -> SinglePageView(
+                        doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
+                        linkPoints.filter { it.sourcePage - 1 == pdfPage && it.sourceNx >= 0 },
+                        editLinks,
+                        onMarkerTap = { vb -> if (editLinks) deleteLink(vb) else jumpLink(vb) },
+                        onEmptyTap = { nx, ny -> pendingLink = Offset(nx, ny); linkTargetInput = "${pdfPage + 1}" },
+                    ) { turn(it) }
                     DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
@@ -567,6 +599,19 @@ fun ViewerScreen(
                         modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
                     )
                 }
+                if (editLinks && mode == DisplayMode.SINGLE) {
+                    Surface(
+                        Modifier.align(Alignment.TopCenter).padding(8.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        tonalElevation = 4.dp,
+                        shadowElevation = 6.dp,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Tippen: Sprungpunkt setzen/löschen", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.labelLarge)
+                            TextButton(onClick = { editLinks = false }) { Text("Fertig") }
+                        }
+                    }
+                }
             }
 
             if (showBookmarks) {
@@ -584,6 +629,28 @@ fun ViewerScreen(
                     page = page + 1,
                     onSave = { label, color -> addBookmark(label, color) },
                     onDismiss = { addingBookmark = false },
+                )
+            }
+            pendingLink?.let { pos ->
+                AlertDialog(
+                    onDismissRequest = { pendingLink = null },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val t = linkTargetInput.toIntOrNull()
+                            if (t != null && t >= 1) saveLink(pos.x, pos.y, t)
+                            pendingLink = null
+                        }) { Text("OK") }
+                    },
+                    dismissButton = { TextButton(onClick = { pendingLink = null }) { Text("Abbrechen") } },
+                    title = { Text("Sprungpunkt") },
+                    text = {
+                        OutlinedTextField(
+                            value = linkTargetInput,
+                            onValueChange = { linkTargetInput = it.filter(Char::isDigit) },
+                            label = { Text("Zielseite") },
+                            singleLine = true,
+                        )
+                    },
                 )
             }
 

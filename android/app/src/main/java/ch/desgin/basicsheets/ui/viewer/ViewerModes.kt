@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -52,11 +53,13 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.annot.PageAnnotations
 import ch.desgin.basicsheets.data.AnnotationRepository
+import ch.desgin.basicsheets.data.ViewerButton
 import ch.desgin.basicsheets.pdf.MatchBox
 import ch.desgin.basicsheets.pdf.PdfDoc
 import ch.desgin.basicsheets.ui.settings.LocalSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Color-inverting filter for night mode, applied to page bitmaps. */
@@ -142,6 +145,10 @@ fun SinglePageView(
     annoVersion: Int = 0,
     highlightPage: Int = -1,
     highlightBoxes: List<MatchBox> = emptyList(),
+    linkPoints: List<ViewerButton> = emptyList(),
+    editLinks: Boolean = false,
+    onMarkerTap: (ViewerButton) -> Unit = {},
+    onEmptyTap: (Float, Float) -> Unit = { _, _ -> },
     onTurn: (Int) -> Unit,
 ) {
     val pdf = pages.getOrElse(page) { 0 }
@@ -155,18 +162,33 @@ fun SinglePageView(
         offset = if (scale > 1f) offset + pan else Offset.Zero
     }
     val bmp = pageBitmap(doc, pdf, renderPx)
+    val bmpState = rememberUpdatedState(bmp)
     val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
 
     Box(
         Modifier
             .fillMaxSize()
             .transformable(transform)
-            .pointerInput(pages.size) {
+            .pointerInput(editLinks, linkPoints) {
                 detectTapGestures { pos ->
-                    if (scale <= 1.05f) {
-                        val third = size.width / 3f
-                        if (pos.x < third) onTurn(-1) else if (pos.x > size.width - third) onTurn(1)
+                    if (scale > 1.05f) return@detectTapGestures
+                    val b = bmpState.value
+                    if (b != null) {
+                        // Map the full-screen tap into page-normalized [0,1] (page is fillMaxWidth, centred).
+                        val pageH = size.width.toFloat() * b.height / b.width
+                        val pageTop = (size.height - pageH) / 2f
+                        val nx = pos.x / size.width.toFloat()
+                        val ny = (pos.y - pageTop) / pageH
+                        if (nx in 0f..1f && ny in 0f..1f) {
+                            val hit = linkPoints.firstOrNull {
+                                it.sourceNx >= 0 && abs(it.sourceNx.toFloat() - nx) < 0.045f && abs(it.sourceNy.toFloat() - ny) < 0.045f
+                            }
+                            if (hit != null) { onMarkerTap(hit); return@detectTapGestures }
+                            if (editLinks) { onEmptyTap(nx, ny); return@detectTapGestures }
+                        }
                     }
+                    val third = size.width / 3f
+                    if (pos.x < third) onTurn(-1) else if (pos.x > size.width - third) onTurn(1)
                 }
             },
         contentAlignment = Alignment.Center,
@@ -185,10 +207,17 @@ fun SinglePageView(
                     contentScale = ContentScale.FillWidth,
                     colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
                 )
-                if (!anno.isEmpty() || hl.isNotEmpty()) {
+                if (!anno.isEmpty() || hl.isNotEmpty() || linkPoints.isNotEmpty()) {
                     Canvas(Modifier.matchParentSize()) {
                         if (hl.isNotEmpty()) drawSearchHighlight(hl, size.width, size.height)
                         if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
+                        for (lp in linkPoints) {
+                            if (lp.sourceNx < 0) continue
+                            val center = Offset(lp.sourceNx.toFloat() * size.width, lp.sourceNy.toFloat() * size.height)
+                            val rad = size.width * 0.022f
+                            drawCircle(Color(0xFF1565C0).copy(alpha = 0.22f), rad, center)
+                            drawCircle(Color(0xFF1565C0), rad, center, style = Stroke(width = size.width * 0.006f))
+                        }
                     }
                 }
             }
