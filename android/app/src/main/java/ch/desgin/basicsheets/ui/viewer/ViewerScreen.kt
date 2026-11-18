@@ -427,12 +427,21 @@ fun ViewerScreen(
                     onEraseAt = { x, y -> eraseAt(x, y) },
                     onTapAt = { x, y -> onTapAt(x, y) },
                 )
-                Box(Modifier.align(Alignment.BottomCenter)) {
-                    AnnotationToolbar(
-                        tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill, stampType = stampType,
+                if (settings.floatingAnnotTools) {
+                    AnnotationPalette(
+                        tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill,
                         onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it },
                         onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onDone = { exitEdit() },
+                        modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
                     )
+                } else {
+                    Box(Modifier.align(Alignment.BottomCenter)) {
+                        AnnotationToolbar(
+                            tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill, stampType = stampType,
+                            onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it },
+                            onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onDone = { exitEdit() },
+                        )
+                    }
                 }
                 if (showStamps) {
                     StampPickerDialog(

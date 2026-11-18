@@ -56,6 +56,9 @@ fun SettingsScreen() {
             ToggleRow("Bildschirm wach halten", "Display bleibt beim Lesen an", settings.keepScreenOn) { set(KEY_KEEP_ON, it.toString()) }
             ToggleRow("Seitenzahlen", "Seitennummer unten im Viewer anzeigen", settings.pageNumbers) { set(KEY_PAGE_NUMBERS, it.toString()) }
 
+            SectionHeader("Notizen")
+            ToggleRow("Schwebende Werkzeug-Palette", "Runde, verschiebbare Palette statt der unteren Leiste beim Annotieren", settings.floatingAnnotTools) { set(KEY_ANNOT_PALETTE, it.toString()) }
+
             SectionHeader("Komponisten")
             ToggleRow("Komponisten-Infos", "Porträt und Wikipedia-Text aus dem Internet laden", settings.composerInfo) { set(KEY_COMPOSER_INFO, it.toString()) }
         }
