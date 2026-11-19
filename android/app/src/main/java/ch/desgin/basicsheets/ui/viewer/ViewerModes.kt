@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -800,6 +801,145 @@ fun HalfTurnView(
                     topLeft = Offset(dx, dy + (hA * split - bar / 2f) * scale),
                     size = Size(wA * scale, bar * scale),
                 )
+            }
+        }
+    }
+}
+
+/** Which part of the crop rectangle a drag is manipulating. */
+private enum class CropHandle { NONE, MOVE, L, T, R, B, TL, TR, BL, BR }
+
+/** Pick the handle under [pos] (px) for the crop box [c] (normalized) on a [w]x[h] surface. */
+private fun pickCropHandle(pos: Offset, c: Rect, w: Float, h: Float): CropHandle {
+    val thrX = (48f / w).coerceIn(0.02f, 0.25f)
+    val thrY = (48f / h).coerceIn(0.02f, 0.25f)
+    val nx = pos.x / w
+    val ny = pos.y / h
+    val nearL = abs(nx - c.left) < thrX
+    val nearR = abs(nx - c.right) < thrX
+    val nearT = abs(ny - c.top) < thrY
+    val nearB = abs(ny - c.bottom) < thrY
+    val inRowY = ny > c.top - thrY && ny < c.bottom + thrY
+    val inColX = nx > c.left - thrX && nx < c.right + thrX
+    return when {
+        nearL && nearT -> CropHandle.TL
+        nearR && nearT -> CropHandle.TR
+        nearL && nearB -> CropHandle.BL
+        nearR && nearB -> CropHandle.BR
+        nearL && inRowY -> CropHandle.L
+        nearR && inRowY -> CropHandle.R
+        nearT && inColX -> CropHandle.T
+        nearB && inColX -> CropHandle.B
+        nx > c.left && nx < c.right && ny > c.top && ny < c.bottom -> CropHandle.MOVE
+        else -> CropHandle.NONE
+    }
+}
+
+/** Apply a normalized drag delta to [start] for [handle]; min side 0.1, kept inside [0,1]. */
+private fun applyCropHandle(handle: CropHandle, start: Rect, dnx: Float, dny: Float): Rect {
+    val minSize = 0.1f
+    var l = start.left; var t = start.top; var r = start.right; var b = start.bottom
+    when (handle) {
+        CropHandle.MOVE -> {
+            val wd = start.right - start.left
+            val ht = start.bottom - start.top
+            l = (start.left + dnx).coerceIn(0f, 1f - wd); t = (start.top + dny).coerceIn(0f, 1f - ht)
+            r = l + wd; b = t + ht
+        }
+        CropHandle.L -> l = (start.left + dnx).coerceIn(0f, start.right - minSize)
+        CropHandle.R -> r = (start.right + dnx).coerceIn(start.left + minSize, 1f)
+        CropHandle.T -> t = (start.top + dny).coerceIn(0f, start.bottom - minSize)
+        CropHandle.B -> b = (start.bottom + dny).coerceIn(start.top + minSize, 1f)
+        CropHandle.TL -> { l = (start.left + dnx).coerceIn(0f, start.right - minSize); t = (start.top + dny).coerceIn(0f, start.bottom - minSize) }
+        CropHandle.TR -> { r = (start.right + dnx).coerceIn(start.left + minSize, 1f); t = (start.top + dny).coerceIn(0f, start.bottom - minSize) }
+        CropHandle.BL -> { l = (start.left + dnx).coerceIn(0f, start.right - minSize); b = (start.bottom + dny).coerceIn(start.top + minSize, 1f) }
+        CropHandle.BR -> { r = (start.right + dnx).coerceIn(start.left + minSize, 1f); b = (start.bottom + dny).coerceIn(start.top + minSize, 1f) }
+        CropHandle.NONE -> {}
+    }
+    return Rect(l, t, r, b)
+}
+
+/**
+ * Full-page crop editor: shows the page (un-rotated, fit to width) with a draggable crop rectangle —
+ * drag the interior to move, the edges/corners to resize. The area outside is dimmed. The box is the
+ * normalized [cropL..cropB]; [onChange] reports edits. Shown in single mode while "Zuschneiden" is
+ * open, alongside the sliders (which edit the same values).
+ */
+@Composable
+fun CropEditor(
+    doc: PdfDoc?,
+    pdfIndex: Int,
+    renderPx: Int,
+    cropL: Float,
+    cropT: Float,
+    cropR: Float,
+    cropB: Float,
+    onChange: (Float, Float, Float, Float) -> Unit,
+) {
+    val bmp = pageBitmap(doc, pdfIndex, renderPx)
+    val box = rememberUpdatedState(Rect(cropL, cropT, cropR, cropB))
+    val onChangeState = rememberUpdatedState(onChange)
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (bmp == null) {
+            Text("Lädt …", color = MaterialTheme.colorScheme.outline)
+            return@Box
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(bmp.width.toFloat() / bmp.height),
+        ) {
+            Image(
+                bmp.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillWidth,
+                colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
+            )
+            Canvas(
+                Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        var handle = CropHandle.NONE
+                        var start = Rect(0f, 0f, 1f, 1f)
+                        var accX = 0f
+                        var accY = 0f
+                        detectDragGestures(
+                            onDragStart = { pos ->
+                                start = box.value
+                                handle = pickCropHandle(pos, start, size.width.toFloat(), size.height.toFloat())
+                                accX = 0f; accY = 0f
+                            },
+                            onDrag = { change, amt ->
+                                if (handle != CropHandle.NONE) {
+                                    change.consume()
+                                    accX += amt.x / size.width
+                                    accY += amt.y / size.height
+                                    val nb = applyCropHandle(handle, start, accX, accY)
+                                    onChangeState.value(nb.left, nb.top, nb.right, nb.bottom)
+                                }
+                            },
+                        )
+                    },
+            ) {
+                val w = size.width
+                val h = size.height
+                val c = box.value
+                val l = c.left * w; val t = c.top * h; val r = c.right * w; val b = c.bottom * h
+                // Dim everything outside the crop rectangle.
+                val dim = Color.Black.copy(alpha = 0.45f)
+                drawRect(dim, topLeft = Offset(0f, 0f), size = Size(w, t))
+                drawRect(dim, topLeft = Offset(0f, b), size = Size(w, h - b))
+                drawRect(dim, topLeft = Offset(0f, t), size = Size(l, b - t))
+                drawRect(dim, topLeft = Offset(r, t), size = Size(w - r, b - t))
+                // Border + corner handles.
+                val accent = Color(0xFF80CBC4)
+                drawRect(accent, topLeft = Offset(l, t), size = Size(r - l, b - t), style = Stroke(width = 3f))
+                val hr = 9f
+                for (p in listOf(Offset(l, t), Offset(r, t), Offset(l, b), Offset(r, b))) {
+                    drawCircle(Color.White, hr, p)
+                    drawCircle(accent, hr, p, style = Stroke(width = 3f))
+                }
             }
         }
     }

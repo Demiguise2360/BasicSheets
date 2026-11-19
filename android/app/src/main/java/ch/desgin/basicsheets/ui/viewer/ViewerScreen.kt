@@ -665,11 +665,13 @@ fun ViewerScreen(
                 val key = sheet?.filePath
                 val hlPage = if (showMatchNav && searchIdx in searchResults.indices) searchResults[searchIdx].page else -1
                 val hlBoxes = if (hlPage >= 0) searchBoxes[hlPage].orEmpty() else emptyList()
-                // Single-page shows the live edit buffer while the crop panel is open, otherwise the
-                // current page's stored crop. The multi-page modes resolve each page's own crop.
-                val singleCrop = if (showCrop) Rect(cropL, cropT, cropR, cropB) else storedCropFor(pdfPage)
+                // While "Zuschneiden" is open, the full-page crop-box editor replaces the normal view;
+                // otherwise each mode applies the stored per-page crop.
+                val singleCrop = storedCropFor(pdfPage)
                 val cropFor: (Int) -> Rect = { pdf -> storedCropFor(pdf) }
-                when (mode) {
+                if (showCrop) {
+                    CropEditor(doc, pdfPage, renderPx, cropL, cropT, cropR, cropB) { l, t, r, b -> cropL = l; cropT = t; cropR = r; cropB = b }
+                } else when (mode) {
                     DisplayMode.SINGLE -> SinglePageView(
                         doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
                         linkPoints.filter { it.sourcePage - 1 == pdfPage && it.sourceNx >= 0 },
