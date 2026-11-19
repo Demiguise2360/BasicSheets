@@ -169,6 +169,7 @@ fun ViewerScreen(
     var showStamps by remember { mutableStateOf(false) }
     var pendingText by remember { mutableStateOf<Offset?>(null) }
     var textInput by remember { mutableStateOf("") }
+    var editingTextIndex by remember { mutableIntStateOf(-1) }   // >=0 while re-editing an existing text note
     var annoVersion by remember { mutableIntStateOf(0) }   // bumped on edit exit → reading overlays reload
     val undoStack = remember { mutableStateListOf<PageAnnotations>() }
     val redoStack = remember { mutableStateListOf<PageAnnotations>() }
@@ -413,14 +414,40 @@ fun ViewerScreen(
         saveAnn()
     }
     fun commitText(nx: Float, ny: Float, text: String) {
+        val idx = editingTextIndex
+        if (idx >= 0) {
+            val list = annotations.textData.toMutableList()
+            if (idx < list.size) {
+                pushUndo()
+                if (text.isBlank()) list.removeAt(idx) else list[idx] = list[idx].copy(text = text)
+                annotations = annotations.copy(textData = list)
+                saveAnn()
+            }
+            return
+        }
         if (text.isBlank()) return
         pushUndo()
         annotations = annotations.copy(textData = annotations.textData + TextAnnot(text, nx, ny, inkColor.toArgb(), textFrac(sizeLevel)))
         saveAnn()
     }
     fun onTapAt(nx: Float, ny: Float) {
-        if (tool == Tool.STAMP) placeStamp(nx, ny)
-        else if (tool == Tool.TEXT) { pendingText = Offset(nx, ny); textInput = "" }
+        if (tool == Tool.STAMP) { placeStamp(nx, ny); return }
+        if (tool != Tool.TEXT) return
+        // Re-edit: tapping an existing text note reopens it pre-filled (clearing the text deletes it).
+        val hit = annotations.textData.indexOfFirst { t ->
+            ny >= t.y - 0.3f * t.fontSize && ny <= t.y + 1.3f * t.fontSize &&
+                nx >= t.x - 0.02f && nx <= t.x + maxOf(0.08f, t.text.length * t.fontSize * 0.6f)
+        }
+        if (hit >= 0) {
+            editingTextIndex = hit
+            val t = annotations.textData[hit]
+            pendingText = Offset(t.x, t.y)
+            textInput = t.text
+        } else {
+            editingTextIndex = -1
+            pendingText = Offset(nx, ny)
+            textInput = ""
+        }
     }
     fun eraseAt(nx: Float, ny: Float) {
         val r = 0.03f
@@ -757,10 +784,10 @@ fun ViewerScreen(
                 }
                 pendingText?.let { pos ->
                     AlertDialog(
-                        onDismissRequest = { pendingText = null },
-                        confirmButton = { TextButton(onClick = { commitText(pos.x, pos.y, textInput); pendingText = null }) { Text("OK") } },
-                        dismissButton = { TextButton(onClick = { pendingText = null }) { Text("Abbrechen") } },
-                        title = { Text("Text") },
+                        onDismissRequest = { pendingText = null; editingTextIndex = -1 },
+                        confirmButton = { TextButton(onClick = { commitText(pos.x, pos.y, textInput); pendingText = null; editingTextIndex = -1 }) { Text("OK") } },
+                        dismissButton = { TextButton(onClick = { pendingText = null; editingTextIndex = -1 }) { Text("Abbrechen") } },
+                        title = { Text(if (editingTextIndex >= 0) "Text bearbeiten" else "Text") },
                         text = { OutlinedTextField(value = textInput, onValueChange = { textInput = it }, label = { Text("Notiz") }) },
                     )
                 }
