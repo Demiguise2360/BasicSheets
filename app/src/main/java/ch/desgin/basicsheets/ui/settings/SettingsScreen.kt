@@ -6,14 +6,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -122,36 +127,52 @@ private val DIM_OPTIONS = listOf("0" to "Aus", "0.25" to "Leicht", "0.5" to "Mit
 private fun SectionHeader(text: String) {
     Text(
         text,
-        Modifier.padding(start = 16.dp, top = 18.dp, bottom = 4.dp),
+        Modifier.padding(start = 20.dp, top = 18.dp, bottom = 6.dp),
         style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurface,
     )
+}
+
+/** A white rounded settings card (the Figma style), holding one row of content. */
+@Composable
+private fun SettingCard(onClick: (() -> Unit)? = null, content: @Composable RowScope.() -> Unit) {
+    var m = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+    if (onClick != null) m = m.clickable(onClick = onClick)
+    Card(
+        modifier = m,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+    }
+}
+
+/** Bold title + grey subtitle, taking the free space in a [SettingCard] row. */
+@Composable
+private fun RowScope.SettingTitle(title: String, subtitle: String) {
+    Column(Modifier.weight(1f)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+    }
 }
 
 @Composable
 private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-        }
+    SettingCard(onClick = { onChange(!checked) }) {
+        SettingTitle(title, subtitle)
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 
 @Composable
 private fun ActionRow(title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-        }
+    SettingCard(onClick = onClick) {
+        SettingTitle(title, subtitle)
     }
 }
 
@@ -166,14 +187,8 @@ private fun SelectRow(
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
-        Row(
-            Modifier.fillMaxWidth().clickable { open = true }.padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-            }
+        SettingCard(onClick = { open = true }) {
+            SettingTitle(title, subtitle)
             Text(
                 options.firstOrNull { it.first == current }?.second ?: current,
                 color = MaterialTheme.colorScheme.primary,

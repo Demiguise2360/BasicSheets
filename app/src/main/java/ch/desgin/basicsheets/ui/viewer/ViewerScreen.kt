@@ -26,7 +26,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -702,10 +705,6 @@ fun ViewerScreen(
                                     text = { Text("Drehen") },
                                     onClick = { showModeMenu = false; rotatePage() },
                                 )
-                                DropdownMenuItem(
-                                    text = { Text(if (hideAnnotations) "Notizen anzeigen" else "Notizen ausblenden") },
-                                    onClick = { showModeMenu = false; hideAnnotations = !hideAnnotations },
-                                )
                             }
                         }
                         TextButton(
@@ -723,10 +722,16 @@ fun ViewerScreen(
                         IconButton(onClick = { showBookmarks = true }) {
                             Icon(Icons.Filled.Bookmarks, contentDescription = "Lesezeichen")
                         }
+                        IconButton(onClick = { hideAnnotations = !hideAnnotations }) {
+                            Icon(
+                                if (hideAnnotations) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = "Notizen ein/aus",
+                            )
+                        }
                     }
                     if (!isTextSong) {
                         IconButton(onClick = { if (editMode) exitEdit() else editMode = true }) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Annotieren")
+                            Icon(Icons.Filled.Draw, contentDescription = "Annotieren")
                         }
                     }
                 },
