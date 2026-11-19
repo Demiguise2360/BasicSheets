@@ -95,6 +95,18 @@ private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bit
 private fun maybeCrop(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bitmap =
     if (l > 0.002f || t > 0.002f || r < 0.998f || b < 0.998f) cropBitmap(src, l, t, r, b) else src
 
+/**
+ * Invert a page's display rotation: map a tap at display-normalized ([dxn],[dyn]) in the rotated
+ * display frame back to normalized coords in the un-rotated page. [rotation] is clockwise
+ * 0/90/180/270 (the same sense as `Modifier.rotate`), so this undoes what the page cell applied.
+ */
+private fun unrotateNorm(dxn: Float, dyn: Float, rotation: Int): Pair<Float, Float> = when (rotation) {
+    90 -> dyn to (1f - dxn)
+    180 -> (1f - dxn) to (1f - dyn)
+    270 -> (1f - dyn) to dxn
+    else -> dxn to dyn
+}
+
 /** Draw the blue jump-point (Sprungpunkt) rings at their full-page-normalized source positions. */
 private fun DrawScope.drawLinkMarkers(links: List<ViewerButton>, w: Float, h: Float) {
     for (lp in links) {
@@ -221,8 +233,8 @@ private fun AnnotatedPageCell(
             .aspectRatio(dispAspect)
             // Jump-point taps: hit-test only when the page has markers, and consume ONLY on a hit so
             // non-marker taps still fall through to the mode's page-turn / scroll handling. Maps the
-            // tap into full-page-normalized space (crop inverse; 180° flip). 90/270 taps are mapped
-            // unrotated — the known rotation-aware-tap gap — though markers still draw rotated.
+            // tap into full-page-normalized space by undoing the page rotation (any of 0/90/180/270)
+            // then the crop, matching where the markers are drawn.
             .then(
                 if (linkPoints.isEmpty()) Modifier
                 else Modifier.pointerInput(linkPoints, cropL, cropT, cropR, cropB, rotation) {
@@ -231,11 +243,9 @@ private fun AnnotatedPageCell(
                         val up = waitForUpOrCancellation() ?: return@awaitEachGesture
                         val sz = size
                         if (sz.width <= 0 || sz.height <= 0) return@awaitEachGesture
-                        var dx = up.position.x / sz.width
-                        var dy = up.position.y / sz.height
-                        if (rotation == 180) { dx = 1f - dx; dy = 1f - dy }
-                        val fnx = cropL + dx * (cropR - cropL)
-                        val fny = cropT + dy * (cropB - cropT)
+                        val (u, v) = unrotateNorm(up.position.x / sz.width, up.position.y / sz.height, rotation)
+                        val fnx = cropL + u * (cropR - cropL)
+                        val fny = cropT + v * (cropB - cropT)
                         val hit = linkPoints.firstOrNull {
                             it.sourceNx >= 0 &&
                                 abs(it.sourceNx.toFloat() - fnx) < 0.045f &&
@@ -307,17 +317,24 @@ fun SinglePageView(
         Modifier
             .fillMaxSize()
             .transformable(transform)
-            .pointerInput(editLinks, linkPoints) {
+            .pointerInput(editLinks, linkPoints, rotation, cropL, cropT, cropR, cropB) {
                 detectTapGestures { pos ->
                     if (scale > 1.05f) return@detectTapGestures
                     val b = bmpState.value
                     if (b != null) {
-                        // Map the full-screen tap into page-normalized [0,1] (page is fillMaxWidth, centred).
-                        val pageH = size.width.toFloat() * b.height / b.width
+                        // Map the full-screen tap into full-page-normalized [0,1]. The page is
+                        // fillMaxWidth and centred; its displayed aspect swaps for 90/270. Undo the
+                        // rotation, then the crop, so the tap lands where the drawn markers are.
+                        val swap = rotation == 90 || rotation == 270
+                        val pageH = size.width.toFloat() *
+                            if (swap) b.width.toFloat() / b.height else b.height.toFloat() / b.width
                         val pageTop = (size.height - pageH) / 2f
-                        val nx = pos.x / size.width.toFloat()
-                        val ny = (pos.y - pageTop) / pageH
-                        if (nx in 0f..1f && ny in 0f..1f) {
+                        val dxn = pos.x / size.width.toFloat()
+                        val dyn = (pos.y - pageTop) / pageH
+                        if (dxn in 0f..1f && dyn in 0f..1f) {
+                            val (u, v) = unrotateNorm(dxn, dyn, rotation)
+                            val nx = cropL + u * (cropR - cropL)
+                            val ny = cropT + v * (cropB - cropT)
                             val hit = linkPoints.firstOrNull {
                                 it.sourceNx >= 0 && abs(it.sourceNx.toFloat() - nx) < 0.045f && abs(it.sourceNy.toFloat() - ny) < 0.045f
                             }
