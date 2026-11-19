@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -198,6 +199,11 @@ fun ViewerScreen(
     // Go-to-page: tap the bottom-bar page readout to jump to a page number.
     var showPageInput by remember { mutableStateOf(false) }
     var pageInput by remember { mutableStateOf("") }
+
+    // Quick jump-to-page buttons (floating ViewerButtons, sourceNx < 0).
+    var showButtons by remember { mutableStateOf(false) }
+    var btnLabel by remember { mutableStateOf("") }
+    var btnTarget by remember { mutableStateOf("") }
 
     // Custom page order (0-based PDF indices in display order; natural when no override)
     var order by remember { mutableStateOf<List<Int>>(emptyList()) }
@@ -528,6 +534,14 @@ fun ViewerScreen(
         )
         scope.launch { app.db.viewerButtons().insert(vb); linkPoints = app.db.viewerButtons().forFile(key) }
     }
+    fun addFloatingButton(label: String, targetPage: Int) {
+        val key = sheet?.filePath ?: return
+        val vb = ViewerButton(
+            id = java.util.UUID.randomUUID().toString(), action = "jump", label = label, pdfFile = key,
+            sourcePage = 0, sourceNx = -1.0, sourceNy = -1.0, targetPage = targetPage,
+        )
+        scope.launch { app.db.viewerButtons().insert(vb); linkPoints = app.db.viewerButtons().forFile(key) }
+    }
     fun deleteLink(vb: ViewerButton) {
         val key = sheet?.filePath ?: return
         scope.launch { app.db.viewerButtons().remove(vb.id); linkPoints = app.db.viewerButtons().forFile(key) }
@@ -675,6 +689,10 @@ fun ViewerScreen(
                                 DropdownMenuItem(
                                     text = { Text("Sprungpunkte verwalten") },
                                     onClick = { showModeMenu = false; showLinkList = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Schnell-Schaltflächen") },
+                                    onClick = { showModeMenu = false; showButtons = true },
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Zuschneiden") },
@@ -885,6 +903,30 @@ fun ViewerScreen(
                         modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
                     )
                 }
+                // Quick jump-to-page pills down the right edge (user-defined floating buttons).
+                val floatingButtons = linkPoints.filter { it.sourceNx < 0 }
+                if (floatingButtons.isNotEmpty()) {
+                    Column(
+                        Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        for (b in floatingButtons) {
+                            Surface(
+                                Modifier.clickable { jumpToPdf((b.targetPage - 1).coerceAtLeast(0)) },
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                shadowElevation = 4.dp,
+                            ) {
+                                Text(
+                                    if (b.label.isNotBlank()) b.label else "→ ${b.targetPage}",
+                                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                        }
+                    }
+                }
                 if (editLinks && mode == DisplayMode.SINGLE) {
                     Surface(
                         Modifier.align(Alignment.TopCenter).padding(8.dp),
@@ -1042,6 +1084,40 @@ fun ViewerScreen(
                             label = { Text("Seite (1–${order.size})") },
                             singleLine = true,
                         )
+                    },
+                )
+            }
+            if (showButtons) {
+                AlertDialog(
+                    onDismissRequest = { showButtons = false },
+                    confirmButton = { TextButton(onClick = { showButtons = false }) { Text("Fertig") } },
+                    title = { Text("Schnell-Schaltflächen") },
+                    text = {
+                        Column {
+                            val fbs = linkPoints.filter { it.sourceNx < 0 }
+                            if (fbs.isEmpty()) {
+                                Text("Noch keine. Füge unten eine hinzu.", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            for (b in fbs) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        if (b.label.isNotBlank()) "${b.label} → Seite ${b.targetPage}" else "→ Seite ${b.targetPage}",
+                                        Modifier.weight(1f),
+                                    )
+                                    IconButton(onClick = { deleteLink(b) }) { Icon(Icons.Filled.Close, contentDescription = "Löschen") }
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text("Neue Schaltfläche", style = MaterialTheme.typography.labelLarge)
+                            OutlinedTextField(value = btnLabel, onValueChange = { btnLabel = it }, label = { Text("Beschriftung (optional)") }, singleLine = true)
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(value = btnTarget, onValueChange = { btnTarget = it.filter(Char::isDigit) }, label = { Text("Zielseite") }, singleLine = true)
+                            Spacer(Modifier.height(6.dp))
+                            TextButton(onClick = {
+                                val t = btnTarget.toIntOrNull()
+                                if (t != null && t >= 1) { addFloatingButton(btnLabel.trim(), t); btnLabel = ""; btnTarget = "" }
+                            }) { Text("Hinzufügen") }
+                        }
                     },
                 )
             }
