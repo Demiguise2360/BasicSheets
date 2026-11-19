@@ -36,7 +36,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import ch.desgin.basicsheets.BasicSheetsApp
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -70,7 +70,7 @@ fun SettingsScreen() {
     }
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Einstellungen") }, colors = appTopBarColors())
+        AppTopBar(title = { Text("Einstellungen") })
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             SectionHeader("Anzeige")
             SelectRow("Seitenansicht", "Standardansicht für Noten ohne eigene Einstellung", PAGE_MODE_OPTIONS, settings.pageMode) { set(KEY_PAGE_MODE, it) }

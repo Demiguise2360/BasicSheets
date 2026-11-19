@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Bookmark
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 import kotlinx.coroutines.launch
 
 /** "Lesezeichen" tab — every bookmark across the library; tap to open its sheet. */
@@ -55,7 +55,7 @@ fun BookmarksScreen(onOpen: (Int) -> Unit) {
     LaunchedEffect(reload) { items = runCatching { app.bookmarks.all() }.getOrDefault(emptyList()) }
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Lesezeichen") }, colors = appTopBarColors())
+        AppTopBar(title = { Text("Lesezeichen") })
         if (items.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Noch keine Lesezeichen.", color = MaterialTheme.colorScheme.outline)

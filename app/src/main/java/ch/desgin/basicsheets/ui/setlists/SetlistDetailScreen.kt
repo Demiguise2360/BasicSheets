@@ -49,7 +49,7 @@ import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Setlist
 import ch.desgin.basicsheets.data.SetlistItem
 import ch.desgin.basicsheets.data.Sheet
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 import androidx.compose.material3.ButtonDefaults
 import kotlinx.coroutines.launch
 
@@ -75,9 +75,8 @@ fun SetlistDetailScreen(setlistId: Int, onOpenSong: (Int) -> Unit, onBack: () ->
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            AppTopBar(
                 title = { Text(setlist?.name ?: "Setlist") },
-                colors = appTopBarColors(),
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                 },

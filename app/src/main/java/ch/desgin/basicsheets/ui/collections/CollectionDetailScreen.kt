@@ -55,7 +55,7 @@ import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Collection
 import ch.desgin.basicsheets.data.Sheet
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 import ch.desgin.basicsheets.ui.viewer.BOOKMARK_COLORS
 import kotlinx.coroutines.launch
 
@@ -81,7 +81,7 @@ fun CollectionDetailScreen(collectionId: Int, onOpenSheet: (Int) -> Unit, onBack
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            AppTopBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(16.dp).clip(CircleShape).background(hexColor(collection?.color)))
@@ -89,7 +89,6 @@ fun CollectionDetailScreen(collectionId: Int, onOpenSheet: (Int) -> Unit, onBack
                         Text(collection?.name ?: "Sammlung", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 },
-                colors = appTopBarColors(),
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                 },

@@ -42,7 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Sheet
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 import kotlinx.coroutines.launch
 
 /** Difficulty values (MAUI's set) mapped to German labels. "" = none. */
@@ -106,7 +106,7 @@ fun SheetEditorScreen(sheetId: Int, onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            AppTopBar(
                 title = { Text("Bearbeiten") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
@@ -117,7 +117,6 @@ fun SheetEditorScreen(sheetId: Int, onBack: () -> Unit) {
                         enabled = loaded != null && name.isNotBlank(),
                     ) { Text("Speichern", color = MaterialTheme.colorScheme.onPrimary) }
                 },
-                colors = appTopBarColors(),
             )
         },
     ) { pad ->

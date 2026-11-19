@@ -37,7 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 import kotlinx.coroutines.launch
 
 /** "Üben" tab — the pieces marked "zum Üben" (long-press a song → Zum Üben markieren). */
@@ -49,7 +49,7 @@ fun PracticeScreen(onOpen: (Int) -> Unit) {
     val items by app.library.observePractice().collectAsState(initial = emptyList())
 
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(title = { Text("Üben") }, colors = appTopBarColors())
+        AppTopBar(title = { Text("Üben") })
         if (items.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(

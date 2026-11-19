@@ -73,7 +73,8 @@ import ch.desgin.basicsheets.data.Setlist
 import ch.desgin.basicsheets.data.Sheet
 import ch.desgin.basicsheets.ui.collections.CollectionDialog
 import ch.desgin.basicsheets.ui.setlists.NameDialog
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.PetrolGradient
+import ch.desgin.basicsheets.ui.theme.transparentTopBarColors
 import ch.desgin.basicsheets.ui.viewer.BOOKMARK_COLORS
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -139,12 +140,12 @@ fun LibraryScreen(
 
     Column(Modifier.fillMaxSize()) {
         // Petrol header: title + scrollable tabs
-        Surface(color = MaterialTheme.colorScheme.primary) {
+        Box(Modifier.background(PetrolGradient)) {
             Column {
-                TopAppBar(title = { Text("Meine Noten") }, colors = appTopBarColors())
+                TopAppBar(title = { Text("Meine Noten") }, colors = transparentTopBarColors())
                 ScrollableTabRow(
                     selectedTabIndex = TABS.indexOfFirst { it.first == tabKey }.coerceAtLeast(0),
-                    containerColor = MaterialTheme.colorScheme.primary,
+                    containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     edgePadding = 12.dp,
                     divider = {},

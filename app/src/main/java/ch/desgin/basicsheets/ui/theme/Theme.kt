@@ -1,13 +1,19 @@
 package ch.desgin.basicsheets.ui.theme
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // Brand palette — petrol/teal (the Figma redesign): dark bars over a light content area.
@@ -73,3 +79,33 @@ fun appTopBarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors(
     navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
     actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
 )
+
+/**
+ * The Figma brand gradient: a diagonal petrol sweep (dark top-left → lighter bottom-right) used
+ * behind every top app bar and the bottom navigation bar. Built from the petrol brand tokens.
+ */
+val PetrolGradient: Brush = Brush.linearGradient(listOf(PetrolDark, Petrol, PetrolLight))
+
+/** Transparent top-bar colours (white content) so the [PetrolGradient] behind the bar shows through. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun transparentTopBarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors(
+    containerColor = Color.Transparent,
+    scrolledContainerColor = Color.Transparent,
+    titleContentColor = Color.White,
+    navigationIconContentColor = Color.White,
+    actionIconContentColor = Color.White,
+)
+
+/** A petrol-gradient top app bar (the Figma header) — a transparent [TopAppBar] over [PetrolGradient]. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppTopBar(
+    title: @Composable () -> Unit,
+    navigationIcon: @Composable () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Box(Modifier.background(PetrolGradient)) {
+        TopAppBar(title = title, navigationIcon = navigationIcon, actions = actions, colors = transparentTopBarColors())
+    }
+}

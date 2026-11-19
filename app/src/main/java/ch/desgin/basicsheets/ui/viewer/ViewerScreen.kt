@@ -85,7 +85,7 @@ import androidx.compose.ui.window.DialogProperties
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Crop
 import ch.desgin.basicsheets.data.ViewerButton
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 import ch.desgin.basicsheets.annot.Hairpin
 import ch.desgin.basicsheets.annot.MarkerStroke
 import ch.desgin.basicsheets.annot.PageAnnotations
@@ -648,7 +648,7 @@ fun ViewerScreen(
                 }
             },
         topBar = {
-            TopAppBar(
+            AppTopBar(
                 title = { Text(sheet?.name ?: "") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -730,7 +730,6 @@ fun ViewerScreen(
                         }
                     }
                 },
-                colors = appTopBarColors(),
             )
         },
         bottomBar = {

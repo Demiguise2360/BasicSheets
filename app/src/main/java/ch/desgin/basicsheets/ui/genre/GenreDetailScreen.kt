@@ -42,7 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Sheet
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 
 /**
  * A genre's page: the list of library pieces in that genre. Parallel to the composer page
@@ -65,12 +65,11 @@ fun GenreDetailScreen(genre: String, onOpenSheet: (Int) -> Unit, onBack: () -> U
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            AppTopBar(
                 title = { Text(genre, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                 },
-                colors = appTopBarColors(),
             )
         },
     ) { pad ->

@@ -55,7 +55,7 @@ import ch.desgin.basicsheets.data.Sheet
 import ch.desgin.basicsheets.net.ComposerInfo
 import ch.desgin.basicsheets.net.Wikipedia
 import ch.desgin.basicsheets.ui.settings.LocalSettings
-import ch.desgin.basicsheets.ui.theme.appTopBarColors
+import ch.desgin.basicsheets.ui.theme.AppTopBar
 
 /**
  * A composer's page: a portrait + short Wikipedia blurb (loaded from the internet, only when the
@@ -95,12 +95,11 @@ fun ComposerDetailScreen(composer: String, onOpenSheet: (Int) -> Unit, onBack: (
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            AppTopBar(
                 title = { Text(composer, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                 },
-                colors = appTopBarColors(),
             )
         },
     ) { pad ->
