@@ -451,11 +451,17 @@ fun ViewerScreen(
             .focusRequester(focusRequester)
             .focusable()
             .onKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyDown || editMode) return@onKeyEvent false
+                if (editMode) return@onKeyEvent false
+                val isVol = ev.key == Key.VolumeDown || ev.key == Key.VolumeUp
+                if (isVol && !settings.volumeKeysPaging) return@onKeyEvent false
+                // Consume the volume key-up too (when paging is on) so the system volume UI stays hidden.
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent isVol
                 val step = if (mode == DisplayMode.TWO) 2 else 1
                 when (ev.key) {
                     Key.PageDown, Key.DirectionRight, Key.MediaNext, Key.Spacebar -> { turn(step); true }
                     Key.PageUp, Key.DirectionLeft, Key.MediaPrevious -> { turn(-step); true }
+                    Key.VolumeDown -> { turn(step); true }
+                    Key.VolumeUp -> { turn(-step); true }
                     else -> false
                 }
             },

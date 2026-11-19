@@ -14,6 +14,7 @@ const val KEY_COMPOSER_INFO = "Komponisten-Infos"
 const val KEY_ANNOT_PALETTE = "Schwebende Palette"
 const val KEY_WARM = "Warmer Lesemodus"
 const val KEY_DIM = "Abdunkeln"
+const val KEY_VOLUME_KEYS = "Lautstärketasten blättern"
 
 /** An immutable view of the settings, with typed accessors; provided app-wide via [LocalSettings]. */
 data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
@@ -41,6 +42,9 @@ data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
     /** Screen-dim overlay strength, stored as its key ("0".."0.75"). */
     val dimLevelKey: String get() = str(KEY_DIM, "0")
     val dimLevel: Float get() = dimLevelKey.toFloatOrNull() ?: 0f
+
+    /** Hardware volume keys turn pages (volume-down = next, volume-up = previous). */
+    val volumeKeysPaging: Boolean get() = bool(KEY_VOLUME_KEYS, false)
 }
 
 val LocalSettings = compositionLocalOf { SettingsSnapshot() }

@@ -79,6 +79,7 @@ fun SettingsScreen() {
             SelectRow("Viewer-Hintergrund", "Farbe hinter den Noten", BG_OPTIONS, settings.viewerBg) { set(KEY_BG, it) }
             ToggleRow("Noten invertieren", "Nachtmodus: kehrt die Notenfarben um", settings.invert) { set(KEY_INVERT, it.toString()) }
             ToggleRow("Bildschirm wach halten", "Display bleibt beim Lesen an", settings.keepScreenOn) { set(KEY_KEEP_ON, it.toString()) }
+            ToggleRow("Lautstärketasten blättern", "Leiser-Taste = vor, Lauter-Taste = zurück", settings.volumeKeysPaging) { set(KEY_VOLUME_KEYS, it.toString()) }
             ToggleRow("Seitenzahlen", "Seitennummer unten im Viewer anzeigen", settings.pageNumbers) { set(KEY_PAGE_NUMBERS, it.toString()) }
             ToggleRow("Warmer Lesemodus", "Wärmerer Farbton über den Noten", settings.warmTint) { set(KEY_WARM, it.toString()) }
             SelectRow("Abdunkeln", "Dunkler Schleier für dunkle Räume", DIM_OPTIONS, settings.dimLevelKey) { set(KEY_DIM, it) }
