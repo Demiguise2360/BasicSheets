@@ -103,9 +103,15 @@ class PdfDoc private constructor(private val sources: List<Source>) : Closeable 
     companion object {
         private val IMAGE_EXTS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp")
 
+        private val TEXT_EXTS = setOf("txt", "text", "chordpro", "chopro", "cho", "crd", "pro", "chord")
+
         /** True when a file name looks like a supported image (so it's opened as an image page). */
         fun isImage(name: String): Boolean =
             name.substringAfterLast('.', "").lowercase() in IMAGE_EXTS
+
+        /** True when a file name looks like a plain-text / ChordPro song (rendered as text, not pages). */
+        fun isText(name: String): Boolean =
+            name.substringAfterLast('.', "").lowercase() in TEXT_EXTS
 
         /** Open a single file, choosing an image or PDF source by its extension. */
         fun open(file: File): PdfDoc? = runCatching {

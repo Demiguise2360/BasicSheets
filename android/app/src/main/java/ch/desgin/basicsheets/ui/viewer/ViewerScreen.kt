@@ -202,6 +202,7 @@ fun ViewerScreen(
     var order by remember { mutableStateOf<List<Int>>(emptyList()) }
     var showPageOrder by remember { mutableStateOf(false) }
     val pdfPage = order.getOrElse(page) { page }
+    val isTextSong = sheet?.let { PdfDoc.isText(it.filePath) } ?: false
 
     // Setlist playback context (song-to-song navigation)
     var setlistSheets by remember { mutableStateOf<List<Sheet>>(emptyList()) }
@@ -258,7 +259,11 @@ fun ViewerScreen(
         // A multi-file song concatenates its parts; a plain song opens its single file (PDF or image).
         val parts = withContext(Dispatchers.IO) { runCatching { app.library.partFiles(s) }.getOrDefault(emptyList()) }
         val d = withContext(Dispatchers.IO) {
-            if (parts.size > 1) PdfDoc.openFiles(parts) else PdfDoc.open(app.library.fileFor(s))
+            when {
+                PdfDoc.isText(s.filePath) -> null                 // text / ChordPro songs render as text, not pages
+                parts.size > 1 -> PdfDoc.openFiles(parts)
+                else -> PdfDoc.open(app.library.fileFor(s))
+            }
         }
         doc = d
         pageCount = d?.pageCount ?: 0
@@ -597,7 +602,7 @@ fun ViewerScreen(
                     }
                 },
                 actions = {
-                    if (!editMode) {
+                    if (!isTextSong && !editMode) {
                         Box {
                             IconButton(onClick = { showModeMenu = true }) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "Ansicht")
@@ -661,8 +666,10 @@ fun ViewerScreen(
                             Icon(Icons.Filled.Bookmarks, contentDescription = "Lesezeichen")
                         }
                     }
-                    IconButton(onClick = { if (editMode) exitEdit() else editMode = true }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "Annotieren")
+                    if (!isTextSong) {
+                        IconButton(onClick = { if (editMode) exitEdit() else editMode = true }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Annotieren")
+                        }
                     }
                 },
                 colors = appTopBarColors(),
@@ -671,7 +678,7 @@ fun ViewerScreen(
         bottomBar = {
             val inSetlist = setlistId >= 0 && songIdx >= 0
             val showPageNav = (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && order.size > 1
-            if (!editMode && (inSetlist || showPageNav)) {
+            if (!editMode && !isTextSong && (inSetlist || showPageNav)) {
                 val step = if (mode == DisplayMode.TWO) 2 else 1
                 val navBtn = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -757,6 +764,8 @@ fun ViewerScreen(
                         text = { OutlinedTextField(value = textInput, onValueChange = { textInput = it }, label = { Text("Notiz") }) },
                     )
                 }
+            } else if (isTextSong) {
+                TextSongContent(sheet?.let { app.library.fileFor(it) }, Modifier.fillMaxSize())
             } else {
                 val key = sheet?.filePath
                 val hlPage = if (showMatchNav && searchIdx in searchResults.indices) searchResults[searchIdx].page else -1
