@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -190,6 +191,10 @@ fun ViewerScreen(
     // Page-grid overview
     var showGrid by remember { mutableStateOf(false) }
     var annotatedPages by remember { mutableStateOf<Set<Int>>(emptySet()) }
+
+    // Go-to-page: tap the bottom-bar page readout to jump to a page number.
+    var showPageInput by remember { mutableStateOf(false) }
+    var pageInput by remember { mutableStateOf("") }
 
     // Custom page order (0-based PDF indices in display order; natural when no override)
     var order by remember { mutableStateOf<List<Int>>(emptyList()) }
@@ -650,7 +655,15 @@ fun ViewerScreen(
                     Spacer(Modifier.weight(1f))
                     if (showPageNav) {
                         TextButton(onClick = { turn(-step, haptic = true) }, enabled = page > 0, colors = navBtn) { Text("‹") }
-                        if (settings.pageNumbers) Text("${page + 1} / ${order.size}", Modifier.align(Alignment.CenterVertically))
+                        if (settings.pageNumbers) {
+                            Text(
+                                "${page + 1} / ${order.size}",
+                                Modifier
+                                    .align(Alignment.CenterVertically)
+                                    .clickable { pageInput = "${page + 1}"; showPageInput = true }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
                         TextButton(onClick = { turn(step, haptic = true) }, enabled = page < order.size - 1, colors = navBtn) { Text("›") }
                     } else if (inSetlist) {
                         Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
@@ -925,6 +938,28 @@ fun ViewerScreen(
                         onClose = { showAudio = false },
                     )
                 }
+            }
+            if (showPageInput) {
+                AlertDialog(
+                    onDismissRequest = { showPageInput = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val n = pageInput.toIntOrNull()
+                            if (n != null && order.isNotEmpty()) jumpToDisplay((n - 1).coerceIn(0, order.size - 1))
+                            showPageInput = false
+                        }) { Text("OK") }
+                    },
+                    dismissButton = { TextButton(onClick = { showPageInput = false }) { Text("Abbrechen") } },
+                    title = { Text("Seite") },
+                    text = {
+                        OutlinedTextField(
+                            value = pageInput,
+                            onValueChange = { pageInput = it.filter(Char::isDigit) },
+                            label = { Text("Seite (1–${order.size})") },
+                            singleLine = true,
+                        )
+                    },
+                )
             }
             if (showGrid) {
                 Dialog(
