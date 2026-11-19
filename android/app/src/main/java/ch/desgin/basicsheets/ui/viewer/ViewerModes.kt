@@ -370,7 +370,18 @@ fun SinglePageView(
             .fillMaxSize()
             .transformable(transform)
             .pointerInput(editLinks, linkPoints, rotation, cropL, cropT, cropR, cropB) {
-                detectTapGestures { pos ->
+                detectTapGestures(
+                    onDoubleTap = { pos ->
+                        if (scale > 1.05f) {
+                            scale = 1f; offset = Offset.Zero
+                        } else {
+                            val z = 2.5f
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            scale = z
+                            offset = (center - pos) * z
+                        }
+                    },
+                ) { pos ->
                     if (scale > 1.05f) return@detectTapGestures
                     val b = bmpState.value
                     if (b != null) {
@@ -467,19 +478,44 @@ fun TwoPageView(
     val rightLinks = linkPoints.filter { it.sourcePage - 1 == rightIdx && it.sourceNx >= 0 }
     val lc = cropFor(leftIdx)
     val rc = cropFor(rightIdx)
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(page) { scale = 1f; offset = Offset.Zero }
+    val transform = rememberTransformableState { zoom, pan, _ ->
+        scale = (scale * zoom).coerceIn(1f, 5f)
+        offset = if (scale > 1f) offset + pan else Offset.Zero
+    }
 
     Box(
         Modifier
             .fillMaxSize()
+            .transformable(transform)
             .pointerInput(pages.size) {
-                detectTapGestures { pos ->
+                detectTapGestures(
+                    onDoubleTap = { pos ->
+                        if (scale > 1.05f) {
+                            scale = 1f; offset = Offset.Zero
+                        } else {
+                            val z = 2.5f
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            scale = z
+                            offset = (center - pos) * z
+                        }
+                    },
+                ) { pos ->
+                    if (scale > 1.05f) return@detectTapGestures
                     val third = size.width / 3f
                     if (pos.x < third) onTurn(-2) else if (pos.x > size.width - third) onTurn(2)
                 }
             },
         contentAlignment = Alignment.Center,
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
+            horizontalArrangement = Arrangement.Center,
+        ) {
             AnnotatedPageCell(
                 left, leftAnno, Modifier.weight(1f),
                 if (leftIdx == highlightPage) highlightBoxes else emptyList(),
