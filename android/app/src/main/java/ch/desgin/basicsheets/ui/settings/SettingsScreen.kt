@@ -86,6 +86,8 @@ fun SettingsScreen() {
 
             SectionHeader("Notizen")
             ToggleRow("Schwebende Werkzeug-Palette", "Runde, verschiebbare Palette statt der unteren Leiste beim Annotieren", settings.floatingAnnotTools) { set(KEY_ANNOT_PALETTE, it.toString()) }
+            ToggleRow("Handballenerkennung", "Nur mit Stift zeichnen – Finger und Handballen werden ignoriert", settings.palmRejection) { set(KEY_PALM_REJECT, it.toString()) }
+            ToggleRow("Stift-Seitentaste radiert", "Seitentaste am Stift gedrückt halten, um statt zu zeichnen zu radieren", settings.penButtonErase) { set(KEY_PEN_BUTTON_ERASE, it.toString()) }
             ActionRow("Notizen sichern", "Alle Anmerkungen in eine Datei exportieren") { backupSave.launch("BasicSheets-Notizen.json") }
             ActionRow("Notizen laden", "Anmerkungen aus einer Sicherung importieren (überschreibt)") { backupLoad.launch(arrayOf("application/json")) }
 

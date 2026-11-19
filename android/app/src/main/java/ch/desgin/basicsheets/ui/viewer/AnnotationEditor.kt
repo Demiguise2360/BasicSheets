@@ -5,7 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -51,8 +51,11 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,6 +74,14 @@ import ch.desgin.basicsheets.pdf.PdfDoc
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+
+/**
+ * True when a stylus side button is held. Android reports the primary/secondary stylus buttons as
+ * bits 5/6 of the button state; some pens report the side button as the secondary/tertiary button,
+ * so we accept those too.
+ */
+private fun PointerButtons.stylusSidePressed(): Boolean =
+    isPressed(5) || isPressed(6) || isSecondaryPressed || isTertiaryPressed
 
 /** The current page shown fit-to-width with a draw overlay matching its bounds. */
 @Composable
@@ -92,6 +103,8 @@ fun EditablePage(
     eraserBox: Boolean,
     onEraseBox: (Float, Float, Float, Float) -> Unit,
     onTapAt: (Float, Float) -> Unit,
+    palmReject: Boolean = false,
+    penButtonErase: Boolean = false,
 ) {
     val bmp = pageBitmap(doc, page, renderPx)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -106,6 +119,7 @@ fun EditablePage(
                 AnnotationCanvas(
                     data, tool, color, sizeFrac, fill,
                     onBeginStroke, onAddPen, onAddMarker, onAddShape, onAddHairpin, onEraseAt, eraserBox, onEraseBox, onTapAt,
+                    palmReject, penButtonErase,
                     Modifier.matchParentSize(),
                 )
             }
@@ -131,6 +145,8 @@ private fun AnnotationCanvas(
     eraserBox: Boolean,
     onEraseBox: (Float, Float, Float, Float) -> Unit,
     onTapAt: (Float, Float) -> Unit,
+    palmReject: Boolean,
+    penButtonErase: Boolean,
     modifier: Modifier,
 ) {
     var livePts by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -145,47 +161,73 @@ private fun AnnotationCanvas(
                     if (tool.isTap) onTapAt(pos.x / size.width, pos.y / size.height)
                 }
             }
-            .pointerInput(tool, color, sizeFrac, fill, eraserBox) {
-                detectDragGestures(
-                    onDragStart = { pos ->
-                        if (!tool.isTap) onBeginStroke()
-                        when {
-                            tool.isStroke -> { livePts = listOf(pos); livePressures = listOf(1f) }
-                            tool.isTwoPoint -> { liveStart = pos; liveEnd = pos }
-                            tool == Tool.ERASER -> if (eraserBox) { liveStart = pos; liveEnd = pos } else onEraseAt(pos.x / size.width, pos.y / size.height)
-                            else -> {}
+            .pointerInput(tool, color, sizeFrac, fill, eraserBox, palmReject, penButtonErase) {
+                // Raw pointer loop (not detectDragGestures) so we can read the tool type and the
+                // stylus side-button state at touch-down — needed for palm rejection and the
+                // pen-button eraser. Behaviour with both settings off matches the old drag gestures.
+                awaitEachGesture {
+                    var ev = awaitPointerEvent()
+                    val down = ev.changes.firstOrNull { it.changedToDown() } ?: return@awaitEachGesture
+                    val stylus = down.type == PointerType.Stylus
+                    // Palm rejection (pen-only): ignore finger/touch strokes while the setting is on.
+                    if (palmReject && !stylus) return@awaitEachGesture
+                    // Pen side-button → erase regardless of the selected tool.
+                    val sideErase = stylus && penButtonErase && ev.buttons.stylusSidePressed()
+                    val effTool = if (sideErase) Tool.ERASER else tool
+                    // Tap tools (stamp/text) are placed by the separate tap handler — leave them to it.
+                    if (effTool.isTap) return@awaitEachGesture
+
+                    val pid = down.id
+                    onBeginStroke()
+                    when {
+                        effTool.isStroke -> { livePts = listOf(down.position); livePressures = listOf(1f) }
+                        effTool.isTwoPoint -> { liveStart = down.position; liveEnd = down.position }
+                        effTool == Tool.ERASER -> if (eraserBox) { liveStart = down.position; liveEnd = down.position } else onEraseAt(down.position.x / size.width, down.position.y / size.height)
+                        else -> {}
+                    }
+                    down.consume()
+
+                    var canceled = false
+                    while (true) {
+                        ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == pid }
+                        if (ch == null) { canceled = true; break }
+                        if (!ch.pressed) break   // pointer lifted
+                        if (ch.positionChanged()) {
+                            when {
+                                effTool.isStroke -> {
+                                    livePts = livePts + ch.position
+                                    livePressures = livePressures + if (ch.type == PointerType.Stylus && ch.pressure in 0.02f..1f) ch.pressure else 1f
+                                }
+                                effTool.isTwoPoint -> liveEnd = ch.position
+                                effTool == Tool.ERASER -> if (eraserBox) liveEnd = ch.position else onEraseAt(ch.position.x / size.width, ch.position.y / size.height)
+                                else -> {}
+                            }
+                            ch.consume()
                         }
-                    },
-                    onDrag = { change, _ ->
-                        when {
-                            tool.isStroke -> { livePts = livePts + change.position; livePressures = livePressures + if (change.type == PointerType.Stylus && change.pressure in 0.02f..1f) change.pressure else 1f }
-                            tool.isTwoPoint -> liveEnd = change.position
-                            tool == Tool.ERASER -> if (eraserBox) liveEnd = change.position else onEraseAt(change.position.x / size.width, change.position.y / size.height)
-                            else -> {}
-                        }
-                    },
-                    onDragEnd = {
+                    }
+
+                    if (!canceled) {
                         val w = size.width.toFloat()
                         val h = size.height.toFloat()
                         val s = liveStart
                         val e = liveEnd
                         when {
-                            tool == Tool.PEN && livePts.size > 1 ->
+                            effTool == Tool.PEN && livePts.size > 1 ->
                                 onAddPen(PenStroke(livePts.mapIndexed { i, o -> Pt(o.x / w, o.y / h, livePressures.getOrElse(i) { 1f }) }, color.toArgb(), sizeFrac))
-                            tool == Tool.MARKER && livePts.size > 1 ->
+                            effTool == Tool.MARKER && livePts.size > 1 ->
                                 onAddMarker(MarkerStroke(livePts.map { Pt(it.x / w, it.y / h) }, color.toArgb(), sizeFrac))
-                            tool.isTwoPoint && s != null && e != null ->
-                                if (tool == Tool.CRESCENDO || tool == Tool.DECRESCENDO)
-                                    onAddHairpin(Hairpin(s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, tool == Tool.CRESCENDO))
+                            effTool.isTwoPoint && s != null && e != null ->
+                                if (effTool == Tool.CRESCENDO || effTool == Tool.DECRESCENDO)
+                                    onAddHairpin(Hairpin(s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, effTool == Tool.CRESCENDO))
                                 else
-                                    onAddShape(ShapeAnnot(tool.shapeKind, s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, fill))
-                            tool == Tool.ERASER && eraserBox && s != null && e != null ->
+                                    onAddShape(ShapeAnnot(effTool.shapeKind, s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, fill))
+                            effTool == Tool.ERASER && eraserBox && s != null && e != null ->
                                 onEraseBox(s.x / w, s.y / h, e.x / w, e.y / h)
                         }
-                        livePts = emptyList(); livePressures = emptyList(); liveStart = null; liveEnd = null
-                    },
-                    onDragCancel = { livePts = emptyList(); livePressures = emptyList(); liveStart = null; liveEnd = null },
-                )
+                    }
+                    livePts = emptyList(); livePressures = emptyList(); liveStart = null; liveEnd = null
+                }
             },
     ) {
         val w = size.width

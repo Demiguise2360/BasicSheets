@@ -589,6 +589,8 @@ fun ViewerScreen(
                     eraserBox = eraserBox,
                     onEraseBox = { l, t, r, b -> eraseInBox(l, t, r, b) },
                     onTapAt = { x, y -> onTapAt(x, y) },
+                    palmReject = settings.palmRejection,
+                    penButtonErase = settings.penButtonErase,
                 )
                 if (settings.floatingAnnotTools) {
                     AnnotationPalette(

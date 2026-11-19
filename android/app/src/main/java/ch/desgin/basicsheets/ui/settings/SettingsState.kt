@@ -15,6 +15,8 @@ const val KEY_ANNOT_PALETTE = "Schwebende Palette"
 const val KEY_WARM = "Warmer Lesemodus"
 const val KEY_DIM = "Abdunkeln"
 const val KEY_VOLUME_KEYS = "Lautstärketasten blättern"
+const val KEY_PALM_REJECT = "Handballenerkennung"
+const val KEY_PEN_BUTTON_ERASE = "Stift-Taste radiert"
 
 /** An immutable view of the settings, with typed accessors; provided app-wide via [LocalSettings]. */
 data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
@@ -45,6 +47,11 @@ data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
 
     /** Hardware volume keys turn pages (volume-down = next, volume-up = previous). */
     val volumeKeysPaging: Boolean get() = bool(KEY_VOLUME_KEYS, false)
+
+    /** Draw with a stylus only — finger/palm touches are ignored while annotating (palm rejection). */
+    val palmRejection: Boolean get() = bool(KEY_PALM_REJECT, false)
+    /** A stylus side button erases instead of drawing, whatever tool is selected. */
+    val penButtonErase: Boolean get() = bool(KEY_PEN_BUTTON_ERASE, false)
 }
 
 val LocalSettings = compositionLocalOf { SettingsSnapshot() }
