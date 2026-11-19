@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Icon
@@ -78,6 +79,7 @@ fun AnnotationPalette(
     onEraserBox: (Boolean) -> Unit,
     onOpenStamps: () -> Unit,
     onUndo: () -> Unit,
+    onRedo: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -164,6 +166,10 @@ fun AnnotationPalette(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RoundBtn(onClick = onUndo) {
                         Icon(Icons.Filled.Undo, contentDescription = "Rückgängig", modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    RoundBtn(onClick = onRedo) {
+                        Icon(Icons.Filled.Redo, contentDescription = "Wiederholen", modifier = Modifier.size(20.dp))
                     }
                     Spacer(Modifier.weight(1f))
                     Box(

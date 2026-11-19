@@ -217,11 +217,13 @@ private fun AnnotationCanvas(
                                 onAddPen(PenStroke(livePts.mapIndexed { i, o -> Pt(o.x / w, o.y / h, livePressures.getOrElse(i) { 1f }) }, color.toArgb(), sizeFrac))
                             effTool == Tool.MARKER && livePts.size > 1 ->
                                 onAddMarker(MarkerStroke(livePts.map { Pt(it.x / w, it.y / h) }, color.toArgb(), sizeFrac))
-                            effTool.isTwoPoint && s != null && e != null ->
+                            effTool.isTwoPoint && s != null && e != null -> {
+                                val es = if (effTool == Tool.CRESCENDO || effTool == Tool.DECRESCENDO) e else snapShapeEnd(effTool, s, e)
                                 if (effTool == Tool.CRESCENDO || effTool == Tool.DECRESCENDO)
-                                    onAddHairpin(Hairpin(s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, effTool == Tool.CRESCENDO))
+                                    onAddHairpin(Hairpin(s.x / w, s.y / h, es.x / w, es.y / h, color.toArgb(), sizeFrac, effTool == Tool.CRESCENDO))
                                 else
-                                    onAddShape(ShapeAnnot(effTool.shapeKind, s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, fill))
+                                    onAddShape(ShapeAnnot(effTool.shapeKind, s.x / w, s.y / h, es.x / w, es.y / h, color.toArgb(), sizeFrac, fill))
+                            }
                             effTool == Tool.ERASER && eraserBox && s != null && e != null ->
                                 onEraseBox(s.x / w, s.y / h, e.x / w, e.y / h)
                         }
@@ -253,11 +255,13 @@ private fun AnnotationCanvas(
                 val c = if (tool == Tool.MARKER) color.copy(alpha = 0.35f) else color
                 drawPath(path, c, style = Stroke(width = max(1f, sizeFrac * w), cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
-            tool.isTwoPoint && s != null && e != null ->
+            tool.isTwoPoint && s != null && e != null -> {
+                val es = if (tool == Tool.CRESCENDO || tool == Tool.DECRESCENDO) e else snapShapeEnd(tool, s, e)
                 if (tool == Tool.CRESCENDO || tool == Tool.DECRESCENDO)
-                    drawHairpin(Hairpin(s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, tool == Tool.CRESCENDO), w, h)
+                    drawHairpin(Hairpin(s.x / w, s.y / h, es.x / w, es.y / h, color.toArgb(), sizeFrac, tool == Tool.CRESCENDO), w, h)
                 else
-                    drawShapeAnnot(ShapeAnnot(tool.shapeKind, s.x / w, s.y / h, e.x / w, e.y / h, color.toArgb(), sizeFrac, fill), w, h, alpha = 0.75f)
+                    drawShapeAnnot(ShapeAnnot(tool.shapeKind, s.x / w, s.y / h, es.x / w, es.y / h, color.toArgb(), sizeFrac, fill), w, h, alpha = 0.75f)
+            }
             tool == Tool.ERASER && eraserBox && s != null && e != null -> {
                 val l = min(s.x, e.x); val t = min(s.y, e.y)
                 val bw = abs(e.x - s.x); val bh = abs(e.y - s.y)
@@ -284,6 +288,7 @@ fun AnnotationToolbar(
     onEraserBox: (Boolean) -> Unit,
     onOpenStamps: () -> Unit,
     onUndo: () -> Unit,
+    onRedo: () -> Unit,
     onDone: () -> Unit,
 ) {
     Surface(
@@ -334,6 +339,7 @@ fun AnnotationToolbar(
                     FilterChip(selected = eraserBox, onClick = { onEraserBox(!eraserBox) }, label = { Text("Kasten") }, colors = petrolChipColors(), border = null)
                 }
                 TextButton(onClick = onUndo, colors = btn) { Text("↶") }
+                TextButton(onClick = onRedo, colors = btn) { Text("↷") }
                 TextButton(onClick = onDone, colors = btn) { Text("Fertig") }
             }
         }
@@ -382,3 +388,31 @@ fun StampPickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
 val PEN_COLORS = listOf(
     Color.Black, Color.Red, Color(0xFF1E88E5), Color(0xFF2E7D32), Color(0xFFF59E0B), Color(0xFFFACC15),
 )
+
+/** Snap a shape's end point: line/arrow to H/V within ~8°, rect/ellipse to a square within ~12%. */
+private fun snapShapeEnd(tool: Tool, s: Offset, e: Offset): Offset {
+    val dx = e.x - s.x
+    val dy = e.y - s.y
+    val adx = abs(dx)
+    val ady = abs(dy)
+    return when (tool) {
+        Tool.LINE, Tool.ARROW -> {
+            val tan8 = 0.1405f
+            when {
+                adx > 10f && ady <= adx * tan8 -> Offset(e.x, s.y)   // snap horizontal
+                ady > 10f && adx <= ady * tan8 -> Offset(s.x, e.y)   // snap vertical
+                else -> e
+            }
+        }
+        Tool.RECT, Tool.ELLIPSE -> {
+            val big = max(adx, ady)
+            val small = min(adx, ady)
+            if (big > 10f && small >= big * 0.88f) {
+                Offset(s.x + big * (if (dx < 0) -1f else 1f), s.y + big * (if (dy < 0) -1f else 1f))
+            } else {
+                e
+            }
+        }
+        else -> e
+    }
+}

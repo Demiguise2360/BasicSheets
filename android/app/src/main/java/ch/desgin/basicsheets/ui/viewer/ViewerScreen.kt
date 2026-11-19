@@ -158,6 +158,7 @@ fun ViewerScreen(
 
     // Annotation edit state
     var editMode by remember { mutableStateOf(false) }
+    var hideAnnotations by remember { mutableStateOf(false) }   // clean-page study view (markers/highlights stay)
     var annotations by remember { mutableStateOf(PageAnnotations()) }
     var tool by remember { mutableStateOf(Tool.PEN) }
     var inkColor by remember { mutableStateOf(Color.Red) }
@@ -170,6 +171,7 @@ fun ViewerScreen(
     var textInput by remember { mutableStateOf("") }
     var annoVersion by remember { mutableIntStateOf(0) }   // bumped on edit exit → reading overlays reload
     val undoStack = remember { mutableStateListOf<PageAnnotations>() }
+    val redoStack = remember { mutableStateListOf<PageAnnotations>() }
 
     // Bookmarks + outline
     var showBookmarks by remember { mutableStateOf(false) }
@@ -283,6 +285,7 @@ fun ViewerScreen(
         if (editMode && !key.isNullOrEmpty()) {
             annotations = app.annotations.load(key, order.getOrElse(page) { page })
             undoStack.clear()
+            redoStack.clear()
         }
     }
 
@@ -392,6 +395,7 @@ fun ViewerScreen(
     }
     fun pushUndo() {
         undoStack.add(annotations)
+        redoStack.clear()
         if (undoStack.size > 50) undoStack.removeAt(0)
     }
     fun addPen(s: PenStroke) { annotations = annotations.copy(penStrokes = annotations.penStrokes + s); saveAnn() }
@@ -443,7 +447,10 @@ fun ViewerScreen(
         if (next != before) { annotations = next; saveAnn() }
     }
     fun undoAnn() {
-        if (undoStack.isNotEmpty()) { annotations = undoStack.removeAt(undoStack.size - 1); saveAnn() }
+        if (undoStack.isNotEmpty()) { redoStack.add(annotations); annotations = undoStack.removeAt(undoStack.size - 1); saveAnn() }
+    }
+    fun redoAnn() {
+        if (redoStack.isNotEmpty()) { undoStack.add(annotations); annotations = redoStack.removeAt(redoStack.size - 1); saveAnn() }
     }
     fun jumpToDisplay(target: Int) {
         page = target.coerceIn(0, maxOf(0, order.size - 1))
@@ -632,6 +639,10 @@ fun ViewerScreen(
                                     text = { Text("Drehen") },
                                     onClick = { showModeMenu = false; rotatePage() },
                                 )
+                                DropdownMenuItem(
+                                    text = { Text(if (hideAnnotations) "Notizen anzeigen" else "Notizen ausblenden") },
+                                    onClick = { showModeMenu = false; hideAnnotations = !hideAnnotations },
+                                )
                             }
                         }
                         TextButton(
@@ -719,7 +730,7 @@ fun ViewerScreen(
                     AnnotationPalette(
                         tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill, eraserBox = eraserBox,
                         onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it }, onEraserBox = { eraserBox = it },
-                        onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onDone = { exitEdit() },
+                        onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onRedo = { redoAnn() }, onDone = { exitEdit() },
                         modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
                     )
                 } else {
@@ -727,7 +738,7 @@ fun ViewerScreen(
                         AnnotationToolbar(
                             tool = tool, color = inkColor, sizeLevel = sizeLevel, fill = fill, eraserBox = eraserBox, stampType = stampType,
                             onTool = { tool = it }, onColor = { inkColor = it }, onSize = { sizeLevel = it }, onFill = { fill = it }, onEraserBox = { eraserBox = it },
-                            onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onDone = { exitEdit() },
+                            onOpenStamps = { showStamps = true }, onUndo = { undoAnn() }, onRedo = { redoAnn() }, onDone = { exitEdit() },
                         )
                     }
                 }
@@ -754,11 +765,13 @@ fun ViewerScreen(
                 // otherwise each mode applies the stored per-page crop.
                 val singleCrop = storedCropFor(pdfPage)
                 val cropFor: (Int) -> Rect = { pdf -> storedCropFor(pdf) }
+                // "Notizen ausblenden": feed an empty annotation source so no marks draw (markers/highlights still do).
+                val annoRepo = if (hideAnnotations) null else app.annotations
                 if (showCrop) {
                     CropEditor(doc, pdfPage, renderPx, cropL, cropT, cropR, cropB) { l, t, r, b -> cropL = l; cropT = t; cropR = r; cropB = b }
                 } else when (mode) {
                     DisplayMode.SINGLE -> SinglePageView(
-                        doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
+                        doc, page, order, renderPx, annoRepo, key, annoVersion, hlPage, hlBoxes,
                         linkPoints.filter { it.sourcePage - 1 == pdfPage && it.sourceNx >= 0 },
                         editLinks,
                         onMarkerTap = { vb -> if (editLinks) deleteLink(vb) else jumpLink(vb) },
@@ -767,19 +780,19 @@ fun ViewerScreen(
                         rotation = sheet?.rotation ?: 0,
                     ) { turn(it, haptic = true) }
                     DisplayMode.TWO -> TwoPageView(
-                        doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
+                        doc, page, order, renderPx, annoRepo, key, annoVersion, hlPage, hlBoxes,
                         cropFor, sheet?.rotation ?: 0,
                         linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
                     ) { turn(it, haptic = true) }
                     DisplayMode.HALF -> HalfTurnView(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
-                        app.annotations, key, annoVersion, hlPage, hlBoxes,
+                        annoRepo, key, annoVersion, hlPage, hlBoxes,
                         cropFor,
                         rotation = sheet?.rotation ?: 0,
                         linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
-                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropFor, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
-                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropFor, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
+                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, annoRepo, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropFor, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, annoRepo, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropFor, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
                 }
                 // Reading-comfort overlays over the page; drawn before the panels so chrome stays bright,
                 // and with no pointer input so page-turn taps pass straight through.
