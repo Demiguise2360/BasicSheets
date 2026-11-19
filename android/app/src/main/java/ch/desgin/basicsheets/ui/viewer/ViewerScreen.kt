@@ -235,6 +235,14 @@ fun ViewerScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // Remember the backing-track position per audio file so reopening resumes where you left off.
+    fun audioPosKey(): String? = sheet?.audioPath?.takeIf { it.isNotBlank() }?.let { "audioPos:$it" }
+    fun saveAudioPos() {
+        val key = audioPosKey() ?: return
+        val pos = audioCtl.positionMs
+        if (pos > 1000) scope.launch { app.settings.set(key, pos.toString()) }
+    }
+
     val renderPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp.toPx() * 2f).toInt() }
 
     LaunchedEffect(sheetId) {
@@ -307,10 +315,23 @@ fun ViewerScreen(
 
     LaunchedEffect(sheet?.audioPath) {
         val f = sheet?.let { app.library.audioFileFor(it) }
-        if (f != null) audioCtl.load(f) else audioCtl.clear()
+        if (f != null) {
+            audioCtl.load(f)
+            val key = audioPosKey()
+            val saved = if (key != null) app.settings.get(key, "0").toLongOrNull() ?: 0L else 0L
+            if (saved > 1000) audioCtl.seekTo(saved)
+        } else {
+            audioCtl.clear()
+        }
     }
     LaunchedEffect(audioCtl.isPlaying) {
-        while (audioCtl.isPlaying) { audioCtl.tick(); delay(200) }
+        var ticks = 0
+        while (audioCtl.isPlaying) {
+            audioCtl.tick()
+            delay(200)
+            if (++ticks >= 15) { ticks = 0; saveAudioPos() }   // persist ~every 3s while playing
+        }
+        saveAudioPos()   // and once more on pause / stop
     }
 
     LaunchedEffect(showGrid, sheet?.filePath) {
