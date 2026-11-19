@@ -132,7 +132,7 @@ fun LibraryScreen(
         when (tabKey) {
             "setlists" -> creatingSetlist = true
             "sammlungen" -> creatingCollection = true
-            else -> picker.launch(arrayOf("application/pdf"))
+            else -> picker.launch(arrayOf("application/pdf", "image/*"))
         }
     }
 

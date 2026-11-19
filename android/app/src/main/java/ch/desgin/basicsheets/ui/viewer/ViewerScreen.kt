@@ -276,10 +276,14 @@ fun ViewerScreen(
         delay(300)
         val s = sheet
         if (s != null) {
-            textIndex.ensure(app.library.fileFor(s), s.filePath)
-            val hits = textIndex.search(q)
-            searchResults = hits
-            searchBoxes = textIndex.locateAll(q, hits.map { it.page }.toSet())
+            // Guard the whole PDF-text path: image / multi-file songs have no extractable text, and
+            // a parse failure must not crash the search coroutine — just show no results.
+            runCatching {
+                textIndex.ensure(app.library.fileFor(s), s.filePath)
+                val hits = textIndex.search(q)
+                searchResults = hits
+                searchBoxes = textIndex.locateAll(q, hits.map { it.page }.toSet())
+            }.onFailure { searchResults = emptyList(); searchBoxes = emptyMap() }
         }
         searching = false
     }

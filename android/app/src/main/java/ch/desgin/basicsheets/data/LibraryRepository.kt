@@ -76,11 +76,12 @@ class LibraryRepository(
         return updated
     }
 
-    /** Copy a picked PDF into app storage and create a Sheet. Returns the new row id, or null. */
-    suspend fun importPdf(context: Context, uri: Uri): Long? {
+    /** Copy a picked PDF or image into app storage and create a Sheet. Returns the new row id, or null. */
+    suspend fun importFile(context: Context, uri: Uri): Long? {
         val display = queryDisplayName(context, uri) ?: "Noten.pdf"
         val base = display.substringBeforeLast('.').ifBlank { "Noten" }
-        val fileName = uniqueFileName(base)
+        val ext = display.substringAfterLast('.', "pdf").lowercase().ifBlank { "pdf" }
+        val fileName = uniqueFileName(base, ext)
         val dest = File(sheetsDir, fileName)
         val copied = runCatching {
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -95,9 +96,10 @@ class LibraryRepository(
         return db.sheets().insert(Sheet(name = base, filePath = fileName))
     }
 
-    private fun uniqueFileName(base: String): String {
+    private fun uniqueFileName(base: String, ext: String = "pdf"): String {
         val safe = base.replace(Regex("[^A-Za-z0-9 _.-]"), "_").trim().ifBlank { "Noten" }
-        return "$safe-${System.currentTimeMillis()}.pdf"
+        val cleanExt = ext.replace(Regex("[^A-Za-z0-9]"), "").ifBlank { "pdf" }
+        return "$safe-${System.currentTimeMillis()}.$cleanExt"
     }
 
     private fun queryDisplayName(context: Context, uri: Uri): String? = runCatching {
