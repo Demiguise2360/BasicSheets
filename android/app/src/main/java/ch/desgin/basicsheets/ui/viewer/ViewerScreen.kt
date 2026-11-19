@@ -128,6 +128,7 @@ fun ViewerScreen(
     val focusRequester = remember { FocusRequester() }
     var linkPoints by remember { mutableStateOf<List<ViewerButton>>(emptyList()) }
     var editLinks by remember { mutableStateOf(false) }
+    var showLinkList by remember { mutableStateOf(false) }
     var pendingLink by remember { mutableStateOf<Offset?>(null) }
     var linkTargetInput by remember { mutableStateOf("") }
     var cropL by remember { mutableFloatStateOf(0f) }
@@ -505,6 +506,10 @@ fun ViewerScreen(
                                     onClick = { showModeMenu = false; editLinks = !editLinks; if (editLinks && mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE) },
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("Sprungpunkte verwalten") },
+                                    onClick = { showModeMenu = false; showLinkList = true },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Zuschneiden") },
                                     onClick = { showModeMenu = false; if (mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE); showCrop = true },
                                 )
@@ -727,6 +732,15 @@ fun ViewerScreen(
                     page = page + 1,
                     onSave = { label, color -> addBookmark(label, color) },
                     onDismiss = { addingBookmark = false },
+                )
+            }
+            if (showLinkList) {
+                LinkPointSheet(
+                    linkPoints = linkPoints,
+                    onGoToSource = { showLinkList = false; jumpToPdf((it.sourcePage - 1).coerceAtLeast(0)) },
+                    onDelete = { deleteLink(it) },
+                    onEdit = { showLinkList = false; editLinks = true; if (mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE) },
+                    onDismiss = { showLinkList = false },
                 )
             }
             pendingLink?.let { pos ->
