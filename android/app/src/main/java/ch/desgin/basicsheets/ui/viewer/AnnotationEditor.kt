@@ -49,7 +49,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerType
@@ -103,6 +106,7 @@ fun EditablePage(
     eraserBox: Boolean,
     onEraseBox: (Float, Float, Float, Float) -> Unit,
     onTapAt: (Float, Float) -> Unit,
+    onMove: (String, Int, Float, Float) -> Unit = { _, _, _, _ -> },
     palmReject: Boolean = false,
     penButtonErase: Boolean = false,
 ) {
@@ -119,7 +123,7 @@ fun EditablePage(
                 AnnotationCanvas(
                     data, tool, color, sizeFrac, fill,
                     onBeginStroke, onAddPen, onAddMarker, onAddShape, onAddHairpin, onEraseAt, eraserBox, onEraseBox, onTapAt,
-                    palmReject, penButtonErase,
+                    onMove, palmReject, penButtonErase,
                     Modifier.matchParentSize(),
                 )
             }
@@ -145,6 +149,7 @@ private fun AnnotationCanvas(
     eraserBox: Boolean,
     onEraseBox: (Float, Float, Float, Float) -> Unit,
     onTapAt: (Float, Float) -> Unit,
+    onMove: (String, Int, Float, Float) -> Unit,
     palmReject: Boolean,
     penButtonErase: Boolean,
     modifier: Modifier,
@@ -153,6 +158,8 @@ private fun AnnotationCanvas(
     var livePressures by remember { mutableStateOf<List<Float>>(emptyList()) }
     var liveStart by remember { mutableStateOf<Offset?>(null) }
     var liveEnd by remember { mutableStateOf<Offset?>(null) }
+    var moveTarget by remember { mutableStateOf<MoveTarget?>(null) }
+    var moveDelta by remember { mutableStateOf(Offset.Zero) }
 
     Canvas(
         modifier
@@ -178,11 +185,12 @@ private fun AnnotationCanvas(
                     if (effTool.isTap) return@awaitEachGesture
 
                     val pid = down.id
-                    onBeginStroke()
+                    if (effTool != Tool.MOVE) onBeginStroke()
                     when {
                         effTool.isStroke -> { livePts = listOf(down.position); livePressures = listOf(1f) }
                         effTool.isTwoPoint -> { liveStart = down.position; liveEnd = down.position }
                         effTool == Tool.ERASER -> if (eraserBox) { liveStart = down.position; liveEnd = down.position } else onEraseAt(down.position.x / size.width, down.position.y / size.height)
+                        effTool == Tool.MOVE -> { moveTarget = hitTestAnnotation(data, down.position.x / size.width, down.position.y / size.height); moveDelta = Offset.Zero }
                         else -> {}
                     }
                     down.consume()
@@ -201,6 +209,7 @@ private fun AnnotationCanvas(
                                 }
                                 effTool.isTwoPoint -> liveEnd = ch.position
                                 effTool == Tool.ERASER -> if (eraserBox) liveEnd = ch.position else onEraseAt(ch.position.x / size.width, ch.position.y / size.height)
+                                effTool == Tool.MOVE -> if (moveTarget != null) moveDelta = ch.position - down.position
                                 else -> {}
                             }
                             ch.consume()
@@ -226,9 +235,11 @@ private fun AnnotationCanvas(
                             }
                             effTool == Tool.ERASER && eraserBox && s != null && e != null ->
                                 onEraseBox(s.x / w, s.y / h, e.x / w, e.y / h)
+                            effTool == Tool.MOVE && moveTarget != null && moveDelta != Offset.Zero ->
+                                onMove(moveTarget!!.kind, moveTarget!!.index, moveDelta.x / w, moveDelta.y / h)
                         }
                     }
-                    livePts = emptyList(); livePressures = emptyList(); liveStart = null; liveEnd = null
+                    livePts = emptyList(); livePressures = emptyList(); liveStart = null; liveEnd = null; moveTarget = null; moveDelta = Offset.Zero
                 }
             },
     ) {
@@ -267,6 +278,11 @@ private fun AnnotationCanvas(
                 val bw = abs(e.x - s.x); val bh = abs(e.y - s.y)
                 drawRect(Color.Red.copy(alpha = 0.10f), topLeft = Offset(l, t), size = Size(bw, bh))
                 drawRect(Color.Red, topLeft = Offset(l, t), size = Size(bw, bh), style = Stroke(width = 2f))
+            }
+            tool == Tool.MOVE && moveTarget != null && moveDelta != Offset.Zero -> {
+                withTransform({ translate(moveDelta.x, moveDelta.y) }) {
+                    drawMoveTarget(data, moveTarget!!, w, h)
+                }
             }
         }
     }
@@ -314,6 +330,7 @@ fun AnnotationToolbar(
                 ToolChip("Pfeil", tool == Tool.ARROW) { onTool(Tool.ARROW) }
                 ToolChip("Rechteck", tool == Tool.RECT) { onTool(Tool.RECT) }
                 ToolChip("Ellipse", tool == Tool.ELLIPSE) { onTool(Tool.ELLIPSE) }
+                ToolChip("Verschieben", tool == Tool.MOVE) { onTool(Tool.MOVE) }
             }
             Spacer(Modifier.height(6.dp))
             Row(
@@ -414,5 +431,53 @@ private fun snapShapeEnd(tool: Tool, s: Offset, e: Offset): Offset {
             }
         }
         else -> e
+    }
+}
+
+/** An identified annotation (list kind + index) grabbed by the move tool. */
+private data class MoveTarget(val kind: String, val index: Int)
+
+/** Distance from (px,py) to segment (x1,y1)-(x2,y2), all normalized [0,1]. */
+private fun segDist(px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2: Float): Float {
+    val dx = x2 - x1
+    val dy = y2 - y1
+    val len2 = dx * dx + dy * dy
+    if (len2 == 0f) return kotlin.math.hypot(px - x1, py - y1)
+    val t = (((px - x1) * dx + (py - y1) * dy) / len2).coerceIn(0f, 1f)
+    return kotlin.math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+}
+
+/** Topmost annotation under the normalized point, or null — tested in reverse draw order. */
+private fun hitTestAnnotation(d: PageAnnotations, nx: Float, ny: Float): MoveTarget? {
+    val r = 0.03f
+    d.textData.indexOfLast { t -> ny >= t.y - 0.3f * t.fontSize && ny <= t.y + 1.3f * t.fontSize && nx >= t.x - 0.02f && nx <= t.x + max(0.08f, t.text.length * t.fontSize * 0.6f) }
+        .let { if (it >= 0) return MoveTarget("text", it) }
+    d.stampData.indexOfLast { s -> abs(s.x - nx) < r && abs(s.y - ny) < r * 2 }
+        .let { if (it >= 0) return MoveTarget("stamp", it) }
+    d.hairpinData.indexOfLast { h -> segDist(nx, ny, h.x1, h.y1, h.x2, h.y2) < r }
+        .let { if (it >= 0) return MoveTarget("hairpin", it) }
+    d.shapeData.indexOfLast { s ->
+        if (s.kind == "rect" || s.kind == "ellipse") {
+            nx >= min(s.x1, s.x2) - r && nx <= max(s.x1, s.x2) + r && ny >= min(s.y1, s.y2) - r && ny <= max(s.y1, s.y2) + r
+        } else {
+            segDist(nx, ny, s.x1, s.y1, s.x2, s.y2) < r
+        }
+    }.let { if (it >= 0) return MoveTarget("shape", it) }
+    d.penStrokes.indexOfLast { st -> st.points.any { p -> abs(p.x - nx) < r && abs(p.y - ny) < r } }
+        .let { if (it >= 0) return MoveTarget("pen", it) }
+    d.markerData.indexOfLast { m -> m.points.any { p -> abs(p.x - nx) < r && abs(p.y - ny) < r } }
+        .let { if (it >= 0) return MoveTarget("marker", it) }
+    return null
+}
+
+/** Draw only the grabbed annotation (the drag ghost; caller has already translated by the delta). */
+private fun DrawScope.drawMoveTarget(d: PageAnnotations, mt: MoveTarget, w: Float, h: Float) {
+    when (mt.kind) {
+        "text" -> d.textData.getOrNull(mt.index)?.let { drawTextAnnot(it, w, h) }
+        "stamp" -> d.stampData.getOrNull(mt.index)?.let { drawStampAnnot(it, w, h) }
+        "hairpin" -> d.hairpinData.getOrNull(mt.index)?.let { drawHairpin(it, w, h) }
+        "shape" -> d.shapeData.getOrNull(mt.index)?.let { drawShapeAnnot(it, w, h) }
+        "pen" -> d.penStrokes.getOrNull(mt.index)?.let { drawPenStroke(it, w, h) }
+        "marker" -> d.markerData.getOrNull(mt.index)?.let { drawMarkerStroke(it, w, h) }
     }
 }

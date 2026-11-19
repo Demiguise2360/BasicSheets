@@ -478,6 +478,19 @@ fun ViewerScreen(
         )
         if (next != before) { annotations = next; saveAnn() }
     }
+    fun moveAnnotation(kind: String, index: Int, dxn: Float, dyn: Float) {
+        pushUndo()
+        annotations = when (kind) {
+            "text" -> annotations.copy(textData = annotations.textData.mapIndexed { i, t -> if (i == index) t.copy(x = t.x + dxn, y = t.y + dyn) else t })
+            "stamp" -> annotations.copy(stampData = annotations.stampData.mapIndexed { i, s -> if (i == index) s.copy(x = s.x + dxn, y = s.y + dyn) else s })
+            "hairpin" -> annotations.copy(hairpinData = annotations.hairpinData.mapIndexed { i, h -> if (i == index) h.copy(x1 = h.x1 + dxn, y1 = h.y1 + dyn, x2 = h.x2 + dxn, y2 = h.y2 + dyn) else h })
+            "shape" -> annotations.copy(shapeData = annotations.shapeData.mapIndexed { i, s -> if (i == index) s.copy(x1 = s.x1 + dxn, y1 = s.y1 + dyn, x2 = s.x2 + dxn, y2 = s.y2 + dyn) else s })
+            "pen" -> annotations.copy(penStrokes = annotations.penStrokes.mapIndexed { i, s -> if (i == index) s.copy(points = s.points.map { it.copy(x = it.x + dxn, y = it.y + dyn) }) else s })
+            "marker" -> annotations.copy(markerData = annotations.markerData.mapIndexed { i, m -> if (i == index) m.copy(points = m.points.map { it.copy(x = it.x + dxn, y = it.y + dyn) }) else m })
+            else -> annotations
+        }
+        saveAnn()
+    }
     fun undoAnn() {
         if (undoStack.isNotEmpty()) { redoStack.add(annotations); annotations = undoStack.removeAt(undoStack.size - 1); saveAnn() }
     }
@@ -757,6 +770,7 @@ fun ViewerScreen(
                     eraserBox = eraserBox,
                     onEraseBox = { l, t, r, b -> eraseInBox(l, t, r, b) },
                     onTapAt = { x, y -> onTapAt(x, y) },
+                    onMove = { kind, i, dx, dy -> moveAnnotation(kind, i, dx, dy) },
                     palmReject = settings.palmRejection,
                     penButtonErase = settings.penButtonErase,
                 )

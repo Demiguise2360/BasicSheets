@@ -45,7 +45,7 @@ data class PageAnnotations(
 }
 
 /** Annotation tools, mirroring the MAUI editor's palette. */
-enum class Tool { PEN, MARKER, ERASER, STAMP, TEXT, CRESCENDO, DECRESCENDO, LINE, ARROW, RECT, ELLIPSE }
+enum class Tool { PEN, MARKER, ERASER, STAMP, TEXT, CRESCENDO, DECRESCENDO, LINE, ARROW, RECT, ELLIPSE, MOVE }
 
 /** Freehand drag tools that build a point path. */
 val Tool.isStroke: Boolean get() = this == Tool.PEN || this == Tool.MARKER

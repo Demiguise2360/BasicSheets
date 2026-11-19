@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.HorizontalRule
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.OpenWith
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Title
@@ -124,7 +125,7 @@ fun AnnotationPalette(
             if (expanded) {
                 ToolRow(tool, onTool, onOpenStamps, Tool.PEN, Tool.MARKER, Tool.ERASER, Tool.TEXT)
                 ToolRow(tool, onTool, onOpenStamps, Tool.STAMP, Tool.CRESCENDO, Tool.DECRESCENDO, Tool.LINE)
-                ToolRow(tool, onTool, onOpenStamps, Tool.ARROW, Tool.RECT, Tool.ELLIPSE)
+                ToolRow(tool, onTool, onOpenStamps, Tool.ARROW, Tool.RECT, Tool.ELLIPSE, Tool.MOVE)
 
                 Divider()
 
@@ -210,6 +211,7 @@ private fun ToolBtn(t: Tool, cur: Tool, onTool: (Tool) -> Unit, onOpenStamps: ()
             Tool.ARROW -> ToolIcon(Icons.AutoMirrored.Filled.ArrowRightAlt, "Pfeil")
             Tool.RECT -> ToolIcon(Icons.Filled.CropSquare, "Rechteck")
             Tool.ELLIPSE -> ToolIcon(Icons.Filled.RadioButtonUnchecked, "Ellipse")
+            Tool.MOVE -> ToolIcon(Icons.Filled.OpenWith, "Verschieben")
         }
     }
 }
