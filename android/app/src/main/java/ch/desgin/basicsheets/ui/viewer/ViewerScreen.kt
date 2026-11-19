@@ -1,6 +1,10 @@
 package ch.desgin.basicsheets.ui.viewer
 
+import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -325,7 +329,23 @@ fun ViewerScreen(
         }
     }
 
-    fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, order.size - 1)) }
+    val vibrator = remember(context) { context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator }
+    fun doHaptic() {
+        if (!settings.haptics) return
+        val v = vibrator ?: return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v.vibrate(VibrationEffect.createOneShot(12L, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION") v.vibrate(12L)
+            }
+        }
+    }
+    // Manual turns (tap, nav buttons, hardware keys) pass haptic = true; auto-turn / measure-turn don't.
+    fun turn(delta: Int, haptic: Boolean = false) {
+        if (haptic) doHaptic()
+        page = (page + delta).coerceIn(0, maxOf(0, order.size - 1))
+    }
     fun chooseMode(m: DisplayMode) {
         mode = m
         autoScroll = false
@@ -525,13 +545,13 @@ fun ViewerScreen(
                 val step = if (mode == DisplayMode.TWO) 2 else 1
                 // User-bound extra keys (e.g. a Bluetooth pedal) take priority over the built-ins.
                 val code = ev.key.nativeKeyCode
-                if (settings.nextKeyCode != 0 && code == settings.nextKeyCode) { turn(step); return@onKeyEvent true }
-                if (settings.prevKeyCode != 0 && code == settings.prevKeyCode) { turn(-step); return@onKeyEvent true }
+                if (settings.nextKeyCode != 0 && code == settings.nextKeyCode) { turn(step, haptic = true); return@onKeyEvent true }
+                if (settings.prevKeyCode != 0 && code == settings.prevKeyCode) { turn(-step, haptic = true); return@onKeyEvent true }
                 when (ev.key) {
-                    Key.PageDown, Key.DirectionRight, Key.MediaNext, Key.Spacebar -> { turn(step); true }
-                    Key.PageUp, Key.DirectionLeft, Key.MediaPrevious -> { turn(-step); true }
-                    Key.VolumeDown -> { turn(if (settings.volumeUpForward) -step else step); true }
-                    Key.VolumeUp -> { turn(if (settings.volumeUpForward) step else -step); true }
+                    Key.PageDown, Key.DirectionRight, Key.MediaNext, Key.Spacebar -> { turn(step, haptic = true); true }
+                    Key.PageUp, Key.DirectionLeft, Key.MediaPrevious -> { turn(-step, haptic = true); true }
+                    Key.VolumeDown -> { turn(if (settings.volumeUpForward) -step else step, haptic = true); true }
+                    Key.VolumeUp -> { turn(if (settings.volumeUpForward) step else -step, haptic = true); true }
                     else -> false
                 }
             },
@@ -629,9 +649,9 @@ fun ViewerScreen(
                     }
                     Spacer(Modifier.weight(1f))
                     if (showPageNav) {
-                        TextButton(onClick = { turn(-step) }, enabled = page > 0, colors = navBtn) { Text("‹") }
+                        TextButton(onClick = { turn(-step, haptic = true) }, enabled = page > 0, colors = navBtn) { Text("‹") }
                         if (settings.pageNumbers) Text("${page + 1} / ${order.size}", Modifier.align(Alignment.CenterVertically))
-                        TextButton(onClick = { turn(step) }, enabled = page < order.size - 1, colors = navBtn) { Text("›") }
+                        TextButton(onClick = { turn(step, haptic = true) }, enabled = page < order.size - 1, colors = navBtn) { Text("›") }
                     } else if (inSetlist) {
                         Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
                     }
@@ -711,12 +731,12 @@ fun ViewerScreen(
                         onEmptyTap = { nx, ny -> pendingLink = Offset(nx, ny); linkTargetInput = "${pdfPage + 1}" },
                         cropL = singleCrop.left, cropT = singleCrop.top, cropR = singleCrop.right, cropB = singleCrop.bottom,
                         rotation = sheet?.rotation ?: 0,
-                    ) { turn(it) }
+                    ) { turn(it, haptic = true) }
                     DisplayMode.TWO -> TwoPageView(
                         doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
                         cropFor, sheet?.rotation ?: 0,
                         linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
-                    ) { turn(it) }
+                    ) { turn(it, haptic = true) }
                     DisplayMode.HALF -> HalfTurnView(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
                         app.annotations, key, annoVersion, hlPage, hlBoxes,

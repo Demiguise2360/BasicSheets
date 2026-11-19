@@ -83,6 +83,7 @@ fun SettingsScreen() {
             ToggleRow("Lautstärketasten blättern", "Mit den Lautstärketasten umblättern", settings.volumeKeysPaging) { set(KEY_VOLUME_KEYS, it.toString()) }
             ToggleRow("Lauter-Taste blättert vor", "Vertauscht die Richtung der Lautstärketasten (sonst: Leiser = vor)", settings.volumeUpForward) { set(KEY_VOLUME_UP_FWD, it.toString()) }
             ToggleRow("Seitenzahlen", "Seitennummer unten im Viewer anzeigen", settings.pageNumbers) { set(KEY_PAGE_NUMBERS, it.toString()) }
+            ToggleRow("Haptisches Feedback", "Kurze Vibration beim Umblättern", settings.haptics) { set(KEY_HAPTICS, it.toString()) }
             ToggleRow("Warmer Lesemodus", "Wärmerer Farbton über den Noten", settings.warmTint) { set(KEY_WARM, it.toString()) }
             SelectRow("Abdunkeln", "Dunkler Schleier für dunkle Räume", DIM_OPTIONS, settings.dimLevelKey) { set(KEY_DIM, it) }
 

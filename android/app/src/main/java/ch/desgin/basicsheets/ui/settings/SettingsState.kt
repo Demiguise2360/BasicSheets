@@ -20,6 +20,7 @@ const val KEY_NEXT_KEYCODE = "Taste nächste Seite"
 const val KEY_PREV_KEYCODE = "Taste vorige Seite"
 const val KEY_PALM_REJECT = "Handballenerkennung"
 const val KEY_PEN_BUTTON_ERASE = "Stift-Taste radiert"
+const val KEY_HAPTICS = "Haptisches Feedback"
 
 /** An immutable view of the settings, with typed accessors; provided app-wide via [LocalSettings]. */
 data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
@@ -61,6 +62,9 @@ data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
     val palmRejection: Boolean get() = bool(KEY_PALM_REJECT, false)
     /** A stylus side button erases instead of drawing, whatever tool is selected. */
     val penButtonErase: Boolean get() = bool(KEY_PEN_BUTTON_ERASE, false)
+
+    /** Short vibration on a manual page turn (tap / nav button / hardware key). */
+    val haptics: Boolean get() = bool(KEY_HAPTICS, true)
 }
 
 val LocalSettings = compositionLocalOf { SettingsSnapshot() }
