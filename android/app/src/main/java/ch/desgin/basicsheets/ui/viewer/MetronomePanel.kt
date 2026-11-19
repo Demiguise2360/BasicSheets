@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -37,7 +39,7 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MetronomePanel(metro: Metronome, onClose: () -> Unit) {
+fun MetronomePanel(metro: Metronome, onClose: () -> Unit, onTempoChange: () -> Unit = {}) {
     val taps = remember { mutableStateListOf<Long>() }
 
     Surface(tonalElevation = 3.dp, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
@@ -58,6 +60,12 @@ fun MetronomePanel(metro: Metronome, onClose: () -> Unit) {
                         Box(Modifier.size(if (i == 0) 12.dp else 10.dp).clip(CircleShape).background(color))
                     }
                 }
+                IconButton(onClick = { metro.muted = !metro.muted }) {
+                    Icon(
+                        if (metro.muted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                        contentDescription = if (metro.muted) "Ton ein" else "Stumm",
+                    )
+                }
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Schließen") }
             }
 
@@ -72,10 +80,10 @@ fun MetronomePanel(metro: Metronome, onClose: () -> Unit) {
                     )
                 }
                 Text("♩ = ${metro.bpm}", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                OutlinedIconButton(onClick = { metro.changeBpm(metro.bpm - 5) }) {
+                OutlinedIconButton(onClick = { metro.changeBpm(metro.bpm - 5); onTempoChange() }) {
                     Icon(Icons.Filled.Remove, contentDescription = "Langsamer")
                 }
-                OutlinedIconButton(onClick = { metro.changeBpm(metro.bpm + 5) }) {
+                OutlinedIconButton(onClick = { metro.changeBpm(metro.bpm + 5); onTempoChange() }) {
                     Icon(Icons.Filled.Add, contentDescription = "Schneller")
                 }
                 OutlinedButton(onClick = {
@@ -85,7 +93,7 @@ fun MetronomePanel(metro: Metronome, onClose: () -> Unit) {
                     while (taps.size > 6) taps.removeAt(0)
                     if (taps.size >= 2) {
                         val avg = (taps.last() - taps.first()).toDouble() / (taps.size - 1)
-                        if (avg > 0) metro.changeBpm((60000.0 / avg).roundToInt())
+                        if (avg > 0) { metro.changeBpm((60000.0 / avg).roundToInt()); onTempoChange() }
                     }
                 }) { Text("Tap") }
             }
@@ -96,7 +104,27 @@ fun MetronomePanel(metro: Metronome, onClose: () -> Unit) {
             ) {
                 Text("Takt", style = MaterialTheme.typography.bodyMedium)
                 for (b in listOf(2, 3, 4, 6)) {
-                    FilterChip(selected = metro.beatsPerBar == b, onClick = { metro.beatsPerBar = b }, label = { Text("$b") })
+                    FilterChip(selected = metro.beatsPerBar == b, onClick = { metro.beatsPerBar = b; onTempoChange() }, label = { Text("$b") })
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Unterteilung", style = MaterialTheme.typography.bodyMedium)
+                for ((value, label) in listOf(1 to "♩", 2 to "♪♪", 3 to "³", 4 to "♬")) {
+                    FilterChip(selected = metro.subdivision == value, onClick = { metro.subdivision = value }, label = { Text(label) })
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Auto-Blättern", style = MaterialTheme.typography.bodyMedium)
+                for ((value, label) in listOf(0 to "Aus", 1 to "1", 2 to "2", 4 to "4", 8 to "8")) {
+                    FilterChip(selected = metro.turnBars == value, onClick = { metro.turnBars = value }, label = { Text(label) })
                 }
             }
         }

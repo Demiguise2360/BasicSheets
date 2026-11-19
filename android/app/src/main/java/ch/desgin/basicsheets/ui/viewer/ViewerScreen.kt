@@ -234,6 +234,8 @@ fun ViewerScreen(
         app.library.markOpened(sheetId)   // record for the Zuletzt tab (doesn't touch `updated`)
         bookmarks = app.bookmarks.forFile(s.filePath)
         mode = DisplayMode.from(s.pageMode ?: settings.pageMode)
+        metro.bpm = if (s.bpm > 0) s.bpm else 100
+        metro.beatsPerBar = if (s.beats > 0) s.beats else 4
         val d = withContext(Dispatchers.IO) { PdfDoc.open(app.library.fileFor(s)) }
         doc = d
         pageCount = d?.pageCount ?: 0
@@ -473,6 +475,16 @@ fun ViewerScreen(
     LaunchedEffect(showSearch, pendingText, editMode) {
         if (!showSearch && pendingText == null && !editMode) runCatching { focusRequester.requestFocus() }
     }
+    // Metronome auto page-turn: advance the page every N measures (paged modes only, like the
+    // timed auto-turn). The stored lambda reads the live mode/page/order at fire time.
+    LaunchedEffect(Unit) {
+        metro.onBarsElapsed = {
+            if (mode != DisplayMode.SCROLL_V && mode != DisplayMode.SCROLL_H) {
+                val step = if (mode == DisplayMode.TWO) 2 else 1
+                if (page < order.size - 1) turn(step)
+            }
+        }
+    }
     // Timed hands-free page turning in the paged modes (auto-scroll covers the scroll modes).
     LaunchedEffect(autoTurn, turnInterval, mode) {
         if (!autoTurn || mode == DisplayMode.SCROLL_V || mode == DisplayMode.SCROLL_H) return@LaunchedEffect
@@ -709,7 +721,17 @@ fun ViewerScreen(
                 }
                 if (showMetro) {
                     Box(Modifier.align(Alignment.BottomCenter)) {
-                        MetronomePanel(metro, onClose = { showMetro = false })
+                        MetronomePanel(
+                            metro,
+                            onClose = { showMetro = false },
+                            onTempoChange = {
+                                sheet?.let { s ->
+                                    val upd = s.copy(bpm = metro.bpm, beats = metro.beatsPerBar)
+                                    sheet = upd
+                                    scope.launch { app.library.update(upd) }
+                                }
+                            },
+                        )
                     }
                 }
                 if (mode == DisplayMode.SCROLL_V || mode == DisplayMode.SCROLL_H) {
