@@ -125,8 +125,9 @@ fun LibraryScreen(
 
     LaunchedEffect(tabKey) { if (tabKey in SONG_TABS) vm.setTab(tabKey) }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) vm.importPdf(context, uri)
+    // One picker for both: pick a single file for a plain song, or several for one multi-file song.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) vm.importFiles(context, uris)
     }
     fun onPlus() {
         when (tabKey) {

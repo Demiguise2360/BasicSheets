@@ -236,7 +236,11 @@ fun ViewerScreen(
         mode = DisplayMode.from(s.pageMode ?: settings.pageMode)
         metro.bpm = if (s.bpm > 0) s.bpm else 100
         metro.beatsPerBar = if (s.beats > 0) s.beats else 4
-        val d = withContext(Dispatchers.IO) { PdfDoc.open(app.library.fileFor(s)) }
+        // A multi-file song concatenates its parts; a plain song opens its single file (PDF or image).
+        val parts = withContext(Dispatchers.IO) { runCatching { app.library.partFiles(s) }.getOrDefault(emptyList()) }
+        val d = withContext(Dispatchers.IO) {
+            if (parts.size > 1) PdfDoc.openFiles(parts) else PdfDoc.open(app.library.fileFor(s))
+        }
         doc = d
         pageCount = d?.pageCount ?: 0
         // A page-range song shows only [pageStart..pageEnd] of a shared PDF (e.g. one piece in a

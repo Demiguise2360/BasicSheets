@@ -3,6 +3,7 @@ package ch.desgin.basicsheets.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import ch.desgin.basicsheets.pdf.PdfDoc
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 
@@ -34,11 +35,22 @@ class LibraryRepository(
 
     suspend fun delete(sheet: Sheet) {
         db.sheets().delete(sheet)
-        // remove the copied file if nothing else references it
+        // Remove the song's part files (multi-file songs) and the primary file, each only if no
+        // other sheet still points at it.
+        val parts = runCatching { db.sheetFiles().forSheet(sheet.id) }.getOrDefault(emptyList())
+        for (p in parts) {
+            db.sheetFiles().delete(p)
+            if (db.sheets().byFile(p.path) == null) runCatching { File(sheetsDir, p.path).delete() }
+        }
         if (db.sheets().byFile(sheet.filePath) == null) {
             runCatching { File(sheetsDir, sheet.filePath).delete() }
         }
     }
+
+    /** The on-disk part files of a multi-file song, in order; empty for a plain single-file song. */
+    suspend fun partFiles(sheet: Sheet): List<File> =
+        runCatching { db.sheetFiles().forSheet(sheet.id) }.getOrDefault(emptyList())
+            .sortedBy { it.order }.map { File(sheetsDir, it.path) }
 
     /** The on-disk file for a sheet's primary PDF. */
     fun fileFor(sheet: Sheet): File = File(sheetsDir, sheet.filePath)
@@ -94,6 +106,43 @@ class LibraryRepository(
             return null
         }
         return db.sheets().insert(Sheet(name = base, filePath = fileName))
+    }
+
+    /**
+     * Import several picked files as ONE multi-file song: copy each into app storage, create one
+     * Sheet (named after the first file, its primary = the first copy), and a `sheet_files` row per
+     * part in pick order. A single URI falls through to [importFile] (a plain song, no parts).
+     */
+    suspend fun importFiles(context: Context, uris: List<Uri>): Long? {
+        if (uris.isEmpty()) return null
+        if (uris.size == 1) return importFile(context, uris[0])
+        val firstDisplay = queryDisplayName(context, uris[0]) ?: "Stück.pdf"
+        val songName = firstDisplay.substringBeforeLast('.').ifBlank { "Stück" }
+        val parts = ArrayList<SheetFile>()
+        var primary: String? = null
+        for ((i, uri) in uris.withIndex()) {
+            val display = queryDisplayName(context, uri) ?: "Teil-${i + 1}.pdf"
+            val ext = display.substringAfterLast('.', "pdf").lowercase().ifBlank { "pdf" }
+            // The "-$i" keeps names unique even within one millisecond (same-ms import loop).
+            val fileName = uniqueFileName(display.substringBeforeLast('.').ifBlank { "Teil" } + "-$i", ext)
+            val dest = File(sheetsDir, fileName)
+            val ok = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                    true
+                } ?: false
+            }.getOrDefault(false)
+            if (ok) {
+                if (primary == null) primary = fileName
+                parts.add(SheetFile(path = fileName, kind = if (PdfDoc.isImage(fileName)) "image" else "pdf", order = i, label = display))
+            } else {
+                runCatching { dest.delete() }
+            }
+        }
+        val primaryFile = primary ?: return null
+        val id = db.sheets().insert(Sheet(name = songName, filePath = primaryFile))
+        for (sf in parts) db.sheetFiles().insert(sf.copy(sheetId = id.toInt()))
+        return id
     }
 
     private fun uniqueFileName(base: String, ext: String = "pdf"): String {
