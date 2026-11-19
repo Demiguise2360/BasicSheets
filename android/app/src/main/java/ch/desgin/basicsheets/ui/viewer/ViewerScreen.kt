@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
@@ -491,11 +492,15 @@ fun ViewerScreen(
                 // Consume the volume key-up too (when paging is on) so the system volume UI stays hidden.
                 if (ev.type != KeyEventType.KeyDown) return@onKeyEvent isVol
                 val step = if (mode == DisplayMode.TWO) 2 else 1
+                // User-bound extra keys (e.g. a Bluetooth pedal) take priority over the built-ins.
+                val code = ev.key.nativeKeyCode
+                if (settings.nextKeyCode != 0 && code == settings.nextKeyCode) { turn(step); return@onKeyEvent true }
+                if (settings.prevKeyCode != 0 && code == settings.prevKeyCode) { turn(-step); return@onKeyEvent true }
                 when (ev.key) {
                     Key.PageDown, Key.DirectionRight, Key.MediaNext, Key.Spacebar -> { turn(step); true }
                     Key.PageUp, Key.DirectionLeft, Key.MediaPrevious -> { turn(-step); true }
-                    Key.VolumeDown -> { turn(step); true }
-                    Key.VolumeUp -> { turn(-step); true }
+                    Key.VolumeDown -> { turn(if (settings.volumeUpForward) -step else step); true }
+                    Key.VolumeUp -> { turn(if (settings.volumeUpForward) step else -step); true }
                     else -> false
                 }
             },

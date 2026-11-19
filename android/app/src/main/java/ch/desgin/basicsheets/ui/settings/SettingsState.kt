@@ -15,6 +15,9 @@ const val KEY_ANNOT_PALETTE = "Schwebende Palette"
 const val KEY_WARM = "Warmer Lesemodus"
 const val KEY_DIM = "Abdunkeln"
 const val KEY_VOLUME_KEYS = "Lautstärketasten blättern"
+const val KEY_VOLUME_UP_FWD = "Lauter blättert vor"
+const val KEY_NEXT_KEYCODE = "Taste nächste Seite"
+const val KEY_PREV_KEYCODE = "Taste vorige Seite"
 const val KEY_PALM_REJECT = "Handballenerkennung"
 const val KEY_PEN_BUTTON_ERASE = "Stift-Taste radiert"
 
@@ -45,8 +48,14 @@ data class SettingsSnapshot(val map: Map<String, String> = emptyMap()) {
     val dimLevelKey: String get() = str(KEY_DIM, "0")
     val dimLevel: Float get() = dimLevelKey.toFloatOrNull() ?: 0f
 
-    /** Hardware volume keys turn pages (volume-down = next, volume-up = previous). */
+    /** Hardware volume keys turn pages. */
     val volumeKeysPaging: Boolean get() = bool(KEY_VOLUME_KEYS, false)
+    /** When true, volume-up = next / volume-down = previous (default is the reverse). */
+    val volumeUpForward: Boolean get() = bool(KEY_VOLUME_UP_FWD, false)
+    /** Extra user-bound hardware key (Android key code) for next page; 0 = none. */
+    val nextKeyCode: Int get() = str(KEY_NEXT_KEYCODE, "0").toIntOrNull() ?: 0
+    /** Extra user-bound hardware key (Android key code) for previous page; 0 = none. */
+    val prevKeyCode: Int get() = str(KEY_PREV_KEYCODE, "0").toIntOrNull() ?: 0
 
     /** Draw with a stylus only — finger/palm touches are ignored while annotating (palm rejection). */
     val palmRejection: Boolean get() = bool(KEY_PALM_REJECT, false)

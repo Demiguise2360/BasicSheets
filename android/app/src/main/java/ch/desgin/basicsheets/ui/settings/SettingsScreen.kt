@@ -49,6 +49,7 @@ fun SettingsScreen() {
     val settings = LocalSettings.current
     val context = LocalContext.current
     fun set(key: String, value: String) { scope.launch { app.settings.set(key, value) } }
+    var capturing by remember { mutableStateOf<String?>(null) }   // "next" | "prev" while binding a key
     val backupSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) scope.launch {
             val text = app.annotations.exportAllJson()
@@ -79,10 +80,15 @@ fun SettingsScreen() {
             SelectRow("Viewer-Hintergrund", "Farbe hinter den Noten", BG_OPTIONS, settings.viewerBg) { set(KEY_BG, it) }
             ToggleRow("Noten invertieren", "Nachtmodus: kehrt die Notenfarben um", settings.invert) { set(KEY_INVERT, it.toString()) }
             ToggleRow("Bildschirm wach halten", "Display bleibt beim Lesen an", settings.keepScreenOn) { set(KEY_KEEP_ON, it.toString()) }
-            ToggleRow("Lautstärketasten blättern", "Leiser-Taste = vor, Lauter-Taste = zurück", settings.volumeKeysPaging) { set(KEY_VOLUME_KEYS, it.toString()) }
+            ToggleRow("Lautstärketasten blättern", "Mit den Lautstärketasten umblättern", settings.volumeKeysPaging) { set(KEY_VOLUME_KEYS, it.toString()) }
+            ToggleRow("Lauter-Taste blättert vor", "Vertauscht die Richtung der Lautstärketasten (sonst: Leiser = vor)", settings.volumeUpForward) { set(KEY_VOLUME_UP_FWD, it.toString()) }
             ToggleRow("Seitenzahlen", "Seitennummer unten im Viewer anzeigen", settings.pageNumbers) { set(KEY_PAGE_NUMBERS, it.toString()) }
             ToggleRow("Warmer Lesemodus", "Wärmerer Farbton über den Noten", settings.warmTint) { set(KEY_WARM, it.toString()) }
             SelectRow("Abdunkeln", "Dunkler Schleier für dunkle Räume", DIM_OPTIONS, settings.dimLevelKey) { set(KEY_DIM, it) }
+
+            SectionHeader("Tasten")
+            ActionRow("Taste: Nächste Seite", "Zusätzliche Taste/Pedal – aktuell: ${keyName(settings.nextKeyCode)}") { capturing = "next" }
+            ActionRow("Taste: Vorige Seite", "Zusätzliche Taste/Pedal – aktuell: ${keyName(settings.prevKeyCode)}") { capturing = "prev" }
 
             SectionHeader("Notizen")
             ToggleRow("Schwebende Werkzeug-Palette", "Runde, verschiebbare Palette statt der unteren Leiste beim Annotieren", settings.floatingAnnotTools) { set(KEY_ANNOT_PALETTE, it.toString()) }
@@ -94,6 +100,10 @@ fun SettingsScreen() {
             SectionHeader("Komponisten")
             ToggleRow("Komponisten-Infos", "Porträt und Wikipedia-Text aus dem Internet laden", settings.composerInfo) { set(KEY_COMPOSER_INFO, it.toString()) }
         }
+    }
+    when (capturing) {
+        "next" -> KeyCaptureDialog("Taste für Nächste Seite", settings.nextKeyCode, onPick = { set(KEY_NEXT_KEYCODE, it.toString()); capturing = null }, onDismiss = { capturing = null })
+        "prev" -> KeyCaptureDialog("Taste für Vorige Seite", settings.prevKeyCode, onPick = { set(KEY_PREV_KEYCODE, it.toString()); capturing = null }, onDismiss = { capturing = null })
     }
 }
 
