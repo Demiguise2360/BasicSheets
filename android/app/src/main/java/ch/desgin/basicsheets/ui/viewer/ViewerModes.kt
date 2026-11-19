@@ -120,14 +120,19 @@ private fun unrotateNorm(dxn: Float, dyn: Float, rotation: Int): Pair<Float, Flo
     else -> dxn to dyn
 }
 
-/** Draw the blue jump-point (Sprungpunkt) rings at their full-page-normalized source positions. */
+/** Parse a stored "#RRGGBB" jump-point colour; falls back to blue on any bad/empty value. */
+fun linkColor(hex: String): Color =
+    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Color(0xFF1565C0))
+
+/** Draw the jump-point (Sprungpunkt) rings, each in its own colour, at their normalized positions. */
 private fun DrawScope.drawLinkMarkers(links: List<ViewerButton>, w: Float, h: Float) {
     for (lp in links) {
         if (lp.sourceNx < 0) continue
         val center = Offset(lp.sourceNx.toFloat() * w, lp.sourceNy.toFloat() * h)
         val rad = w * 0.022f
-        drawCircle(Color(0xFF1565C0).copy(alpha = 0.22f), rad, center)
-        drawCircle(Color(0xFF1565C0), rad, center, style = Stroke(width = w * 0.006f))
+        val col = linkColor(lp.color)
+        drawCircle(col.copy(alpha = 0.22f), rad, center)
+        drawCircle(col, rad, center, style = Stroke(width = w * 0.006f))
     }
 }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -134,6 +135,7 @@ fun ViewerScreen(
     var showLinkList by remember { mutableStateOf(false) }
     var pendingLink by remember { mutableStateOf<Offset?>(null) }
     var linkTargetInput by remember { mutableStateOf("") }
+    var linkColorPick by remember { mutableStateOf(LINK_COLORS.first()) }
     // Persisted crops, keyed by 1-based page; key 0 = a crop that applies to all pages (fallback).
     var pageCrops by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
     // Edit buffer for the crop panel (the page being adjusted); cropAllPages saves it for every page.
@@ -401,11 +403,12 @@ fun ViewerScreen(
         val key = sheet?.filePath ?: return
         scope.launch { app.bookmarks.remove(bm.id); bookmarks = app.bookmarks.forFile(key) }
     }
-    fun saveLink(nx: Float, ny: Float, targetPage: Int) {
+    fun saveLink(nx: Float, ny: Float, targetPage: Int, color: String) {
         val key = sheet?.filePath ?: return
         val vb = ViewerButton(
             id = java.util.UUID.randomUUID().toString(), action = "jump", pdfFile = key,
             sourcePage = pdfPage + 1, sourceNx = nx.toDouble(), sourceNy = ny.toDouble(), targetPage = targetPage,
+            color = color,
         )
         scope.launch { app.db.viewerButtons().insert(vb); linkPoints = app.db.viewerButtons().forFile(key) }
     }
@@ -802,19 +805,25 @@ fun ViewerScreen(
                     confirmButton = {
                         TextButton(onClick = {
                             val t = linkTargetInput.toIntOrNull()
-                            if (t != null && t >= 1) saveLink(pos.x, pos.y, t)
+                            if (t != null && t >= 1) saveLink(pos.x, pos.y, t, linkColorPick)
                             pendingLink = null
                         }) { Text("OK") }
                     },
                     dismissButton = { TextButton(onClick = { pendingLink = null }) { Text("Abbrechen") } },
                     title = { Text("Sprungpunkt") },
                     text = {
-                        OutlinedTextField(
-                            value = linkTargetInput,
-                            onValueChange = { linkTargetInput = it.filter(Char::isDigit) },
-                            label = { Text("Zielseite") },
-                            singleLine = true,
-                        )
+                        Column {
+                            OutlinedTextField(
+                                value = linkTargetInput,
+                                onValueChange = { linkTargetInput = it.filter(Char::isDigit) },
+                                label = { Text("Zielseite") },
+                                singleLine = true,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text("Farbe", style = MaterialTheme.typography.labelLarge)
+                            Spacer(Modifier.height(8.dp))
+                            LinkColorDots(linkColorPick) { linkColorPick = it }
+                        }
                     },
                 )
             }

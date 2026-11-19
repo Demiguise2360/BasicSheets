@@ -1,7 +1,9 @@
 package ch.desgin.basicsheets.ui.viewer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,9 +32,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import ch.desgin.basicsheets.data.ViewerButton
+
+/** Palette for jump-point markers (blue first = default); shared by the place dialog + rendering. */
+val LINK_COLORS = listOf("#1E88E5", "#E53935", "#387373", "#F59E0B", "#8E24AA", "#43A047")
+
+/** A row of selectable colour dots for a jump point's marker colour. */
+@Composable
+fun LinkColorDots(selected: String, onPick: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        for (c in LINK_COLORS) {
+            Box(
+                Modifier.size(30.dp).clip(CircleShape).background(linkColor(c))
+                    .then(if (c == selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier)
+                    .clickable { onPick(c) },
+            )
+        }
+    }
+}
 
 /**
  * Bottom sheet listing every placed jump point (Sprungpunkt) for the song. Tap a row to go to the
@@ -76,7 +94,7 @@ fun LinkPointSheet(
                         Modifier.fillMaxWidth().clickable { onGoToSource(vb) }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(Modifier.size(14.dp).clip(CircleShape).background(Color(0xFF1565C0)))
+                        Box(Modifier.size(14.dp).clip(CircleShape).background(linkColor(vb.color)))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             if (vb.label.isBlank()) {
