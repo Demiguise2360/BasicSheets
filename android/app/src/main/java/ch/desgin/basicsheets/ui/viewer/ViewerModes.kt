@@ -46,9 +46,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -82,6 +85,22 @@ private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bit
     val w = ((r - l) * src.width).toInt().coerceIn(1, src.width - x)
     val h = ((b - t) * src.height).toInt().coerceIn(1, src.height - y)
     return runCatching { Bitmap.createBitmap(src, x, y, w, h) }.getOrDefault(src)
+}
+
+/** Lay out content rotated 90°/270°, swapping width/height so the rotated page fits the parent. */
+private fun Modifier.rotate90Fit(rotation: Int): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(
+        Constraints(
+            minWidth = constraints.minHeight, maxWidth = constraints.maxHeight,
+            minHeight = constraints.minWidth, maxHeight = constraints.maxWidth,
+        ),
+    )
+    layout(placeable.height, placeable.width) {
+        placeable.placeRelativeWithLayer(
+            x = (placeable.height - placeable.width) / 2,
+            y = (placeable.width - placeable.height) / 2,
+        ) { rotationZ = rotation.toFloat() }
+    }
 }
 
 /** Display modes, keyed by the same strings the MAUI app stores in Sheet.pageMode. */
@@ -163,6 +182,7 @@ fun SinglePageView(
     cropT: Float = 0f,
     cropR: Float = 1f,
     cropB: Float = 1f,
+    rotation: Int = 0,
     onTurn: (Int) -> Unit,
 ) {
     val pdf = pages.getOrElse(page) { 0 }
@@ -210,12 +230,15 @@ fun SinglePageView(
         contentAlignment = Alignment.Center,
     ) {
         if (bmp != null) {
+            val swap = rotation == 90 || rotation == 270
+            val dispAspect = if (swap) bmp.height.toFloat() / bmp.width else bmp.width.toFloat() / bmp.height
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())
+                    .aspectRatio(dispAspect)
                     .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
             ) {
+              Box(if (swap) Modifier.rotate90Fit(rotation) else Modifier.fillMaxSize().rotate(rotation.toFloat())) {
                 Image(
                     bmp.asImageBitmap(),
                     contentDescription = null,
@@ -243,6 +266,7 @@ fun SinglePageView(
                         }
                     }
                 }
+              }
             }
         } else {
             Text("Lädt …", color = MaterialTheme.colorScheme.outline)

@@ -401,6 +401,12 @@ fun ViewerScreen(
         scope.launch { app.db.viewerButtons().remove(vb.id); linkPoints = app.db.viewerButtons().forFile(key) }
     }
     fun jumpLink(vb: ViewerButton) { jumpToPdf((vb.targetPage - 1).coerceAtLeast(0)) }
+    fun rotatePage() {
+        val s = sheet ?: return
+        val next = (s.rotation + 90) % 360
+        sheet = s.copy(rotation = next)
+        scope.launch { app.library.update(s.copy(rotation = next)) }
+    }
     fun saveCrop() {
         val id = sheet?.id ?: return
         val isCropped = cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f
@@ -495,6 +501,10 @@ fun ViewerScreen(
                                 DropdownMenuItem(
                                     text = { Text("Zuschneiden") },
                                     onClick = { showModeMenu = false; if (mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE); showCrop = true },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Drehen") },
+                                    onClick = { showModeMenu = false; if (mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE); rotatePage() },
                                 )
                             }
                         }
@@ -612,6 +622,7 @@ fun ViewerScreen(
                         onMarkerTap = { vb -> if (editLinks) deleteLink(vb) else jumpLink(vb) },
                         onEmptyTap = { nx, ny -> pendingLink = Offset(nx, ny); linkTargetInput = "${pdfPage + 1}" },
                         cropL = cropL, cropT = cropT, cropR = cropR, cropB = cropB,
+                        rotation = sheet?.rotation ?: 0,
                     ) { turn(it) }
                     DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
