@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
@@ -131,10 +133,14 @@ fun ViewerScreen(
     var showLinkList by remember { mutableStateOf(false) }
     var pendingLink by remember { mutableStateOf<Offset?>(null) }
     var linkTargetInput by remember { mutableStateOf("") }
+    // Persisted crops, keyed by 1-based page; key 0 = a crop that applies to all pages (fallback).
+    var pageCrops by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
+    // Edit buffer for the crop panel (the page being adjusted); cropAllPages saves it for every page.
     var cropL by remember { mutableFloatStateOf(0f) }
     var cropT by remember { mutableFloatStateOf(0f) }
     var cropR by remember { mutableFloatStateOf(1f) }
     var cropB by remember { mutableFloatStateOf(1f) }
+    var cropAllPages by remember { mutableStateOf(false) }
     var showCrop by remember { mutableStateOf(false) }
 
     val metro = remember { Metronome() }
@@ -286,11 +292,16 @@ fun ViewerScreen(
         linkPoints = if (!key.isNullOrEmpty()) runCatching { app.db.viewerButtons().forFile(key) }.getOrDefault(emptyList()) else emptyList()
     }
     LaunchedEffect(sheet?.id) {
-        val c = sheet?.id?.let { runCatching { app.db.crops().forSheet(it).firstOrNull() }.getOrNull() }
-        cropL = c?.l?.toFloat() ?: 0f
-        cropT = c?.t?.toFloat() ?: 0f
-        cropR = c?.r?.toFloat() ?: 1f
-        cropB = c?.b?.toFloat() ?: 1f
+        val rows = sheet?.id?.let { runCatching { app.db.crops().forSheet(it) }.getOrNull() } ?: emptyList()
+        pageCrops = rows.associate { it.page to Rect(it.l.toFloat(), it.t.toFloat(), it.r.toFloat(), it.b.toFloat()) }
+    }
+    // While the crop panel is open, load the shown page's crop into the edit buffer (so paging
+    // through pages lets you crop each one); page 0 is the all-pages fallback.
+    LaunchedEffect(pdfPage, showCrop) {
+        if (showCrop) {
+            val cur = pageCrops[pdfPage + 1] ?: pageCrops[0] ?: FULL_CROP
+            cropL = cur.left; cropT = cur.top; cropR = cur.right; cropB = cur.bottom
+        }
     }
 
     fun turn(delta: Int) { page = (page + delta).coerceIn(0, maxOf(0, order.size - 1)) }
@@ -408,12 +419,34 @@ fun ViewerScreen(
         sheet = s.copy(rotation = next)
         scope.launch { app.library.update(s.copy(rotation = next)) }
     }
+    fun storedCropFor(pdf0: Int): Rect = pageCrops[pdf0 + 1] ?: pageCrops[0] ?: FULL_CROP
+    fun openCrop() {
+        if (mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE)
+        val cur = storedCropFor(pdfPage)
+        cropL = cur.left; cropT = cur.top; cropR = cur.right; cropB = cur.bottom
+        cropAllPages = false
+        showCrop = true   // the buffer-init effect also refreshes cropL..cropB as you page through
+    }
     fun saveCrop() {
         val id = sheet?.id ?: return
         val isCropped = cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f
-        scope.launch {
-            app.db.crops().clear(id, 0)
-            if (isCropped) app.db.crops().insert(Crop(sheetId = id, page = 0, l = cropL.toDouble(), t = cropT.toDouble(), r = cropR.toDouble(), b = cropB.toDouble()))
+        val rect = Rect(cropL, cropT, cropR, cropB)
+        if (cropAllPages) {
+            // One crop for the whole song: drop every per-page row and keep only the page-0 fallback.
+            scope.launch {
+                val existing = runCatching { app.db.crops().forSheet(id) }.getOrDefault(emptyList())
+                for (c in existing) app.db.crops().clear(id, c.page)
+                if (isCropped) app.db.crops().insert(Crop(sheetId = id, page = 0, l = cropL.toDouble(), t = cropT.toDouble(), r = cropR.toDouble(), b = cropB.toDouble()))
+            }
+            pageCrops = if (isCropped) mapOf(0 to rect) else emptyMap()
+        } else {
+            // This page only (1-based); leave the all-pages fallback and other pages untouched.
+            val pg = pdfPage + 1
+            scope.launch {
+                app.db.crops().clear(id, pg)
+                if (isCropped) app.db.crops().insert(Crop(sheetId = id, page = pg, l = cropL.toDouble(), t = cropT.toDouble(), r = cropR.toDouble(), b = cropB.toDouble()))
+            }
+            pageCrops = pageCrops.toMutableMap().apply { if (isCropped) put(pg, rect) else remove(pg) }
         }
         showCrop = false
     }
@@ -511,7 +544,7 @@ fun ViewerScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Zuschneiden") },
-                                    onClick = { showModeMenu = false; if (mode != DisplayMode.SINGLE) chooseMode(DisplayMode.SINGLE); showCrop = true },
+                                    onClick = { showModeMenu = false; openCrop() },
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Drehen") },
@@ -627,6 +660,10 @@ fun ViewerScreen(
                 val key = sheet?.filePath
                 val hlPage = if (showMatchNav && searchIdx in searchResults.indices) searchResults[searchIdx].page else -1
                 val hlBoxes = if (hlPage >= 0) searchBoxes[hlPage].orEmpty() else emptyList()
+                // Single-page shows the live edit buffer while the crop panel is open, otherwise the
+                // current page's stored crop. The multi-page modes resolve each page's own crop.
+                val singleCrop = if (showCrop) Rect(cropL, cropT, cropR, cropB) else storedCropFor(pdfPage)
+                val cropFor: (Int) -> Rect = { pdf -> storedCropFor(pdf) }
                 when (mode) {
                     DisplayMode.SINGLE -> SinglePageView(
                         doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
@@ -634,23 +671,23 @@ fun ViewerScreen(
                         editLinks,
                         onMarkerTap = { vb -> if (editLinks) deleteLink(vb) else jumpLink(vb) },
                         onEmptyTap = { nx, ny -> pendingLink = Offset(nx, ny); linkTargetInput = "${pdfPage + 1}" },
-                        cropL = cropL, cropT = cropT, cropR = cropR, cropB = cropB,
+                        cropL = singleCrop.left, cropT = singleCrop.top, cropR = singleCrop.right, cropB = singleCrop.bottom,
                         rotation = sheet?.rotation ?: 0,
                     ) { turn(it) }
                     DisplayMode.TWO -> TwoPageView(
                         doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
-                        cropL, cropT, cropR, cropB, sheet?.rotation ?: 0,
+                        cropFor, sheet?.rotation ?: 0,
                         linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
                     ) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
                         app.annotations, key, annoVersion, hlPage, hlBoxes,
-                        cropL, cropT, cropR, cropB,
+                        cropFor,
                         rotation = sheet?.rotation ?: 0,
                         linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
-                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
-                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
+                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropFor, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropFor, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
                 }
                 // Reading-comfort overlays over the page; drawn before the panels so chrome stays bright,
                 // and with no pointer input so page-turn taps pass straight through.
@@ -703,11 +740,18 @@ fun ViewerScreen(
                         shadowElevation = 8.dp,
                     ) {
                         Column(Modifier.padding(12.dp)) {
-                            Text("Zuschneiden", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                if (cropAllPages) "Zuschneiden – alle Seiten" else "Zuschneiden – Seite ${pdfPage + 1}",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
                             CropSlider("Links", cropL, 0f, (cropR - 0.1f).coerceAtLeast(0f)) { cropL = it }
                             CropSlider("Oben", cropT, 0f, (cropB - 0.1f).coerceAtLeast(0f)) { cropT = it }
                             CropSlider("Rechts", cropR, (cropL + 0.1f).coerceAtMost(1f), 1f) { cropR = it }
                             CropSlider("Unten", cropB, (cropT + 0.1f).coerceAtMost(1f), 1f) { cropB = it }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = cropAllPages, onCheckedChange = { cropAllPages = it })
+                                Text("Für alle Seiten übernehmen", style = MaterialTheme.typography.bodyMedium)
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 TextButton(onClick = { cropL = 0f; cropT = 0f; cropR = 1f; cropB = 1f }) { Text("Zurücksetzen") }
                                 Spacer(Modifier.weight(1f))
