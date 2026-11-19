@@ -630,14 +630,19 @@ fun ViewerScreen(
                         cropL = cropL, cropT = cropT, cropR = cropR, cropB = cropB,
                         rotation = sheet?.rotation ?: 0,
                     ) { turn(it) }
-                    DisplayMode.TWO -> TwoPageView(doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0) { turn(it) }
+                    DisplayMode.TWO -> TwoPageView(
+                        doc, page, order, renderPx, app.annotations, key, annoVersion, hlPage, hlBoxes,
+                        cropL, cropT, cropR, cropB, sheet?.rotation ?: 0,
+                        linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
+                    ) { turn(it) }
                     DisplayMode.HALF -> HalfTurnView(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
                         app.annotations, key, annoVersion, hlPage, hlBoxes,
                         cropL, cropT, cropR, cropB,
+                        linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
-                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0)
-                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0)
+                    DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
+                    DisplayMode.SCROLL_H -> HorizontalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })
                 }
                 // Reading-comfort overlays over the page; drawn before the panels so chrome stays bright,
                 // and with no pointer input so page-turn taps pass straight through.

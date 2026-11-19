@@ -3,8 +3,11 @@ package ch.desgin.basicsheets.ui.viewer
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.transformable
@@ -92,11 +95,22 @@ private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bit
 private fun maybeCrop(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bitmap =
     if (l > 0.002f || t > 0.002f || r < 0.998f || b < 0.998f) cropBitmap(src, l, t, r, b) else src
 
+/** Draw the blue jump-point (Sprungpunkt) rings at their full-page-normalized source positions. */
+private fun DrawScope.drawLinkMarkers(links: List<ViewerButton>, w: Float, h: Float) {
+    for (lp in links) {
+        if (lp.sourceNx < 0) continue
+        val center = Offset(lp.sourceNx.toFloat() * w, lp.sourceNy.toFloat() * h)
+        val rad = w * 0.022f
+        drawCircle(Color(0xFF1565C0).copy(alpha = 0.22f), rad, center)
+        drawCircle(Color(0xFF1565C0), rad, center, style = Stroke(width = w * 0.006f))
+    }
+}
+
 /**
- * Draw a page's annotations + search highlight (full-page normalized [0,1]) onto a surface of size
- * [w]x[h] that shows only the crop rectangle, remapping into the cropped frame (identity when
- * uncropped). The caller has already translated/clipped to where the page sits. Shared by every
- * reading mode so the crop remap is defined once.
+ * Draw a page's annotations + search highlight + jump-point markers (all full-page normalized
+ * [0,1]) onto a surface of size [w]x[h] that shows only the crop rectangle, remapping into the
+ * cropped frame (identity when uncropped). The caller has already translated/clipped to where the
+ * page sits. Shared by every reading mode so the crop remap is defined once.
  */
 private fun DrawScope.drawCroppedOverlay(
     anno: PageAnnotations,
@@ -107,6 +121,7 @@ private fun DrawScope.drawCroppedOverlay(
     cropT: Float,
     cropR: Float,
     cropB: Float,
+    links: List<ViewerButton> = emptyList(),
 ) {
     if (cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f) {
         withTransform({
@@ -115,10 +130,12 @@ private fun DrawScope.drawCroppedOverlay(
         }) {
             if (hl.isNotEmpty()) drawSearchHighlight(hl, w, h)
             if (!anno.isEmpty()) drawPageAnnotations(anno, w, h)
+            if (links.isNotEmpty()) drawLinkMarkers(links, w, h)
         }
     } else {
         if (hl.isNotEmpty()) drawSearchHighlight(hl, w, h)
         if (!anno.isEmpty()) drawPageAnnotations(anno, w, h)
+        if (links.isNotEmpty()) drawLinkMarkers(links, w, h)
     }
 }
 
@@ -189,6 +206,8 @@ private fun AnnotatedPageCell(
     cropR: Float = 1f,
     cropB: Float = 1f,
     rotation: Int = 0,
+    linkPoints: List<ViewerButton> = emptyList(),
+    onMarkerTap: (ViewerButton) -> Unit = {},
 ) {
     if (bmp == null) return
     // Apply the per-song crop (same rectangle every page) by trimming the bitmap; keyed memoize so
@@ -197,7 +216,36 @@ private fun AnnotatedPageCell(
     val shown = remember(bmp, cropL, cropT, cropR, cropB) { maybeCrop(bmp, cropL, cropT, cropR, cropB) }
     val swap = rotation == 90 || rotation == 270
     val dispAspect = if (swap) shown.height.toFloat() / shown.width else shown.width.toFloat() / shown.height
-    Box(modifier.aspectRatio(dispAspect)) {
+    Box(
+        modifier
+            .aspectRatio(dispAspect)
+            // Jump-point taps: hit-test only when the page has markers, and consume ONLY on a hit so
+            // non-marker taps still fall through to the mode's page-turn / scroll handling. Maps the
+            // tap into full-page-normalized space (crop inverse; 180° flip). 90/270 taps are mapped
+            // unrotated — the known rotation-aware-tap gap — though markers still draw rotated.
+            .then(
+                if (linkPoints.isEmpty()) Modifier
+                else Modifier.pointerInput(linkPoints, cropL, cropT, cropR, cropB, rotation) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val up = waitForUpOrCancellation() ?: return@awaitEachGesture
+                        val sz = size
+                        if (sz.width <= 0 || sz.height <= 0) return@awaitEachGesture
+                        var dx = up.position.x / sz.width
+                        var dy = up.position.y / sz.height
+                        if (rotation == 180) { dx = 1f - dx; dy = 1f - dy }
+                        val fnx = cropL + dx * (cropR - cropL)
+                        val fny = cropT + dy * (cropB - cropT)
+                        val hit = linkPoints.firstOrNull {
+                            it.sourceNx >= 0 &&
+                                abs(it.sourceNx.toFloat() - fnx) < 0.045f &&
+                                abs(it.sourceNy.toFloat() - fny) < 0.045f
+                        }
+                        if (hit != null) { up.consume(); onMarkerTap(hit) }
+                    }
+                },
+            ),
+    ) {
         // Whole cell rotates (page + overlay together) so annotations ride along without a remap —
         // same model as SinglePageView; 90/270 swap width/height via rotate90Fit to keep fitting.
         Box(if (swap) Modifier.rotate90Fit(rotation) else Modifier.fillMaxSize().rotate(rotation.toFloat())) {
@@ -208,9 +256,9 @@ private fun AnnotatedPageCell(
                 contentScale = ContentScale.Fit,
                 colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
             )
-            if (!anno.isEmpty() || highlight.isNotEmpty()) {
+            if (!anno.isEmpty() || highlight.isNotEmpty() || linkPoints.isNotEmpty()) {
                 Canvas(Modifier.matchParentSize()) {
-                    drawCroppedOverlay(anno, highlight, size.width, size.height, cropL, cropT, cropR, cropB)
+                    drawCroppedOverlay(anno, highlight, size.width, size.height, cropL, cropT, cropR, cropB, linkPoints)
                 }
             }
         }
@@ -310,13 +358,7 @@ fun SinglePageView(
                         }) {
                             if (hl.isNotEmpty()) drawSearchHighlight(hl, size.width, size.height)
                             if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
-                            for (lp in linkPoints) {
-                                if (lp.sourceNx < 0) continue
-                                val center = Offset(lp.sourceNx.toFloat() * size.width, lp.sourceNy.toFloat() * size.height)
-                                val rad = size.width * 0.022f
-                                drawCircle(Color(0xFF1565C0).copy(alpha = 0.22f), rad, center)
-                                drawCircle(Color(0xFF1565C0), rad, center, style = Stroke(width = size.width * 0.006f))
-                            }
+                            if (linkPoints.isNotEmpty()) drawLinkMarkers(linkPoints, size.width, size.height)
                         }
                     }
                 }
@@ -344,6 +386,8 @@ fun TwoPageView(
     cropR: Float = 1f,
     cropB: Float = 1f,
     rotation: Int = 0,
+    linkPoints: List<ViewerButton> = emptyList(),
+    onMarkerTap: (ViewerButton) -> Unit = {},
     onTurn: (Int) -> Unit,
 ) {
     val half = renderPx / 2
@@ -353,6 +397,8 @@ fun TwoPageView(
     val right = pageBitmap(doc, rightIdx, half)
     val leftAnno = rememberPageAnnotations(annoRepo, pdfKey, leftIdx, annoVersion)
     val rightAnno = rememberPageAnnotations(annoRepo, pdfKey, rightIdx, annoVersion)
+    val leftLinks = linkPoints.filter { it.sourcePage - 1 == leftIdx && it.sourceNx >= 0 }
+    val rightLinks = linkPoints.filter { it.sourcePage - 1 == rightIdx && it.sourceNx >= 0 }
 
     Box(
         Modifier
@@ -366,8 +412,16 @@ fun TwoPageView(
         contentAlignment = Alignment.Center,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f), if (leftIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
-            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f), if (rightIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
+            AnnotatedPageCell(
+                left, leftAnno, Modifier.weight(1f),
+                if (leftIdx == highlightPage) highlightBoxes else emptyList(),
+                cropL, cropT, cropR, cropB, rotation, leftLinks, onMarkerTap,
+            )
+            AnnotatedPageCell(
+                right, rightAnno, Modifier.weight(1f),
+                if (rightIdx == highlightPage) highlightBoxes else emptyList(),
+                cropL, cropT, cropR, cropB, rotation, rightLinks, onMarkerTap,
+            )
         }
     }
 }
@@ -412,6 +466,8 @@ fun VerticalScrollView(
     cropR: Float = 1f,
     cropB: Float = 1f,
     rotation: Int = 0,
+    linkPoints: List<ViewerButton> = emptyList(),
+    onMarkerTap: (ViewerButton) -> Unit = {},
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -422,8 +478,9 @@ fun VerticalScrollView(
             val pdf = pages[i]
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
+            val links = remember(linkPoints, pdf) { linkPoints.filter { it.sourcePage - 1 == pdf && it.sourceNx >= 0 } }
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation, links, onMarkerTap)
             } else {
                 Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
@@ -453,6 +510,8 @@ fun HorizontalScrollView(
     cropR: Float = 1f,
     cropB: Float = 1f,
     rotation: Int = 0,
+    linkPoints: List<ViewerButton> = emptyList(),
+    onMarkerTap: (ViewerButton) -> Unit = {},
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -467,8 +526,9 @@ fun HorizontalScrollView(
             val pdf = pages[i]
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
+            val links = remember(linkPoints, pdf) { linkPoints.filter { it.sourcePage - 1 == pdf && it.sourceNx >= 0 } }
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation, links, onMarkerTap)
             } else {
                 Box(Modifier.fillMaxHeight().aspectRatio(0.7f), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
@@ -502,6 +562,8 @@ fun HalfTurnView(
     cropT: Float = 0f,
     cropR: Float = 1f,
     cropB: Float = 1f,
+    linkPoints: List<ViewerButton> = emptyList(),
+    onMarkerTap: (ViewerButton) -> Unit = {},
     onSplitChange: (Float) -> Unit,
 ) {
     val total = maxOf(1, 2 * pages.size - 1)
@@ -523,6 +585,8 @@ fun HalfTurnView(
     val nextPdf = if (composite && nextIdx < pages.size) pages[nextIdx] else -1
     val curHl = if (curPdf == highlightPage) highlightBoxes else emptyList()
     val nextHl = if (nextPdf == highlightPage) highlightBoxes else emptyList()
+    val curLinks = if (linkPoints.isEmpty()) emptyList() else linkPoints.filter { it.sourcePage - 1 == curPdf && it.sourceNx >= 0 }
+    val nextLinks = if (linkPoints.isEmpty()) emptyList() else linkPoints.filter { it.sourcePage - 1 == nextPdf && it.sourceNx >= 0 }
 
     val bar = 6   // blue fold-bar thickness, in composite (bitmap) px
 
@@ -555,6 +619,32 @@ fun HalfTurnView(
         val liveScale = rememberUpdatedState(scale)
         val liveHB = rememberUpdatedState(hB)
 
+        // Jump-point hit test over the composite layout, always reading the current geometry/split.
+        // Each half maps a canvas tap to its page's crop-display frame, then to full-page-normalized
+        // (crop inverse) to match the stored marker. No rotation here — half-turn is unrotated.
+        val liveHit = rememberUpdatedState<(Offset) -> ViewerButton?> hit@{ pos ->
+            if (curLinks.isEmpty() && nextLinks.isEmpty()) return@hit null
+            fun match(markers: List<ViewerButton>, dxn: Float, dyn: Float): ViewerButton? {
+                if (dxn !in 0f..1f || dyn !in 0f..1f) return null
+                val fnx = cropL + dxn * (cropR - cropL)
+                val fny = cropT + dyn * (cropB - cropT)
+                return markers.firstOrNull {
+                    abs(it.sourceNx.toFloat() - fnx) < 0.045f && abs(it.sourceNy.toFloat() - fny) < 0.045f
+                }
+            }
+            if (drawComposite) {
+                // top half shows the next page's [0..split]; bottom half the current page's [split..1]
+                val by = dy + (topH + bar) * scale
+                if (pos.y < by) {
+                    match(nextLinks, (pos.x - (dx + xB * scale)) / (wB * scale), (pos.y - dy) / (hB * scale))
+                } else {
+                    match(curLinks, (pos.x - (dx + xA * scale)) / (wA * scale), (pos.y - by + aCut * scale) / (hA * scale))
+                }
+            } else {
+                match(curLinks, (pos.x - dx) / (wA * scale), (pos.y - dy) / (hA * scale))
+            }
+        }
+
         val curImg = cur.asImageBitmap()
         val nextImg = next?.asImageBitmap()
         val invert = LocalSettings.current.invert
@@ -565,6 +655,7 @@ fun HalfTurnView(
                 .fillMaxSize()
                 .pointerInput(total) {
                     detectTapGestures { pos ->
+                        liveHit.value(pos)?.let { onMarkerTap(it); return@detectTapGestures }
                         val third = size.width / 3f
                         if (pos.x < third) slot = (slot - 1).coerceIn(0, total - 1)
                         else if (pos.x > size.width - third) slot = (slot + 1).coerceIn(0, total - 1)
@@ -595,12 +686,12 @@ fun HalfTurnView(
                     dstSize = IntSize((wB * scale).roundToInt(), (topH * scale).roundToInt()),
                     colorFilter = filter,
                 )
-                // next page's search highlight + annotations, clipped to the visible top half
-                if (!nextAnno.isEmpty() || nextHl.isNotEmpty()) {
+                // next page's search highlight + annotations + markers, clipped to the visible top half
+                if (!nextAnno.isEmpty() || nextHl.isNotEmpty() || nextLinks.isNotEmpty()) {
                     val tx = dx + xB * scale
                     clipRect(tx, dy, tx + wB * scale, dy + topH * scale) {
                         translate(tx, dy) {
-                            drawCroppedOverlay(nextAnno, nextHl, wB * scale, hB * scale, cropL, cropT, cropR, cropB)
+                            drawCroppedOverlay(nextAnno, nextHl, wB * scale, hB * scale, cropL, cropT, cropR, cropB, nextLinks)
                         }
                     }
                 }
@@ -614,13 +705,13 @@ fun HalfTurnView(
                     dstSize = IntSize((wA * scale).roundToInt(), (bottomH * scale).roundToInt()),
                     colorFilter = filter,
                 )
-                // current page's search highlight + annotations, clipped to the visible bottom half
-                if (!curAnno.isEmpty() || curHl.isNotEmpty()) {
+                // current page's search highlight + annotations + markers, clipped to the visible bottom half
+                if (!curAnno.isEmpty() || curHl.isNotEmpty() || curLinks.isNotEmpty()) {
                     val bx = dx + xA * scale
                     val by = dy + (topH + bar) * scale
                     clipRect(bx, by, bx + wA * scale, by + bottomH * scale) {
                         translate(bx, by - aCut * scale) {
-                            drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB)
+                            drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB, curLinks)
                         }
                     }
                 }
@@ -633,9 +724,9 @@ fun HalfTurnView(
                     dstSize = IntSize((wA * scale).roundToInt(), (hA * scale).roundToInt()),
                     colorFilter = filter,
                 )
-                if (!curAnno.isEmpty() || curHl.isNotEmpty()) {
+                if (!curAnno.isEmpty() || curHl.isNotEmpty() || curLinks.isNotEmpty()) {
                     translate(dx, dy) {
-                        drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB)
+                        drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB, curLinks)
                     }
                 }
                 drawRect(
