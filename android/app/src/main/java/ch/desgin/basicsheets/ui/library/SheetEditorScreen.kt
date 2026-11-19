@@ -76,11 +76,15 @@ fun SheetEditorScreen(sheetId: Int, onBack: () -> Unit) {
     var tags by remember { mutableStateOf("") }
     var keywords by remember { mutableStateOf("") }
     var remarks by remember { mutableStateOf("") }
+    var rangeStart by remember { mutableStateOf("") }
+    var rangeEnd by remember { mutableStateOf("") }
 
     LaunchedEffect(sheetId) {
         val s = runCatching { app.library.byId(sheetId) }.getOrNull() ?: return@LaunchedEffect
         name = s.name; composer = s.composer; part = s.part; genre = s.genre; year = s.year
         difficulty = s.difficulty; rating = s.rating; tags = s.tags; keywords = s.keywords; remarks = s.remarks
+        rangeStart = if (s.pageStart > 0) s.pageStart.toString() else ""
+        rangeEnd = if (s.pageEnd > 0) s.pageEnd.toString() else ""
         loaded = s
     }
 
@@ -92,6 +96,8 @@ fun SheetEditorScreen(sheetId: Int, onBack: () -> Unit) {
                     name = name.trim(), composer = composer.trim(), part = part.trim(),
                     genre = genre.trim(), year = year.trim(), difficulty = difficulty,
                     rating = rating, tags = tags.trim(), keywords = keywords.trim(), remarks = remarks.trim(),
+                    pageStart = rangeStart.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+                    pageEnd = rangeEnd.toIntOrNull()?.coerceAtLeast(0) ?: 0,
                 ),
             )
             onBack()
@@ -154,6 +160,17 @@ fun SheetEditorScreen(sheetId: Int, onBack: () -> Unit) {
             Field("Tags (mit Komma)", tags, { tags = it })
             Field("Stichwörter", keywords, { keywords = it })
             Field("Bemerkungen", remarks, { remarks = it }, singleLine = false, minLines = 3)
+
+            LabelText("Seitenbereich (optional)")
+            Text(
+                "Nur diese Seiten der PDF zeigen – z. B. ein Stück in einer Sammel-PDF. Leer = ganze Datei.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Field("Von Seite", rangeStart, { rangeStart = it.filter(Char::isDigit) }, keyboard = KeyboardType.Number, modifier = Modifier.weight(1f))
+                Field("Bis Seite", rangeEnd, { rangeEnd = it.filter(Char::isDigit) }, keyboard = KeyboardType.Number, modifier = Modifier.weight(1f))
+            }
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -167,6 +184,7 @@ private fun Field(
     singleLine: Boolean = true,
     minLines: Int = 1,
     keyboard: KeyboardType = KeyboardType.Text,
+    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     OutlinedTextField(
         value = value,
@@ -175,7 +193,7 @@ private fun Field(
         singleLine = singleLine,
         minLines = minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
     )
 }
 

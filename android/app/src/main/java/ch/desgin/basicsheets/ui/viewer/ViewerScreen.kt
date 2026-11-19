@@ -239,7 +239,15 @@ fun ViewerScreen(
         val d = withContext(Dispatchers.IO) { PdfDoc.open(app.library.fileFor(s)) }
         doc = d
         pageCount = d?.pageCount ?: 0
-        order = parsePageOrder(s.pageOrder, pageCount)
+        // A page-range song shows only [pageStart..pageEnd] of a shared PDF (e.g. one piece in a
+        // collection); a custom page order, when set, takes precedence over the range.
+        order = if (s.hasRange && s.pageOrder.isBlank() && pageCount > 0) {
+            val a = (s.pageStart - 1).coerceIn(0, pageCount - 1)
+            val b = (s.pageEnd - 1).coerceIn(a, pageCount - 1)
+            (a..b).toList()
+        } else {
+            parsePageOrder(s.pageOrder, pageCount)
+        }
         page = 0
         outline = PdfOutline.extract(app.library.fileFor(s))
     }
