@@ -1,6 +1,9 @@
 # Claude Code (local settings + agent worktrees — not for version control)
 .claude/
 
+# GIBB school assignment (Testkonzept M450) — not part of the app
+Gibb/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -99,3 +102,13 @@ coverage.*.xml
 # Misc
 .DS_Store?
 *.tar.gz
+
+# Android / Gradle (the Android app is now the repo root — 2026-11-19)
+.gradle/
+.kotlin/
+build/
+*.iml
+.externalNativeBuild/
+.cxx/
+captures/
+signing.local.properties
