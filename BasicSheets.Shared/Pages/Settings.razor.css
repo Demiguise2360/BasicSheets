@@ -1,9 +1,0 @@
-/* Settings.razor.css — minimal; base styles in app.css */
-
-.information h4 {
-    color: var(--c-text);
-}
-
-.information p {
-    color: var(--c-text-2);
-}
