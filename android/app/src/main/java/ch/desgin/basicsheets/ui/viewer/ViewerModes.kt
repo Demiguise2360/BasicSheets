@@ -188,23 +188,30 @@ private fun AnnotatedPageCell(
     cropT: Float = 0f,
     cropR: Float = 1f,
     cropB: Float = 1f,
+    rotation: Int = 0,
 ) {
     if (bmp == null) return
     // Apply the per-song crop (same rectangle every page) by trimming the bitmap; keyed memoize so
     // we re-crop only when the page bitmap or the crop rectangle changes. Identity-equal to [bmp]
     // when uncropped, so the common (uncropped) path is unchanged.
     val shown = remember(bmp, cropL, cropT, cropR, cropB) { maybeCrop(bmp, cropL, cropT, cropR, cropB) }
-    Box(modifier.aspectRatio(shown.width.toFloat() / shown.height.toFloat())) {
-        Image(
-            shown.asImageBitmap(),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit,
-            colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
-        )
-        if (!anno.isEmpty() || highlight.isNotEmpty()) {
-            Canvas(Modifier.matchParentSize()) {
-                drawCroppedOverlay(anno, highlight, size.width, size.height, cropL, cropT, cropR, cropB)
+    val swap = rotation == 90 || rotation == 270
+    val dispAspect = if (swap) shown.height.toFloat() / shown.width else shown.width.toFloat() / shown.height
+    Box(modifier.aspectRatio(dispAspect)) {
+        // Whole cell rotates (page + overlay together) so annotations ride along without a remap —
+        // same model as SinglePageView; 90/270 swap width/height via rotate90Fit to keep fitting.
+        Box(if (swap) Modifier.rotate90Fit(rotation) else Modifier.fillMaxSize().rotate(rotation.toFloat())) {
+            Image(
+                shown.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+                colorFilter = if (LocalSettings.current.invert) INVERT_FILTER else null,
+            )
+            if (!anno.isEmpty() || highlight.isNotEmpty()) {
+                Canvas(Modifier.matchParentSize()) {
+                    drawCroppedOverlay(anno, highlight, size.width, size.height, cropL, cropT, cropR, cropB)
+                }
             }
         }
     }
@@ -336,6 +343,7 @@ fun TwoPageView(
     cropT: Float = 0f,
     cropR: Float = 1f,
     cropB: Float = 1f,
+    rotation: Int = 0,
     onTurn: (Int) -> Unit,
 ) {
     val half = renderPx / 2
@@ -358,8 +366,8 @@ fun TwoPageView(
         contentAlignment = Alignment.Center,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f), if (leftIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
-            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f), if (rightIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
+            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f), if (leftIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
+            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f), if (rightIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
         }
     }
 }
@@ -403,6 +411,7 @@ fun VerticalScrollView(
     cropT: Float = 0f,
     cropR: Float = 1f,
     cropB: Float = 1f,
+    rotation: Int = 0,
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -414,7 +423,7 @@ fun VerticalScrollView(
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
             } else {
                 Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
@@ -443,6 +452,7 @@ fun HorizontalScrollView(
     cropT: Float = 0f,
     cropR: Float = 1f,
     cropB: Float = 1f,
+    rotation: Int = 0,
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -458,7 +468,7 @@ fun HorizontalScrollView(
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB, rotation)
             } else {
                 Box(Modifier.fillMaxHeight().aspectRatio(0.7f), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
