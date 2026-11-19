@@ -510,7 +510,7 @@ fun ViewerScreen(
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Drehen") },
-                                    onClick = { showModeMenu = false; if (mode == DisplayMode.HALF) chooseMode(DisplayMode.SINGLE); rotatePage() },
+                                    onClick = { showModeMenu = false; rotatePage() },
                                 )
                             }
                         }
@@ -639,6 +639,7 @@ fun ViewerScreen(
                         doc, page, order, renderPx, (sheet?.halfSplit ?: 0.5).toFloat(), jumpToken,
                         app.annotations, key, annoVersion, hlPage, hlBoxes,
                         cropL, cropT, cropR, cropB,
+                        rotation = sheet?.rotation ?: 0,
                         linkPoints = linkPoints, onMarkerTap = { jumpLink(it) },
                     ) { s -> sheet?.let { sh -> scope.launch { app.library.update(sh.copy(halfSplit = s.toDouble())) } } }
                     DisplayMode.SCROLL_V -> VerticalScrollView(doc, order, renderPx, page, app.annotations, key, annoVersion, jumpToken, hlPage, hlBoxes, autoScroll, sheet?.scrollSpeed ?: 0, cropL, cropT, cropR, cropB, sheet?.rotation ?: 0, linkPoints = linkPoints, onMarkerTap = { jumpLink(it) })

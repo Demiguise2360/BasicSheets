@@ -95,6 +95,14 @@ private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bit
 private fun maybeCrop(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bitmap =
     if (l > 0.002f || t > 0.002f || r < 0.998f || b < 0.998f) cropBitmap(src, l, t, r, b) else src
 
+/** Rotate [src] clockwise by [rotation] (0/90/180/270); returns [src] for 0 or on any failure. */
+private fun rotateBitmap(src: Bitmap, rotation: Int): Bitmap {
+    val r = ((rotation % 360) + 360) % 360
+    if (r == 0) return src
+    val m = android.graphics.Matrix().apply { postRotate(r.toFloat()) }
+    return runCatching { Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true) }.getOrDefault(src)
+}
+
 /**
  * Invert a page's display rotation: map a tap at display-normalized ([dxn],[dyn]) in the rotated
  * display frame back to normalized coords in the un-rotated page. [rotation] is clockwise
@@ -148,6 +156,40 @@ private fun DrawScope.drawCroppedOverlay(
         if (hl.isNotEmpty()) drawSearchHighlight(hl, w, h)
         if (!anno.isEmpty()) drawPageAnnotations(anno, w, h)
         if (links.isNotEmpty()) drawLinkMarkers(links, w, h)
+    }
+}
+
+/**
+ * Like [drawCroppedOverlay] but for a page whose BITMAP was rotated clockwise by [rotation]: author
+ * the overlay in the un-rotated cropped page frame, then rotate it to fill the rotated
+ * [surfW]x[surfH] surface — so annotations/highlight/markers ride the rotation exactly as the page
+ * pixels do. Used by half-turn mode, which rotates its page pixels rather than the whole cell.
+ */
+private fun DrawScope.drawRotatedCroppedOverlay(
+    anno: PageAnnotations,
+    hl: List<MatchBox>,
+    surfW: Float,
+    surfH: Float,
+    rotation: Int,
+    cropL: Float,
+    cropT: Float,
+    cropR: Float,
+    cropB: Float,
+    links: List<ViewerButton> = emptyList(),
+) {
+    if (((rotation % 360) + 360) % 360 == 0) {
+        drawCroppedOverlay(anno, hl, surfW, surfH, cropL, cropT, cropR, cropB, links)
+        return
+    }
+    // Un-rotated page frame: for 90/270 its width/height are the rotated surface's swapped.
+    val swap = rotation == 90 || rotation == 270
+    val ucW = if (swap) surfH else surfW
+    val ucH = if (swap) surfW else surfH
+    withTransform({
+        translate((surfW - ucW) / 2f, (surfH - ucH) / 2f)
+        rotate(rotation.toFloat(), pivot = Offset(ucW / 2f, ucH / 2f))
+    }) {
+        drawCroppedOverlay(anno, hl, ucW, ucH, cropL, cropT, cropR, cropB, links)
     }
 }
 
@@ -579,6 +621,7 @@ fun HalfTurnView(
     cropT: Float = 0f,
     cropR: Float = 1f,
     cropB: Float = 1f,
+    rotation: Int = 0,
     linkPoints: List<ViewerButton> = emptyList(),
     onMarkerTap: (ViewerButton) -> Unit = {},
     onSplitChange: (Float) -> Unit,
@@ -592,8 +635,14 @@ fun HalfTurnView(
     val nextIdx = curIdx + 1
     val curFull = pageBitmap(doc, pages.getOrElse(curIdx) { 0 }, renderPx)
     val nextFull = if (composite && nextIdx < pages.size) pageBitmap(doc, pages[nextIdx], renderPx) else null
-    val cur = remember(curFull, cropL, cropT, cropR, cropB) { curFull?.let { maybeCrop(it, cropL, cropT, cropR, cropB) } }
-    val next = remember(nextFull, cropL, cropT, cropR, cropB) { nextFull?.let { maybeCrop(it, cropL, cropT, cropR, cropB) } }
+    // Crop (un-rotated space) then rotate the pixels, so the half-split math below runs on the
+    // corrected page — the fold bar stays horizontal across the music after a 90/270 rotation.
+    val cur = remember(curFull, cropL, cropT, cropR, cropB, rotation) {
+        curFull?.let { rotateBitmap(maybeCrop(it, cropL, cropT, cropR, cropB), rotation) }
+    }
+    val next = remember(nextFull, cropL, cropT, cropR, cropB, rotation) {
+        nextFull?.let { rotateBitmap(maybeCrop(it, cropL, cropT, cropR, cropB), rotation) }
+    }
     val curAnno = rememberPageAnnotations(annoRepo, pdfKey, pages.getOrElse(curIdx) { -1 }, annoVersion)
     val nextAnno = rememberPageAnnotations(
         annoRepo, pdfKey, if (composite && nextIdx < pages.size) pages[nextIdx] else -1, annoVersion,
@@ -637,14 +686,15 @@ fun HalfTurnView(
         val liveHB = rememberUpdatedState(hB)
 
         // Jump-point hit test over the composite layout, always reading the current geometry/split.
-        // Each half maps a canvas tap to its page's crop-display frame, then to full-page-normalized
-        // (crop inverse) to match the stored marker. No rotation here — half-turn is unrotated.
+        // Each half maps a canvas tap to its (rotated) page frame, then un-rotates and un-crops to
+        // full-page-normalized to match the stored marker.
         val liveHit = rememberUpdatedState<(Offset) -> ViewerButton?> hit@{ pos ->
             if (curLinks.isEmpty() && nextLinks.isEmpty()) return@hit null
             fun match(markers: List<ViewerButton>, dxn: Float, dyn: Float): ViewerButton? {
-                if (dxn !in 0f..1f || dyn !in 0f..1f) return null
-                val fnx = cropL + dxn * (cropR - cropL)
-                val fny = cropT + dyn * (cropB - cropT)
+                val (cu, cv) = unrotateNorm(dxn, dyn, rotation)
+                if (cu !in 0f..1f || cv !in 0f..1f) return null
+                val fnx = cropL + cu * (cropR - cropL)
+                val fny = cropT + cv * (cropB - cropT)
                 return markers.firstOrNull {
                     abs(it.sourceNx.toFloat() - fnx) < 0.045f && abs(it.sourceNy.toFloat() - fny) < 0.045f
                 }
@@ -708,7 +758,7 @@ fun HalfTurnView(
                     val tx = dx + xB * scale
                     clipRect(tx, dy, tx + wB * scale, dy + topH * scale) {
                         translate(tx, dy) {
-                            drawCroppedOverlay(nextAnno, nextHl, wB * scale, hB * scale, cropL, cropT, cropR, cropB, nextLinks)
+                            drawRotatedCroppedOverlay(nextAnno, nextHl, wB * scale, hB * scale, rotation, cropL, cropT, cropR, cropB, nextLinks)
                         }
                     }
                 }
@@ -728,7 +778,7 @@ fun HalfTurnView(
                     val by = dy + (topH + bar) * scale
                     clipRect(bx, by, bx + wA * scale, by + bottomH * scale) {
                         translate(bx, by - aCut * scale) {
-                            drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB, curLinks)
+                            drawRotatedCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, rotation, cropL, cropT, cropR, cropB, curLinks)
                         }
                     }
                 }
@@ -743,7 +793,7 @@ fun HalfTurnView(
                 )
                 if (!curAnno.isEmpty() || curHl.isNotEmpty() || curLinks.isNotEmpty()) {
                     translate(dx, dy) {
-                        drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB, curLinks)
+                        drawRotatedCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, rotation, cropL, cropT, cropR, cropB, curLinks)
                     }
                 }
                 drawRect(
