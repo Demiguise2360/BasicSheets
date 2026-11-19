@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
@@ -85,6 +86,40 @@ private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bit
     val w = ((r - l) * src.width).toInt().coerceIn(1, src.width - x)
     val h = ((b - t) * src.height).toInt().coerceIn(1, src.height - y)
     return runCatching { Bitmap.createBitmap(src, x, y, w, h) }.getOrDefault(src)
+}
+
+/** Crop [src] to [l,t,r,b] only when that rectangle is a real sub-page; else return [src] unchanged. */
+private fun maybeCrop(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bitmap =
+    if (l > 0.002f || t > 0.002f || r < 0.998f || b < 0.998f) cropBitmap(src, l, t, r, b) else src
+
+/**
+ * Draw a page's annotations + search highlight (full-page normalized [0,1]) onto a surface of size
+ * [w]x[h] that shows only the crop rectangle, remapping into the cropped frame (identity when
+ * uncropped). The caller has already translated/clipped to where the page sits. Shared by every
+ * reading mode so the crop remap is defined once.
+ */
+private fun DrawScope.drawCroppedOverlay(
+    anno: PageAnnotations,
+    hl: List<MatchBox>,
+    w: Float,
+    h: Float,
+    cropL: Float,
+    cropT: Float,
+    cropR: Float,
+    cropB: Float,
+) {
+    if (cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f) {
+        withTransform({
+            translate(-cropL * w / (cropR - cropL), -cropT * h / (cropB - cropT))
+            scale(1f / (cropR - cropL), 1f / (cropB - cropT), pivot = Offset.Zero)
+        }) {
+            if (hl.isNotEmpty()) drawSearchHighlight(hl, w, h)
+            if (!anno.isEmpty()) drawPageAnnotations(anno, w, h)
+        }
+    } else {
+        if (hl.isNotEmpty()) drawSearchHighlight(hl, w, h)
+        if (!anno.isEmpty()) drawPageAnnotations(anno, w, h)
+    }
 }
 
 /** Lay out content rotated 90°/270°, swapping width/height so the rotated page fits the parent. */
@@ -158,11 +193,7 @@ private fun AnnotatedPageCell(
     // Apply the per-song crop (same rectangle every page) by trimming the bitmap; keyed memoize so
     // we re-crop only when the page bitmap or the crop rectangle changes. Identity-equal to [bmp]
     // when uncropped, so the common (uncropped) path is unchanged.
-    val shown = remember(bmp, cropL, cropT, cropR, cropB) {
-        if (cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f)
-            cropBitmap(bmp, cropL, cropT, cropR, cropB) else bmp
-    }
-    val cropped = shown !== bmp
+    val shown = remember(bmp, cropL, cropT, cropR, cropB) { maybeCrop(bmp, cropL, cropT, cropR, cropB) }
     Box(modifier.aspectRatio(shown.width.toFloat() / shown.height.toFloat())) {
         Image(
             shown.asImageBitmap(),
@@ -173,20 +204,7 @@ private fun AnnotatedPageCell(
         )
         if (!anno.isEmpty() || highlight.isNotEmpty()) {
             Canvas(Modifier.matchParentSize()) {
-                // Annotations/highlight are full-page normalized; when cropped, map them into the
-                // cropped display (identity when not cropped) — same remap as SinglePageView.
-                if (cropped) {
-                    withTransform({
-                        translate(-cropL * size.width / (cropR - cropL), -cropT * size.height / (cropB - cropT))
-                        scale(1f / (cropR - cropL), 1f / (cropB - cropT), pivot = Offset.Zero)
-                    }) {
-                        if (highlight.isNotEmpty()) drawSearchHighlight(highlight, size.width, size.height)
-                        if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
-                    }
-                } else {
-                    if (highlight.isNotEmpty()) drawSearchHighlight(highlight, size.width, size.height)
-                    if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
-                }
+                drawCroppedOverlay(anno, highlight, size.width, size.height, cropL, cropT, cropR, cropB)
             }
         }
     }
@@ -470,6 +488,10 @@ fun HalfTurnView(
     annoVersion: Int = 0,
     highlightPage: Int = -1,
     highlightBoxes: List<MatchBox> = emptyList(),
+    cropL: Float = 0f,
+    cropT: Float = 0f,
+    cropR: Float = 1f,
+    cropB: Float = 1f,
     onSplitChange: (Float) -> Unit,
 ) {
     val total = maxOf(1, 2 * pages.size - 1)
@@ -479,8 +501,10 @@ fun HalfTurnView(
     val composite = slot % 2 == 1
     val curIdx = slot / 2
     val nextIdx = curIdx + 1
-    val cur = pageBitmap(doc, pages.getOrElse(curIdx) { 0 }, renderPx)
-    val next = if (composite && nextIdx < pages.size) pageBitmap(doc, pages[nextIdx], renderPx) else null
+    val curFull = pageBitmap(doc, pages.getOrElse(curIdx) { 0 }, renderPx)
+    val nextFull = if (composite && nextIdx < pages.size) pageBitmap(doc, pages[nextIdx], renderPx) else null
+    val cur = remember(curFull, cropL, cropT, cropR, cropB) { curFull?.let { maybeCrop(it, cropL, cropT, cropR, cropB) } }
+    val next = remember(nextFull, cropL, cropT, cropR, cropB) { nextFull?.let { maybeCrop(it, cropL, cropT, cropR, cropB) } }
     val curAnno = rememberPageAnnotations(annoRepo, pdfKey, pages.getOrElse(curIdx) { -1 }, annoVersion)
     val nextAnno = rememberPageAnnotations(
         annoRepo, pdfKey, if (composite && nextIdx < pages.size) pages[nextIdx] else -1, annoVersion,
@@ -566,8 +590,7 @@ fun HalfTurnView(
                     val tx = dx + xB * scale
                     clipRect(tx, dy, tx + wB * scale, dy + topH * scale) {
                         translate(tx, dy) {
-                            if (nextHl.isNotEmpty()) drawSearchHighlight(nextHl, wB * scale, hB * scale)
-                            if (!nextAnno.isEmpty()) drawPageAnnotations(nextAnno, wB * scale, hB * scale)
+                            drawCroppedOverlay(nextAnno, nextHl, wB * scale, hB * scale, cropL, cropT, cropR, cropB)
                         }
                     }
                 }
@@ -587,8 +610,7 @@ fun HalfTurnView(
                     val by = dy + (topH + bar) * scale
                     clipRect(bx, by, bx + wA * scale, by + bottomH * scale) {
                         translate(bx, by - aCut * scale) {
-                            if (curHl.isNotEmpty()) drawSearchHighlight(curHl, wA * scale, hA * scale)
-                            if (!curAnno.isEmpty()) drawPageAnnotations(curAnno, wA * scale, hA * scale)
+                            drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB)
                         }
                     }
                 }
@@ -603,8 +625,7 @@ fun HalfTurnView(
                 )
                 if (!curAnno.isEmpty() || curHl.isNotEmpty()) {
                     translate(dx, dy) {
-                        if (curHl.isNotEmpty()) drawSearchHighlight(curHl, wA * scale, hA * scale)
-                        if (!curAnno.isEmpty()) drawPageAnnotations(curAnno, wA * scale, hA * scale)
+                        drawCroppedOverlay(curAnno, curHl, wA * scale, hA * scale, cropL, cropT, cropR, cropB)
                     }
                 }
                 drawRect(
