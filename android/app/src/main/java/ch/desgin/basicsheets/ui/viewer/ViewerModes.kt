@@ -144,11 +144,28 @@ fun rememberPageAnnotations(repo: AnnotationRepository?, pdfKey: String?, page: 
  * sizes one axis (fillMaxWidth / fillMaxHeight / weight); the page aspect fixes the other.
  */
 @Composable
-private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Modifier, highlight: List<MatchBox> = emptyList()) {
+private fun AnnotatedPageCell(
+    bmp: Bitmap?,
+    anno: PageAnnotations,
+    modifier: Modifier,
+    highlight: List<MatchBox> = emptyList(),
+    cropL: Float = 0f,
+    cropT: Float = 0f,
+    cropR: Float = 1f,
+    cropB: Float = 1f,
+) {
     if (bmp == null) return
-    Box(modifier.aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())) {
+    // Apply the per-song crop (same rectangle every page) by trimming the bitmap; keyed memoize so
+    // we re-crop only when the page bitmap or the crop rectangle changes. Identity-equal to [bmp]
+    // when uncropped, so the common (uncropped) path is unchanged.
+    val shown = remember(bmp, cropL, cropT, cropR, cropB) {
+        if (cropL > 0.002f || cropT > 0.002f || cropR < 0.998f || cropB < 0.998f)
+            cropBitmap(bmp, cropL, cropT, cropR, cropB) else bmp
+    }
+    val cropped = shown !== bmp
+    Box(modifier.aspectRatio(shown.width.toFloat() / shown.height.toFloat())) {
         Image(
-            bmp.asImageBitmap(),
+            shown.asImageBitmap(),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit,
@@ -156,8 +173,20 @@ private fun AnnotatedPageCell(bmp: Bitmap?, anno: PageAnnotations, modifier: Mod
         )
         if (!anno.isEmpty() || highlight.isNotEmpty()) {
             Canvas(Modifier.matchParentSize()) {
-                if (highlight.isNotEmpty()) drawSearchHighlight(highlight, size.width, size.height)
-                if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
+                // Annotations/highlight are full-page normalized; when cropped, map them into the
+                // cropped display (identity when not cropped) — same remap as SinglePageView.
+                if (cropped) {
+                    withTransform({
+                        translate(-cropL * size.width / (cropR - cropL), -cropT * size.height / (cropB - cropT))
+                        scale(1f / (cropR - cropL), 1f / (cropB - cropT), pivot = Offset.Zero)
+                    }) {
+                        if (highlight.isNotEmpty()) drawSearchHighlight(highlight, size.width, size.height)
+                        if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
+                    }
+                } else {
+                    if (highlight.isNotEmpty()) drawSearchHighlight(highlight, size.width, size.height)
+                    if (!anno.isEmpty()) drawPageAnnotations(anno, size.width, size.height)
+                }
             }
         }
     }
@@ -285,6 +314,10 @@ fun TwoPageView(
     annoVersion: Int = 0,
     highlightPage: Int = -1,
     highlightBoxes: List<MatchBox> = emptyList(),
+    cropL: Float = 0f,
+    cropT: Float = 0f,
+    cropR: Float = 1f,
+    cropB: Float = 1f,
     onTurn: (Int) -> Unit,
 ) {
     val half = renderPx / 2
@@ -307,8 +340,8 @@ fun TwoPageView(
         contentAlignment = Alignment.Center,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f), if (leftIdx == highlightPage) highlightBoxes else emptyList())
-            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f), if (rightIdx == highlightPage) highlightBoxes else emptyList())
+            AnnotatedPageCell(left, leftAnno, Modifier.weight(1f), if (leftIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
+            AnnotatedPageCell(right, rightAnno, Modifier.weight(1f), if (rightIdx == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
         }
     }
 }
@@ -348,6 +381,10 @@ fun VerticalScrollView(
     highlightBoxes: List<MatchBox> = emptyList(),
     autoScroll: Boolean = false,
     scrollSpeed: Int = 0,
+    cropL: Float = 0f,
+    cropT: Float = 0f,
+    cropR: Float = 1f,
+    cropB: Float = 1f,
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -359,7 +396,7 @@ fun VerticalScrollView(
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth(), if (pdf == highlightPage) highlightBoxes else emptyList())
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxWidth(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
             } else {
                 Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
@@ -384,6 +421,10 @@ fun HorizontalScrollView(
     highlightBoxes: List<MatchBox> = emptyList(),
     autoScroll: Boolean = false,
     scrollSpeed: Int = 0,
+    cropL: Float = 0f,
+    cropT: Float = 0f,
+    cropR: Float = 1f,
+    cropB: Float = 1f,
 ) {
     val state = remember(jumpToken) {
         LazyListState(firstVisibleItemIndex = startPage.coerceIn(0, maxOf(0, pages.size - 1)))
@@ -399,7 +440,7 @@ fun HorizontalScrollView(
             val bmp = pageBitmap(doc, pdf, renderPx)
             val anno = rememberPageAnnotations(annoRepo, pdfKey, pdf, annoVersion)
             if (bmp != null) {
-                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight(), if (pdf == highlightPage) highlightBoxes else emptyList())
+                AnnotatedPageCell(bmp, anno, Modifier.fillMaxHeight(), if (pdf == highlightPage) highlightBoxes else emptyList(), cropL, cropT, cropR, cropB)
             } else {
                 Box(Modifier.fillMaxHeight().aspectRatio(0.7f), contentAlignment = Alignment.Center) {
                     Text("…", color = MaterialTheme.colorScheme.outline)
