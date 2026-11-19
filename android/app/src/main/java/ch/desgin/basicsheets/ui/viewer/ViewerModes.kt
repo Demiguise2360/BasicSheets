@@ -369,6 +369,20 @@ fun SinglePageView(
         Modifier
             .fillMaxSize()
             .transformable(transform)
+            .pointerInput(Unit) {
+                // Horizontal swipe turns the page (only when not zoomed; non-consuming, so pinch/pan/tap are untouched).
+                awaitEachGesture {
+                    val d0 = awaitFirstDown(requireUnconsumed = false)
+                    var dx = 0f; var dy = 0f; var multi = false
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        if (ev.changes.size > 1) multi = true
+                        ev.changes.firstOrNull { it.id == d0.id }?.let { dx = it.position.x - d0.position.x; dy = it.position.y - d0.position.y }
+                        if (ev.changes.all { !it.pressed }) break
+                    }
+                    if (!multi && scale <= 1.05f && abs(dx) > size.width * 0.18f && abs(dx) > abs(dy) * 1.5f) onTurn(if (dx < 0) 1 else -1)
+                }
+            }
             .pointerInput(editLinks, linkPoints, rotation, cropL, cropT, cropR, cropB) {
                 detectTapGestures(
                     onDoubleTap = { pos ->
@@ -490,6 +504,20 @@ fun TwoPageView(
         Modifier
             .fillMaxSize()
             .transformable(transform)
+            .pointerInput(Unit) {
+                // Horizontal swipe turns two pages (only when not zoomed; non-consuming).
+                awaitEachGesture {
+                    val d0 = awaitFirstDown(requireUnconsumed = false)
+                    var dx = 0f; var dy = 0f; var multi = false
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        if (ev.changes.size > 1) multi = true
+                        ev.changes.firstOrNull { it.id == d0.id }?.let { dx = it.position.x - d0.position.x; dy = it.position.y - d0.position.y }
+                        if (ev.changes.all { !it.pressed }) break
+                    }
+                    if (!multi && scale <= 1.05f && abs(dx) > size.width * 0.18f && abs(dx) > abs(dy) * 1.5f) onTurn(if (dx < 0) 2 else -2)
+                }
+            }
             .pointerInput(pages.size) {
                 detectTapGestures(
                     onDoubleTap = { pos ->
