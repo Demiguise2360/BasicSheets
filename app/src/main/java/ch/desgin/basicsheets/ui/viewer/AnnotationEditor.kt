@@ -85,7 +85,7 @@ import kotlin.math.min
  * so we accept those too.
  */
 private fun PointerButtons.stylusSidePressed(): Boolean =
-    isPressed(5) || isPressed(6) || isSecondaryPressed || isTertiaryPressed
+    isPressed(5) || isPressed(6) || isPressed(1) || isPressed(2)   // stylus bits 5/6 + secondary/tertiary buttons
 
 /** The current page shown fit-to-width with a draw overlay matching its bounds. */
 @Composable
