@@ -1,6 +1,7 @@
 package ch.desgin.basicsheets.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 /**
@@ -19,6 +20,7 @@ class SettingsRepository(private val db: BasicSheetsDatabase) {
     /** All settings as a live name→value map (missing keys fall back to DEFAULTS at read time). */
     fun observe(): Flow<Map<String, String>> =
         db.settings().observeAll().map { rows -> rows.associate { it.name to it.value } }
+            .catch { emit(emptyMap()) }   // a settings-read error must not crash the launch composition
 
     suspend fun bool(name: String, default: Boolean): Boolean =
         when (db.settings().value(name) ?: DEFAULTS[name]) {
