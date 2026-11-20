@@ -94,7 +94,7 @@ private val TABS = listOf(
 private val SONG_TABS = setOf("songs", "recent", "favorites", "composer", "genre")
 
 private val FIELD_OPTIONS = listOf(
-    "all" to "Alle", "Name" to "Name", "Composer" to "Komponist",
+    "all" to "Alle Felder", "Name" to "Name", "Composer" to "Komponist",
     "Part" to "Stimme", "Genre" to "Genre", "Tags" to "Tags",
 )
 private val SORT_OPTIONS = listOf(
@@ -169,7 +169,7 @@ fun LibraryScreen(
             }
         }
 
-        // Search + add
+        // Search + field/sort filters + add, all on one row (the Figma library header)
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -183,6 +183,10 @@ fun LibraryScreen(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
+            if (tabKey == "songs") {
+                FilterPill(FIELD_OPTIONS, searchField) { vm.setSearchField(it) }
+                FilterPill(SORT_OPTIONS, sortOrder) { vm.setSortOrder(it) }
+            }
             FilledIconButton(
                 onClick = { onPlus() },
                 colors = IconButtonDefaults.filledIconButtonColors(
@@ -190,18 +194,6 @@ fun LibraryScreen(
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
             ) { Icon(Icons.Filled.Add, contentDescription = "Hinzufügen") }
-        }
-
-        // Field + sort filters (songs tab, mirrors the MAUI library controls)
-        if (tabKey == "songs") {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterDropdown("Feld", FIELD_OPTIONS, searchField) { vm.setSearchField(it) }
-                FilterDropdown("Sortieren", SORT_OPTIONS, sortOrder) { vm.setSortOrder(it) }
-            }
         }
 
         when (tabKey) {
@@ -310,15 +302,21 @@ private fun SheetCard(sheet: Sheet, onOpen: () -> Unit, onDelete: () -> Unit, on
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FilterDropdown(leading: String, options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+private fun FilterPill(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val label = options.firstOrNull { it.first == selected }?.second ?: selected
     Box {
-        AssistChip(
-            onClick = { open = true },
-            label = { Text("$leading: $label") },
-            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
-        )
+        Surface(
+            color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            shape = RoundedCornerShape(50),
+            modifier = Modifier.clickable { open = true },
+        ) {
+            Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 9.dp, bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+            }
+        }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             options.forEach { (value, lbl) ->
                 DropdownMenuItem(

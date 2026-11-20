@@ -23,6 +23,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -89,6 +90,7 @@ import ch.desgin.basicsheets.BasicSheetsApp
 import ch.desgin.basicsheets.data.Crop
 import ch.desgin.basicsheets.data.ViewerButton
 import ch.desgin.basicsheets.ui.theme.AppTopBar
+import ch.desgin.basicsheets.ui.theme.PetrolGradient
 import ch.desgin.basicsheets.annot.Hairpin
 import ch.desgin.basicsheets.annot.MarkerStroke
 import ch.desgin.basicsheets.annot.PageAnnotations
@@ -116,6 +118,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -739,39 +742,50 @@ fun ViewerScreen(
         },
         bottomBar = {
             val inSetlist = setlistId >= 0 && songIdx >= 0
-            val showPageNav = (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO) && order.size > 1
+            val showPageNav = (mode == DisplayMode.SINGLE || mode == DisplayMode.TWO || mode == DisplayMode.HALF) && order.size > 1
             if (!editMode && !isTextSong && (inSetlist || showPageNav)) {
-                val step = if (mode == DisplayMode.TWO) 2 else 1
                 val navBtn = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.38f),
                 )
-                BottomAppBar(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) {
-                    if (inSetlist) {
-                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx - 1].id) }, enabled = songIdx > 0, colors = navBtn) { Text("⏮") }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (showPageNav) {
-                        TextButton(onClick = { turn(-step, haptic = true) }, enabled = page > 0, colors = navBtn) { Text("‹") }
-                        if (settings.pageNumbers) {
-                            Text(
-                                "${page + 1} / ${order.size}",
-                                Modifier
-                                    .align(Alignment.CenterVertically)
-                                    .clickable { pageInput = "${page + 1}"; showPageInput = true }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                            )
+                // Figma: a petrol-gradient bar with a page-scrubber slider + an attach (audio) icon.
+                var sliderDrag by remember { mutableStateOf<Float?>(null) }
+                Box(Modifier.background(PetrolGradient)) {
+                    BottomAppBar(
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) {
+                        if (inSetlist) {
+                            TextButton(onClick = { onOpenSong(setlistSheets[songIdx - 1].id) }, enabled = songIdx > 0, colors = navBtn) { Text("⏮") }
                         }
-                        TextButton(onClick = { turn(step, haptic = true) }, enabled = page < order.size - 1, colors = navBtn) { Text("›") }
-                    } else if (inSetlist) {
-                        Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (inSetlist) {
-                        TextButton(onClick = { onOpenSong(setlistSheets[songIdx + 1].id) }, enabled = songIdx < setlistSheets.size - 1, colors = navBtn) { Text("⏭") }
+                        if (showPageNav) {
+                            val last = (order.size - 1).coerceAtLeast(1)
+                            val sliderVal = (sliderDrag ?: page.toFloat()).coerceIn(0f, last.toFloat())
+                            Text(
+                                "${sliderVal.roundToInt() + 1}",
+                                Modifier.align(Alignment.CenterVertically)
+                                    .clickable { pageInput = "${page + 1}"; showPageInput = true }
+                                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                            )
+                            Slider(
+                                value = sliderVal,
+                                onValueChange = { sliderDrag = it },
+                                onValueChangeFinished = { sliderDrag?.let { jumpToDisplay(it.roundToInt().coerceIn(0, order.size - 1)) }; sliderDrag = null },
+                                valueRange = 0f..last.toFloat(),
+                                modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+                            )
+                            Text("${order.size}", Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
+                            IconButton(onClick = { showAudio = true; showMetro = false }) {
+                                Icon(Icons.Filled.AttachFile, contentDescription = "Audio & Ton")
+                            }
+                        } else if (inSetlist) {
+                            Spacer(Modifier.weight(1f))
+                            Text("Stück ${songIdx + 1} / ${setlistSheets.size}", Modifier.align(Alignment.CenterVertically))
+                            Spacer(Modifier.weight(1f))
+                        }
+                        if (inSetlist) {
+                            TextButton(onClick = { onOpenSong(setlistSheets[songIdx + 1].id) }, enabled = songIdx < setlistSheets.size - 1, colors = navBtn) { Text("⏭") }
+                        }
                     }
                 }
             }
