@@ -1195,7 +1195,7 @@ private fun stampFrac(level: Int): Float = 0.03f + level * 0.008f
 
 private fun textFrac(level: Int): Float = 0.025f + level * 0.006f
 
-/** Distance from a point to a segment, all in normalized [0,1] coords. */
+/** Distance from a point to a segment, all in normalized 0..1 coords. */
 private fun distToSeg(px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2: Float): Float {
     val dx = x2 - x1
     val dy = y2 - y1

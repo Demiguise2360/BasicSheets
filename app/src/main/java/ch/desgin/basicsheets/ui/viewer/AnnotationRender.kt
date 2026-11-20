@@ -35,7 +35,7 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * Shared annotation rendering. Coordinates are normalized [0,1] of the page; `w`/`h` are the
+ * Shared annotation rendering. Coordinates are normalized 0..1 of the page; `w`/`h` are the
  * pixel size of the surface the page occupies, so the same marks render at any size/device.
  * Used by both the editor overlay and the read-only reading modes.
  */
@@ -179,7 +179,7 @@ fun DrawScope.drawTextAnnot(t: TextAnnot, w: Float, h: Float) {
 }
 
 /**
- * Draw translucent highlight rectangles for in-document search matches, in normalized [0,1]
+ * Draw translucent highlight rectangles for in-document search matches, in normalized 0..1
  * page coordinates. Painted under the annotations so pen/marker strokes stay on top.
  */
 fun DrawScope.drawSearchHighlight(boxes: List<MatchBox>, w: Float, h: Float) {

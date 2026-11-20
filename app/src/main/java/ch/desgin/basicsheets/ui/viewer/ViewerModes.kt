@@ -87,7 +87,7 @@ private val INVERT_FILTER = ColorFilter.colorMatrix(
     ),
 )
 
-/** Crop [src] to the normalized [l,t,r,b] sub-rectangle; returns [src] on any failure. */
+/** Crop [src] to the normalized l,t,r,b sub-rectangle; returns [src] on any failure. */
 private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bitmap {
     val x = (l * src.width).toInt().coerceIn(0, src.width - 1)
     val y = (t * src.height).toInt().coerceIn(0, src.height - 1)
@@ -96,7 +96,7 @@ private fun cropBitmap(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bit
     return runCatching { Bitmap.createBitmap(src, x, y, w, h) }.getOrDefault(src)
 }
 
-/** Crop [src] to [l,t,r,b] only when that rectangle is a real sub-page; else return [src] unchanged. */
+/** Crop [src] to l,t,r,b only when that rectangle is a real sub-page; else return [src] unchanged. */
 private fun maybeCrop(src: Bitmap, l: Float, t: Float, r: Float, b: Float): Bitmap =
     if (l > 0.002f || t > 0.002f || r < 0.998f || b < 0.998f) cropBitmap(src, l, t, r, b) else src
 
@@ -138,7 +138,7 @@ private fun DrawScope.drawLinkMarkers(links: List<ViewerButton>, w: Float, h: Fl
 
 /**
  * Draw a page's annotations + search highlight + jump-point markers (all full-page normalized
- * [0,1]) onto a surface of size [w]x[h] that shows only the crop rectangle, remapping into the
+ * 0..1) onto a surface of size [w]x[h] that shows only the crop rectangle, remapping into the
  * cropped frame (identity when uncropped). The caller has already translated/clipped to where the
  * page sits. Shared by every reading mode so the crop remap is defined once.
  */
@@ -399,7 +399,7 @@ fun SinglePageView(
                     if (scale > 1.05f) return@detectTapGestures
                     val b = bmpState.value
                     if (b != null) {
-                        // Map the full-screen tap into full-page-normalized [0,1]. The page is
+                        // Map the full-screen tap into full-page-normalized 0..1. The page is
                         // fillMaxWidth and centred; its displayed aspect swaps for 90/270. Undo the
                         // rotation, then the crop, so the tap lands where the drawn markers are.
                         val swap = rotation == 90 || rotation == 270
@@ -904,7 +904,7 @@ private fun pickCropHandle(pos: Offset, c: Rect, w: Float, h: Float): CropHandle
     }
 }
 
-/** Apply a normalized drag delta to [start] for [handle]; min side 0.1, kept inside [0,1]. */
+/** Apply a normalized drag delta to [start] for [handle]; min side 0.1, kept inside 0..1. */
 private fun applyCropHandle(handle: CropHandle, start: Rect, dnx: Float, dny: Float): Rect {
     val minSize = 0.1f
     var l = start.left; var t = start.top; var r = start.right; var b = start.bottom
@@ -931,7 +931,7 @@ private fun applyCropHandle(handle: CropHandle, start: Rect, dnx: Float, dny: Fl
 /**
  * Full-page crop editor: shows the page (un-rotated, fit to width) with a draggable crop rectangle —
  * drag the interior to move, the edges/corners to resize. The area outside is dimmed. The box is the
- * normalized [cropL..cropB]; [onChange] reports edits. Shown in single mode while "Zuschneiden" is
+ * normalized cropL..cropB; [onChange] reports edits. Shown in single mode while "Zuschneiden" is
  * open, alongside the sliders (which edit the same values).
  */
 @Composable

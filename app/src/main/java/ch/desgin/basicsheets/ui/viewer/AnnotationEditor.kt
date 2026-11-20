@@ -437,7 +437,7 @@ private fun snapShapeEnd(tool: Tool, s: Offset, e: Offset): Offset {
 /** An identified annotation (list kind + index) grabbed by the move tool. */
 private data class MoveTarget(val kind: String, val index: Int)
 
-/** Distance from (px,py) to segment (x1,y1)-(x2,y2), all normalized [0,1]. */
+/** Distance from (px,py) to segment (x1,y1)-(x2,y2), all normalized 0..1. */
 private fun segDist(px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2: Float): Float {
     val dx = x2 - x1
     val dy = y2 - y1

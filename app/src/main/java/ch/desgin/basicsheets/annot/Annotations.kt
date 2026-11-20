@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * Annotation model for one page. Mirrors the MAUI JSON shape (penStrokes/markerData/stampData/
- * textData/hairpinData/shapeData) but coordinates are NORMALIZED to [0,1] of the page, so marks
+ * textData/hairpinData/shapeData) but coordinates are NORMALIZED to 0..1 of the page, so marks
  * render correctly at any size/device (the MAUI app stored absolute scale-2 px). Fresh data, so
  * no migration. Colors are packed ARGB ints (Compose Color.toArgb()).
  */

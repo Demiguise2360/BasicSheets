@@ -17,7 +17,7 @@ data class SearchHit(
     val matchLen: Int,
 )
 
-/** A matched-text rectangle on a page, in normalized [0,1] page coordinates (origin top-left). */
+/** A matched-text rectangle on a page, in normalized 0..1 page coordinates (origin top-left). */
 data class MatchBox(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
 /**
